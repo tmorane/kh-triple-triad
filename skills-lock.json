@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "tdd": {
+      "source": "udecode/dotai",
+      "sourceType": "github",
+      "computedHash": "7fe3c9bcdc4078deeaef689661d275c3b8c6c8f2298111a046248ec4fb503cf8"
+    }
+  }
+}
