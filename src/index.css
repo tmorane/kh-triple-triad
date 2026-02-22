@@ -313,6 +313,52 @@ h2 {
   box-shadow: 0 0 10px rgba(240, 197, 120, 0.8);
 }
 
+.home-rank-rewards-banner {
+  margin-top: 0.72rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.62rem;
+  padding: 0.62rem 0.72rem;
+  border-radius: 14px;
+  border: 1px solid rgba(116, 198, 255, 0.45);
+  background: linear-gradient(145deg, rgba(14, 36, 52, 0.86), rgba(7, 20, 31, 0.9));
+  box-shadow: inset 0 0 0 1px rgba(193, 228, 255, 0.08);
+}
+
+.home-rank-rewards-title {
+  margin: 0;
+  color: #d9ebff;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.home-rank-rewards-banner ul {
+  margin: 0.22rem 0 0;
+  padding-left: 1rem;
+  display: grid;
+  gap: 0.2rem;
+}
+
+.home-rank-rewards-banner li {
+  color: rgba(227, 215, 190, 0.92);
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.88rem;
+}
+
+.home-rank-line {
+  margin: 0 0 0.46rem;
+  color: rgba(214, 233, 252, 0.9);
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.86rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
 .home-hero {
   margin-top: 0.7rem;
   display: grid;
@@ -2608,17 +2654,19 @@ button.triad-card {
   object-position: center;
   border-radius: inherit;
   filter:
-    drop-shadow(0 0 7px rgba(168, 228, 255, 0.5))
-    drop-shadow(0 0 14px rgba(86, 165, 222, 0.32))
-    drop-shadow(0 4px 8px rgba(4, 11, 17, 0.48));
+    drop-shadow(0 0 12px rgba(186, 238, 255, 0.82))
+    drop-shadow(0 0 26px rgba(104, 193, 255, 0.68))
+    drop-shadow(0 0 42px rgba(62, 148, 230, 0.5))
+    drop-shadow(0 8px 12px rgba(4, 11, 17, 0.58));
 }
 
 .triad-card--hand-player .triad-card__art-image,
 .triad-card--hand-cpu .triad-card__art-image {
   filter:
-    drop-shadow(0 0 6px rgba(255, 229, 173, 0.52))
-    drop-shadow(0 0 12px rgba(255, 204, 125, 0.3))
-    drop-shadow(0 4px 8px rgba(5, 12, 19, 0.52));
+    drop-shadow(0 0 10px rgba(255, 234, 188, 0.76))
+    drop-shadow(0 0 22px rgba(255, 198, 112, 0.58))
+    drop-shadow(0 0 34px rgba(218, 138, 61, 0.34))
+    drop-shadow(0 8px 12px rgba(5, 12, 19, 0.6));
 }
 
 .triad-card--hand-player .triad-card__art,
@@ -3595,6 +3643,14 @@ button.triad-card {
     justify-self: end;
   }
 
+  .home-rank-rewards-banner {
+    flex-direction: column;
+  }
+
+  .home-rank-rewards-banner .button {
+    width: 100%;
+  }
+
   .home-metrics-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -3696,6 +3752,14 @@ button.triad-card {
 
   .home-panel .lead {
     font-size: 1rem;
+  }
+
+  .home-rank-line {
+    font-size: 0.78rem;
+  }
+
+  .home-rank-rewards-banner ul {
+    padding-left: 0.86rem;
   }
 
   .home-status-bar {

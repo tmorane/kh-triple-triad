@@ -445,7 +445,7 @@ function isPlayerProfileV4WithoutPacksLegacy(value: unknown): value is PlayerPro
     return false
   }
 
-  const candidate = value as Partial<PlayerProfileV4WithoutPacksLegacy>
+  const candidate = value as Partial<PlayerProfileV4WithoutPacksLegacy> & { packInventoryByRarity?: unknown }
 
   return (
     candidate.version === 4 &&
@@ -505,6 +505,31 @@ function isPlayerProfileV2Legacy(value: unknown): value is PlayerProfileV2Legacy
     candidate.ownedCardIds.every((card) => typeof card === 'string') &&
     isDeckSlots(candidate.deckSlots) &&
     isDeckSlotId(candidate.selectedDeckSlotId) &&
+    typeof candidate.stats?.played === 'number' &&
+    typeof candidate.stats?.won === 'number' &&
+    typeof candidate.stats?.streak === 'number' &&
+    typeof candidate.stats?.bestStreak === 'number' &&
+    isLegacyAchievementUnlocks(candidate.achievements) &&
+    candidate.settings?.audioEnabled === false
+  )
+}
+
+function isPlayerProfileV1Legacy(value: unknown): value is PlayerProfileV1Legacy {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+
+  const candidate = value as Partial<PlayerProfileV1Legacy>
+
+  return (
+    candidate.version === 1 &&
+    typeof candidate.gold === 'number' &&
+    Array.isArray(candidate.ownedCardIds) &&
+    candidate.ownedCardIds.every((card) => typeof card === 'string') &&
+    Array.isArray(candidate.activeDeck) &&
+    candidate.activeDeck.every((card) => typeof card === 'string') &&
+    typeof candidate.lastRules?.same === 'boolean' &&
+    typeof candidate.lastRules?.plus === 'boolean' &&
     typeof candidate.stats?.played === 'number' &&
     typeof candidate.stats?.won === 'number' &&
     typeof candidate.stats?.streak === 'number' &&

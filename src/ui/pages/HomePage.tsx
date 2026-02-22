@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { useGame } from '../../app/useGame'
 import { cardPool } from '../../domain/cards/cardPool'
 import { achievementCatalog } from '../../domain/progression/achievements'
+import { computeRankState, type RankRewardGrant } from '../../domain/progression/ranks'
 
 const GOLD_MILESTONES = [150, 200, 300, 450, 600, 800, 1000]
 const numberFormat = new Intl.NumberFormat('en-US')
@@ -20,22 +21,6 @@ function clampPercent(value: number): number {
   return Math.max(0, Math.min(100, value))
 }
 
-function getProfileTitle(played: number, winRatePercent: number): string {
-  if (played < 3) {
-    return 'Rookie Duelist'
-  }
-  if (winRatePercent >= 70) {
-    return 'Master Tactician'
-  }
-  if (winRatePercent >= 55) {
-    return 'Seasoned Strategist'
-  }
-  if (winRatePercent >= 40) {
-    return 'Rising Challenger'
-  }
-  return 'Field Learner'
-}
-
 function getInitials(deckName: string): string {
   const letters = deckName
     .split(/\s+/)
@@ -47,8 +32,20 @@ function getInitials(deckName: string): string {
   return letters || 'TT'
 }
 
+function formatRewardLine(grant: RankRewardGrant): string {
+  const packRewards = Object.entries(grant.reward.packs)
+    .filter(([, count]) => count && count > 0)
+    .map(([rarity, count]) => `${count} ${rarity} pack${count === 1 ? '' : 's'}`)
+
+  if (packRewards.length === 0) {
+    return `${grant.rankName}: +${grant.reward.gold} gold`
+  }
+
+  return `${grant.rankName}: +${grant.reward.gold} gold + ${packRewards.join(', ')}`
+}
+
 export function HomePage() {
-  const { profile, resetProfile } = useGame()
+  const { profile, resetProfile, recentRankRewards, clearRecentRankRewards } = useGame()
   const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false)
 
   const played = profile.stats.played
@@ -56,7 +53,13 @@ export function HomePage() {
   const losses = Math.max(played - wins, 0)
   const winRatePercent = played > 0 ? Math.round((wins / played) * 100) : 0
   const winRateLabel = played > 0 ? `${winRatePercent}%` : '---'
-  const profileTitle = getProfileTitle(played, winRatePercent)
+
+  const rankState = computeRankState(profile)
+  const rankProgressPercent = clampPercent(Math.round(rankState.progressToNext * 100))
+  const rankProgressLabel = rankState.nextRank
+    ? `${rankProgressPercent}% to ${rankState.nextRank.id} ${rankState.nextRank.name}`
+    : 'Maximum rank reached'
+
   const selectedDeck = profile.deckSlots.find((slot) => slot.id === profile.selectedDeckSlotId) ?? profile.deckSlots[0]
   const activeDeckCount = selectedDeck.cards.length
   const ownedCards = profile.ownedCardIds.length
@@ -64,9 +67,19 @@ export function HomePage() {
   const unlockedAchievements = profile.achievements.length
   const totalAchievements = achievementCatalog.length
   const nextGoldTarget = GOLD_MILESTONES.find((milestone) => profile.gold < milestone) ?? null
-  const panelStyle = { '--home-win-rate': `${winRatePercent}%` } as CSSProperties
+  const panelStyle = {
+    '--home-win-rate': `${winRatePercent}%`,
+    '--home-rank-progress': `${rankProgressPercent}%`,
+  } as CSSProperties
 
   const metrics: ProfileMetric[] = [
+    {
+      icon: rankState.currentRank.id,
+      label: 'Current Rank',
+      value: rankState.currentRank.name,
+      sub: rankProgressLabel,
+      progress: rankProgressPercent,
+    },
     {
       icon: 'G',
       label: 'Gold Reserve',
@@ -115,6 +128,27 @@ export function HomePage() {
       <div className="home-panel__glow" aria-hidden="true" />
       <p className="home-eyebrow">Player Profile</p>
 
+      {recentRankRewards.length > 0 ? (
+        <section className="home-rank-rewards-banner" data-testid="home-rank-rewards-banner" aria-live="polite">
+          <div>
+            <p className="home-rank-rewards-title">Rank rewards earned</p>
+            <ul>
+              {recentRankRewards.map((grant) => (
+                <li key={grant.rankId}>{formatRewardLine(grant)}</li>
+              ))}
+            </ul>
+          </div>
+          <button
+            type="button"
+            className="button"
+            data-testid="home-rank-rewards-dismiss"
+            onClick={clearRecentRankRewards}
+          >
+            Dismiss
+          </button>
+        </section>
+      ) : null}
+
       <div className="home-hero">
         <div className="home-identity">
           <div className="home-avatar" aria-hidden="true">
@@ -123,7 +157,10 @@ export function HomePage() {
 
           <div className="home-identity-copy">
             <h1>KH Triple Triad</h1>
-            <p className="lead">{profileTitle}</p>
+            <p className="lead">{rankState.currentRank.name}</p>
+            <p className="home-rank-line">
+              {rankState.currentRank.id} rank • score {numberFormat.format(rankState.score)}
+            </p>
 
             <div className="home-status-bar">
               <span>Current Hub</span>

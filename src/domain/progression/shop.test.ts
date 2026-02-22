@@ -18,6 +18,7 @@ function cloneProfile(profile: PlayerProfile): PlayerProfile {
     })) as PlayerProfile['deckSlots'],
     stats: { ...profile.stats },
     achievements: [...profile.achievements],
+    rankRewardsClaimed: [...profile.rankRewardsClaimed],
     settings: { ...profile.settings },
   }
 }

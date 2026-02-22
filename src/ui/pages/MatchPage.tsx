@@ -6,10 +6,23 @@ import { selectCpuMove } from '../../domain/match/ai'
 import { applyMove, listLegalMoves, resolveMatchResult } from '../../domain/match/engine'
 import { getAchievementDefinition } from '../../domain/progression/achievements'
 import { applyMatchRewards } from '../../domain/progression/rewards'
+import { applyRankRewards, type RankRewardGrant } from '../../domain/progression/ranks'
 import type { CardId } from '../../domain/types'
 import { PixiBoard } from '../components/PixiBoard'
 import { RuleBadges } from '../components/RuleBadges'
 import { TriadCard } from '../components/TriadCard'
+
+function formatRankReward(grant: RankRewardGrant): string {
+  const packRewards = Object.entries(grant.reward.packs)
+    .filter(([, count]) => count && count > 0)
+    .map(([rarity, count]) => `${count} ${rarity} pack${count === 1 ? '' : 's'}`)
+
+  if (packRewards.length === 0) {
+    return `${grant.rankName}: +${grant.reward.gold} gold`
+  }
+
+  return `${grant.rankName}: +${grant.reward.gold} gold + ${packRewards.join(', ')}`
+}
 
 export function MatchPage() {
   const navigate = useNavigate()
@@ -59,10 +72,14 @@ export function MatchPage() {
 
     const result = resolveMatchResult(state)
     const progression = applyMatchRewards(profile, result, currentMatch.cpuDeck, currentMatch.seed + state.turns)
+    const rankRewardPreview = applyRankRewards(progression.profile)
 
     return {
       result,
-      rewards: progression.rewards,
+      rewards: {
+        ...progression.rewards,
+        rankRewards: rankRewardPreview.granted,
+      },
       newlyOwnedCards: progression.newlyOwnedCards,
     }
   }, [currentMatch, profile, state])
@@ -130,9 +147,7 @@ export function MatchPage() {
           <div className="hand-row hand-row--cpu" aria-label="CPU hand">
             {state.hands.cpu.map((cardId) => {
               const card = getCard(cardId)
-              return (
-                <TriadCard key={cardId} card={card} context="hand-cpu" />
-              )
+              return <TriadCard key={cardId} card={card} context="hand-cpu" />
             })}
           </div>
         </aside>
@@ -231,6 +246,19 @@ export function MatchPage() {
                 </ul>
               ) : (
                 <p>No new achievements.</p>
+              )}
+            </div>
+
+            <div className="result-block">
+              <h2>Rank Rewards</h2>
+              {finishPreview.rewards.rankRewards.length > 0 ? (
+                <ul>
+                  {finishPreview.rewards.rankRewards.map((grant) => (
+                    <li key={grant.rankId}>{formatRankReward(grant)}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p>No rank rewards earned this match.</p>
               )}
             </div>
 
