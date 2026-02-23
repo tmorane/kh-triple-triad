@@ -55,12 +55,10 @@ export function TriadCard({
   const isRevealNew = showNew && owned && newBadgeVariant === 'reveal'
   const artCandidates = useMemo(() => (locked ? [] : getCardArtCandidates(card.name)), [card.name, locked])
   const [artCandidateIndex, setArtCandidateIndex] = useState(0)
-  const [artLoaded, setArtLoaded] = useState(false)
   const [artUnavailable, setArtUnavailable] = useState(false)
 
   useEffect(() => {
     setArtCandidateIndex(0)
-    setArtLoaded(false)
     setArtUnavailable(false)
   }, [card.name, locked])
 
@@ -85,12 +83,7 @@ export function TriadCard({
   // Hide letter sigils for owned cards now that artwork is expected; keep fallback only for locked cards.
   const showSigil = locked
 
-  function handleArtLoad() {
-    setArtLoaded(true)
-  }
-
   function handleArtError() {
-    setArtLoaded(false)
     if (artCandidateIndex >= artCandidates.length - 1) {
       setArtUnavailable(true)
       return
@@ -120,7 +113,6 @@ export function TriadCard({
                 loading="lazy"
                 decoding="async"
                 draggable={false}
-                onLoad={handleArtLoad}
                 onError={handleArtError}
               />
             ) : null}
