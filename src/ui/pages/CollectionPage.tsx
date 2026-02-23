@@ -9,6 +9,7 @@ import { TriadCard } from '../components/TriadCard'
 type CollectionDiscoveryFilter = 'all' | 'owned' | 'locked'
 
 const rarityFilterOrder: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary']
+const collectionFiltersStorageKey = 'kh-triple-triad.collection-filters.v1'
 
 const discoveryFilterOptions: Array<{ value: CollectionDiscoveryFilter; label: string }> = [
   { value: 'all', label: 'All' },
@@ -24,6 +25,63 @@ const raritySectionLabels: Record<Rarity, string> = {
   legendary: 'Legendaires',
 }
 
+type PersistedCollectionFilters = {
+  selectedRarities: Rarity[]
+  discoveryFilter: CollectionDiscoveryFilter
+}
+
+function isCollectionDiscoveryFilter(value: unknown): value is CollectionDiscoveryFilter {
+  return value === 'all' || value === 'owned' || value === 'locked'
+}
+
+function isRarity(value: unknown): value is Rarity {
+  return typeof value === 'string' && rarityFilterOrder.includes(value as Rarity)
+}
+
+function readPersistedCollectionFilters(availableRarities: Rarity[]): PersistedCollectionFilters | null {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  try {
+    const rawValue = window.localStorage.getItem(collectionFiltersStorageKey)
+    if (!rawValue) {
+      return null
+    }
+
+    const parsedValue: unknown = JSON.parse(rawValue)
+    if (!parsedValue || typeof parsedValue !== 'object') {
+      return null
+    }
+
+    const discoveryCandidate = (parsedValue as { discoveryFilter?: unknown }).discoveryFilter
+    const rarityCandidates = (parsedValue as { selectedRarities?: unknown }).selectedRarities
+    const selectedRaritySet = new Set(
+      Array.isArray(rarityCandidates) ? rarityCandidates.filter((value) => isRarity(value)) : [],
+    )
+    const selectedRarities = availableRarities.filter((rarity) => selectedRaritySet.has(rarity))
+
+    return {
+      discoveryFilter: isCollectionDiscoveryFilter(discoveryCandidate) ? discoveryCandidate : 'all',
+      selectedRarities: selectedRarities.length > 0 ? selectedRarities : availableRarities,
+    }
+  } catch {
+    return null
+  }
+}
+
+function persistCollectionFilters(filters: PersistedCollectionFilters) {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  try {
+    window.localStorage.setItem(collectionFiltersStorageKey, JSON.stringify(filters))
+  } catch {
+    // Ignore storage errors (private mode, quota exceeded, etc.)
+  }
+}
+
 function formatRarityLabel(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1)
 }
@@ -36,11 +94,12 @@ export function CollectionPage() {
     () => rarityFilterOrder.filter((rarity) => cardPool.some((card) => card.rarity === rarity)),
     [],
   )
+  const [initialFilters] = useState<PersistedCollectionFilters | null>(() => readPersistedCollectionFilters(availableRarities))
   const totalCopies = Object.values(profile.cardCopiesById).reduce((sum, copies) => sum + copies, 0)
   const defaultSelectedCardId = cardPool.find((card) => owned.has(card.id))?.id ?? cardPool[0]?.id ?? 'c01'
   const [selectedCardId, setSelectedCardId] = useState<CardId>(defaultSelectedCardId)
-  const [selectedRarities, setSelectedRarities] = useState<Rarity[]>(availableRarities)
-  const [discoveryFilter, setDiscoveryFilter] = useState<CollectionDiscoveryFilter>('all')
+  const [selectedRarities, setSelectedRarities] = useState<Rarity[]>(initialFilters?.selectedRarities ?? availableRarities)
+  const [discoveryFilter, setDiscoveryFilter] = useState<CollectionDiscoveryFilter>(initialFilters?.discoveryFilter ?? 'all')
 
   const filteredCards = useMemo(
     () =>
@@ -102,9 +161,17 @@ export function CollectionPage() {
     }
 
     if (!filteredCards.some((card) => card.id === selectedCardId)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSelectedCardId(filteredCards[0].id)
     }
   }, [filteredCards, selectedCardId])
+
+  useEffect(() => {
+    persistCollectionFilters({
+      selectedRarities,
+      discoveryFilter,
+    })
+  }, [discoveryFilter, selectedRarities])
 
   const selectedCard = filteredCards.find((card) => card.id === selectedCardId) ?? filteredCards[0] ?? null
   const selectedOwned = selectedCard ? owned.has(selectedCard.id) : false

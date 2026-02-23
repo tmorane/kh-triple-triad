@@ -60,11 +60,14 @@ export interface RuleSet {
   plus: boolean
 }
 
+export type MatchQueue = 'normal' | 'ranked'
+
 export interface MatchConfig {
   playerDeck: CardId[]
   cpuDeck: CardId[]
   rules: RuleSet
   seed: number
+  startingTurn?: Actor
 }
 
 export type Actor = 'player' | 'cpu'
@@ -82,8 +85,6 @@ export interface MatchResult {
   turns: number
   rules: RuleSet
 }
-
-export type RankId = 'R1' | 'R2' | 'R3' | 'R4' | 'R5' | 'R6' | 'R7' | 'R8'
 
 export type AchievementId =
   | 'play_1'
@@ -139,8 +140,38 @@ export interface DeckSlot {
   rules: { same: boolean; plus: boolean }
 }
 
+export type RankedTierId =
+  | 'iron'
+  | 'bronze'
+  | 'silver'
+  | 'gold'
+  | 'platinum'
+  | 'emerald'
+  | 'diamond'
+  | 'master'
+  | 'grandmaster'
+  | 'challenger'
+
+export type RankedDivision = 'IV' | 'III' | 'II' | 'I'
+
+export interface RankedState {
+  tier: RankedTierId
+  division: RankedDivision | null
+  lp: number
+  wins: number
+  losses: number
+  draws: number
+  matchesPlayed: number
+  resultStreak: {
+    type: 'none' | 'win' | 'loss'
+    count: number
+  }
+  demotionShieldLosses: number
+}
+
 export interface PlayerProfile {
-  version: 5
+  version: 6
+  playerName: string
   gold: number
   ownedCardIds: CardId[]
   cardCopiesById: Record<CardId, number>
@@ -149,8 +180,8 @@ export interface PlayerProfile {
   selectedDeckSlotId: DeckSlotId
   stats: { played: number; won: number; streak: number; bestStreak: number }
   achievements: AchievementUnlock[]
-  rankRewardsClaimed: RankId[]
+  ranked: RankedState
   settings: { audioEnabled: false }
 }
 
-export type PlayerProfileV5 = PlayerProfile
+export type PlayerProfileV6 = PlayerProfile

@@ -5,17 +5,34 @@ import type {
   DeckSlot,
   DeckSlotId,
   PlayerProfile,
-  RankId,
+  RankedDivision,
+  RankedTierId,
   Rarity,
 } from '../types'
 import { evaluateAchievements, isAchievementId } from './achievements'
-import { applyRankRewards } from './ranks'
+import { createInitialRankedState } from './ranked'
 
 export const PROFILE_STORAGE_KEY = 'kh-triple-triad-v1-profile'
+const DEFAULT_PLAYER_NAME = 'Joueur'
+const MAX_PLAYER_NAME_LENGTH = 20
 
 const deckSlotIds: [DeckSlotId, DeckSlotId, DeckSlotId] = ['slot-1', 'slot-2', 'slot-3']
 const packInventoryRarities: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary']
-const rankIds: RankId[] = ['R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7', 'R8']
+const legacyRankIds = new Set(['R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7', 'R8'])
+const rankedTierIds = new Set<RankedTierId>([
+  'iron',
+  'bronze',
+  'silver',
+  'gold',
+  'platinum',
+  'emerald',
+  'diamond',
+  'master',
+  'grandmaster',
+  'challenger',
+])
+const rankedDivisions = new Set<RankedDivision>(['IV', 'III', 'II', 'I'])
+const tiersWithDivisions = new Set<RankedTierId>(['iron', 'bronze', 'silver', 'gold', 'platinum', 'emerald', 'diamond'])
 
 interface LegacyAchievementUnlock {
   id: string
@@ -81,6 +98,22 @@ interface PlayerProfileV4WithoutPacksLegacy {
   settings: { audioEnabled: false }
 }
 
+interface PlayerProfileV5Legacy {
+  version: 5
+  gold: number
+  ownedCardIds: CardId[]
+  cardCopiesById: Record<CardId, number>
+  packInventoryByRarity: Record<Rarity, number>
+  deckSlots: [DeckSlot, DeckSlot, DeckSlot]
+  selectedDeckSlotId: DeckSlotId
+  stats: { played: number; won: number; streak: number; bestStreak: number }
+  achievements: AchievementUnlock[]
+  rankRewardsClaimed: string[]
+  settings: { audioEnabled: false }
+}
+
+type PlayerProfileV6WithoutPlayerNameLegacy = Omit<PlayerProfile, 'playerName'>
+
 const legacyCollectionAchievementIds = new Set([
   'owned_11',
   'owned_12',
@@ -94,6 +127,15 @@ const legacyCollectionAchievementIds = new Set([
   'owned_20',
 ])
 
+export function isPlayerNameValid(name: string): { valid: boolean; reason?: string } {
+  const normalized = name.trim()
+  if (normalized.length < 1 || normalized.length > MAX_PLAYER_NAME_LENGTH) {
+    return { valid: false, reason: `Player name must be between 1 and ${MAX_PLAYER_NAME_LENGTH} characters.` }
+  }
+
+  return { valid: true }
+}
+
 export function createDefaultProfile(): PlayerProfile {
   return createProfileFromStarterCards(starterOwnedCardIds, starterDeck)
 }
@@ -105,8 +147,10 @@ export function createResetProfile(): PlayerProfile {
 
 function createProfileFromStarterCards(initialOwnedCardIds: CardId[], initialDeck: CardId[]): PlayerProfile {
   const ownedCardIds = [...initialOwnedCardIds]
+
   return {
-    version: 5,
+    version: 6,
+    playerName: DEFAULT_PLAYER_NAME,
     gold: 100,
     ownedCardIds,
     cardCopiesById: createCardCopiesById(ownedCardIds),
@@ -124,7 +168,7 @@ function createProfileFromStarterCards(initialOwnedCardIds: CardId[], initialDec
       bestStreak: 0,
     },
     achievements: [],
-    rankRewardsClaimed: [],
+    ranked: createInitialRankedState(),
     settings: {
       audioEnabled: false,
     },
@@ -150,32 +194,44 @@ export function loadProfile(): PlayerProfile {
       return finalized.profile
     }
 
+    if (isPlayerProfileV6WithoutPlayerNameLegacy(parsed)) {
+      const migrated = finalizeLoadedProfile(migrateProfileV6WithoutPlayerNameToV6(parsed)).profile
+      saveProfile(migrated)
+      return migrated
+    }
+
+    if (isPlayerProfileV5Legacy(parsed)) {
+      const migrated = finalizeLoadedProfile(migrateProfileV5ToV6(parsed)).profile
+      saveProfile(migrated)
+      return migrated
+    }
+
     if (isPlayerProfileV4Legacy(parsed)) {
-      const migrated = finalizeLoadedProfile(migrateProfileV4ToV5(parsed)).profile
+      const migrated = finalizeLoadedProfile(migrateProfileV5ToV6(migrateProfileV4ToV5(parsed))).profile
       saveProfile(migrated)
       return migrated
     }
 
     if (isPlayerProfileV4WithoutPacksLegacy(parsed)) {
-      const migrated = finalizeLoadedProfile(migrateProfileV4WithoutPacksToV5(parsed)).profile
+      const migrated = finalizeLoadedProfile(migrateProfileV5ToV6(migrateProfileV4WithoutPacksToV5(parsed))).profile
       saveProfile(migrated)
       return migrated
     }
 
     if (isPlayerProfileV3Legacy(parsed)) {
-      const migrated = finalizeLoadedProfile(migrateProfileV3ToV5(parsed)).profile
+      const migrated = finalizeLoadedProfile(migrateProfileV5ToV6(migrateProfileV3ToV5(parsed))).profile
       saveProfile(migrated)
       return migrated
     }
 
     if (isPlayerProfileV2Legacy(parsed)) {
-      const migrated = finalizeLoadedProfile(migrateProfileV2ToV5(parsed)).profile
+      const migrated = finalizeLoadedProfile(migrateProfileV5ToV6(migrateProfileV2ToV5(parsed))).profile
       saveProfile(migrated)
       return migrated
     }
 
     if (isPlayerProfileV1Legacy(parsed)) {
-      const migrated = finalizeLoadedProfile(migrateProfileV1ToV5(parsed)).profile
+      const migrated = finalizeLoadedProfile(migrateProfileV5ToV6(migrateProfileV1ToV5(parsed))).profile
       saveProfile(migrated)
       return migrated
     }
@@ -211,18 +267,22 @@ function createDeckSlot(
 
 function normalizeDeckCards(cards: CardId[]): CardId[] {
   const uniqueCards: CardId[] = []
+
   for (const cardId of cards) {
     if (typeof cardId !== 'string') {
       continue
     }
+
     if (uniqueCards.includes(cardId)) {
       continue
     }
+
     uniqueCards.push(cardId)
     if (uniqueCards.length >= 5) {
       break
     }
   }
+
   return uniqueCards
 }
 
@@ -248,6 +308,7 @@ function migrateProfileV1ToV2(profile: PlayerProfileV1Legacy): PlayerProfileV2Le
 
 function migrateProfileV2ToV3(profile: PlayerProfileV2Legacy): PlayerProfileV3Legacy {
   const ownedCardIds = [...profile.ownedCardIds]
+
   return {
     version: 3,
     gold: profile.gold,
@@ -263,16 +324,16 @@ function migrateProfileV2ToV3(profile: PlayerProfileV2Legacy): PlayerProfileV3Le
   }
 }
 
-function migrateProfileV1ToV5(profile: PlayerProfileV1Legacy): PlayerProfile {
+function migrateProfileV1ToV5(profile: PlayerProfileV1Legacy): PlayerProfileV5Legacy {
   return migrateProfileV2ToV5(migrateProfileV1ToV2(profile))
 }
 
-function migrateProfileV2ToV5(profile: PlayerProfileV2Legacy): PlayerProfile {
+function migrateProfileV2ToV5(profile: PlayerProfileV2Legacy): PlayerProfileV5Legacy {
   return migrateProfileV3ToV5(migrateProfileV2ToV3(profile))
 }
 
-function migrateProfileV3ToV5(profile: PlayerProfileV3Legacy): PlayerProfile {
-  const baseProfile: PlayerProfile = {
+function migrateProfileV3ToV5(profile: PlayerProfileV3Legacy): PlayerProfileV5Legacy {
+  const baseProfile: PlayerProfileV5Legacy = {
     version: 5,
     gold: profile.gold,
     ownedCardIds: [...profile.ownedCardIds],
@@ -280,7 +341,7 @@ function migrateProfileV3ToV5(profile: PlayerProfileV3Legacy): PlayerProfile {
     packInventoryByRarity: createEmptyPackInventoryByRarity(),
     deckSlots: profile.deckSlots.map((slot) =>
       createDeckSlot(slot.id, slot.name, slot.cards, { same: slot.rules.same, plus: slot.rules.plus }),
-    ) as PlayerProfile['deckSlots'],
+    ) as [DeckSlot, DeckSlot, DeckSlot],
     selectedDeckSlotId: profile.selectedDeckSlotId,
     stats: { ...profile.stats },
     achievements: [],
@@ -294,7 +355,7 @@ function migrateProfileV3ToV5(profile: PlayerProfileV3Legacy): PlayerProfile {
   }
 }
 
-function migrateProfileV4ToV5(profile: PlayerProfileV4Legacy): PlayerProfile {
+function migrateProfileV4ToV5(profile: PlayerProfileV4Legacy): PlayerProfileV5Legacy {
   return {
     version: 5,
     gold: profile.gold,
@@ -303,7 +364,7 @@ function migrateProfileV4ToV5(profile: PlayerProfileV4Legacy): PlayerProfile {
     packInventoryByRarity: { ...profile.packInventoryByRarity },
     deckSlots: profile.deckSlots.map((slot) =>
       createDeckSlot(slot.id, slot.name, slot.cards, { same: slot.rules.same, plus: slot.rules.plus }),
-    ) as PlayerProfile['deckSlots'],
+    ) as [DeckSlot, DeckSlot, DeckSlot],
     selectedDeckSlotId: profile.selectedDeckSlotId,
     stats: { ...profile.stats },
     achievements: profile.achievements.filter((entry) => isAchievementId(entry.id)) as AchievementUnlock[],
@@ -312,7 +373,7 @@ function migrateProfileV4ToV5(profile: PlayerProfileV4Legacy): PlayerProfile {
   }
 }
 
-function migrateProfileV4WithoutPacksToV5(profile: PlayerProfileV4WithoutPacksLegacy): PlayerProfile {
+function migrateProfileV4WithoutPacksToV5(profile: PlayerProfileV4WithoutPacksLegacy): PlayerProfileV5Legacy {
   return {
     version: 5,
     gold: profile.gold,
@@ -321,7 +382,7 @@ function migrateProfileV4WithoutPacksToV5(profile: PlayerProfileV4WithoutPacksLe
     packInventoryByRarity: createEmptyPackInventoryByRarity(),
     deckSlots: profile.deckSlots.map((slot) =>
       createDeckSlot(slot.id, slot.name, slot.cards, { same: slot.rules.same, plus: slot.rules.plus }),
-    ) as PlayerProfile['deckSlots'],
+    ) as [DeckSlot, DeckSlot, DeckSlot],
     selectedDeckSlotId: profile.selectedDeckSlotId,
     stats: { ...profile.stats },
     achievements: profile.achievements.filter((entry) => isAchievementId(entry.id)) as AchievementUnlock[],
@@ -330,13 +391,61 @@ function migrateProfileV4WithoutPacksToV5(profile: PlayerProfileV4WithoutPacksLe
   }
 }
 
+function migrateProfileV5ToV6(profile: PlayerProfileV5Legacy): PlayerProfile {
+  return {
+    version: 6,
+    playerName: DEFAULT_PLAYER_NAME,
+    gold: profile.gold,
+    ownedCardIds: [...profile.ownedCardIds],
+    cardCopiesById: { ...profile.cardCopiesById },
+    packInventoryByRarity: { ...profile.packInventoryByRarity },
+    deckSlots: profile.deckSlots.map((slot) =>
+      createDeckSlot(slot.id, slot.name, slot.cards, { same: slot.rules.same, plus: slot.rules.plus }),
+    ) as [DeckSlot, DeckSlot, DeckSlot],
+    selectedDeckSlotId: profile.selectedDeckSlotId,
+    stats: { ...profile.stats },
+    achievements: profile.achievements.filter((entry) => isAchievementId(entry.id)) as AchievementUnlock[],
+    ranked: createInitialRankedState(),
+    settings: { ...profile.settings },
+  }
+}
+
+function migrateProfileV6WithoutPlayerNameToV6(profile: PlayerProfileV6WithoutPlayerNameLegacy): PlayerProfile {
+  return {
+    ...profile,
+    playerName: DEFAULT_PLAYER_NAME,
+  }
+}
+
 function finalizeLoadedProfile(profile: PlayerProfile): { profile: PlayerProfile; changed: boolean } {
-  const synced = syncAchievements(profile)
-  const rewardsApplied = applyRankRewards(synced)
+  const synced = syncAchievements(syncPlayerName(profile))
 
   return {
-    profile: rewardsApplied.profile,
-    changed: synced !== profile || rewardsApplied.granted.length > 0,
+    profile: synced,
+    changed: synced !== profile,
+  }
+}
+
+function syncPlayerName(profile: PlayerProfile): PlayerProfile {
+  const normalized = profile.playerName.trim()
+  if (!isPlayerNameValid(normalized).valid) {
+    if (profile.playerName === DEFAULT_PLAYER_NAME) {
+      return profile
+    }
+
+    return {
+      ...profile,
+      playerName: DEFAULT_PLAYER_NAME,
+    }
+  }
+
+  if (normalized === profile.playerName) {
+    return profile
+  }
+
+  return {
+    ...profile,
+    playerName: normalized,
   }
 }
 
@@ -352,15 +461,15 @@ function syncAchievements(profile: PlayerProfile): PlayerProfile {
   }
 }
 
-function migrateAchievementsToV4(profile: PlayerProfile, legacyAchievements: LegacyAchievementUnlock[]): AchievementUnlock[] {
+function migrateAchievementsToV4(profile: PlayerProfileV5Legacy, legacyAchievements: LegacyAchievementUnlock[]): AchievementUnlock[] {
   const preserved = legacyAchievements.filter(
     (entry) => isAchievementId(entry.id) && !legacyCollectionAchievementIds.has(entry.id),
   ) as AchievementUnlock[]
 
-  const withPreservedOnly: PlayerProfile = {
+  const withPreservedOnly = migrateProfileV5ToV6({
     ...profile,
     achievements: preserved,
-  }
+  })
 
   const collectionUnlocks = evaluateAchievements(withPreservedOnly)
   return [...preserved, ...collectionUnlocks]
@@ -368,12 +477,15 @@ function migrateAchievementsToV4(profile: PlayerProfile, legacyAchievements: Leg
 
 function createCardCopiesById(ownedCardIds: CardId[]): Record<CardId, number> {
   const cardCopiesById: Record<CardId, number> = {}
+
   for (const cardId of ownedCardIds) {
     if (typeof cardId !== 'string') {
       continue
     }
+
     cardCopiesById[cardId] = 1
   }
+
   return cardCopiesById
 }
 
@@ -395,6 +507,63 @@ function isPlayerProfile(value: unknown): value is PlayerProfile {
   const candidate = value as Partial<PlayerProfile>
 
   return (
+    candidate.version === 6 &&
+    typeof candidate.playerName === 'string' &&
+    isPlayerNameValid(candidate.playerName).valid &&
+    typeof candidate.gold === 'number' &&
+    Array.isArray(candidate.ownedCardIds) &&
+    candidate.ownedCardIds.every((card) => typeof card === 'string') &&
+    isCardCopiesById(candidate.cardCopiesById) &&
+    isPackInventoryByRarity(candidate.packInventoryByRarity) &&
+    doesOwnershipMatchCopies(candidate.ownedCardIds, candidate.cardCopiesById) &&
+    isDeckSlots(candidate.deckSlots) &&
+    isDeckSlotId(candidate.selectedDeckSlotId) &&
+    typeof candidate.stats?.played === 'number' &&
+    typeof candidate.stats?.won === 'number' &&
+    typeof candidate.stats?.streak === 'number' &&
+    typeof candidate.stats?.bestStreak === 'number' &&
+    isAchievementUnlocks(candidate.achievements) &&
+    isRankedState(candidate.ranked) &&
+    candidate.settings?.audioEnabled === false
+  )
+}
+
+function isPlayerProfileV6WithoutPlayerNameLegacy(value: unknown): value is PlayerProfileV6WithoutPlayerNameLegacy {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+
+  const candidate = value as Partial<PlayerProfileV6WithoutPlayerNameLegacy> & { playerName?: unknown }
+
+  return (
+    candidate.version === 6 &&
+    candidate.playerName === undefined &&
+    typeof candidate.gold === 'number' &&
+    Array.isArray(candidate.ownedCardIds) &&
+    candidate.ownedCardIds.every((card) => typeof card === 'string') &&
+    isCardCopiesById(candidate.cardCopiesById) &&
+    isPackInventoryByRarity(candidate.packInventoryByRarity) &&
+    doesOwnershipMatchCopies(candidate.ownedCardIds, candidate.cardCopiesById) &&
+    isDeckSlots(candidate.deckSlots) &&
+    isDeckSlotId(candidate.selectedDeckSlotId) &&
+    typeof candidate.stats?.played === 'number' &&
+    typeof candidate.stats?.won === 'number' &&
+    typeof candidate.stats?.streak === 'number' &&
+    typeof candidate.stats?.bestStreak === 'number' &&
+    isAchievementUnlocks(candidate.achievements) &&
+    isRankedState(candidate.ranked) &&
+    candidate.settings?.audioEnabled === false
+  )
+}
+
+function isPlayerProfileV5Legacy(value: unknown): value is PlayerProfileV5Legacy {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+
+  const candidate = value as Partial<PlayerProfileV5Legacy>
+
+  return (
     candidate.version === 5 &&
     typeof candidate.gold === 'number' &&
     Array.isArray(candidate.ownedCardIds) &&
@@ -409,7 +578,7 @@ function isPlayerProfile(value: unknown): value is PlayerProfile {
     typeof candidate.stats?.streak === 'number' &&
     typeof candidate.stats?.bestStreak === 'number' &&
     isAchievementUnlocks(candidate.achievements) &&
-    isRankRewardsClaimed(candidate.rankRewardsClaimed) &&
+    isLegacyRankRewardsClaimed(candidate.rankRewardsClaimed) &&
     candidate.settings?.audioEnabled === false
   )
 }
@@ -543,6 +712,7 @@ function isAchievementUnlocks(value: unknown): value is AchievementUnlock[] {
   if (!Array.isArray(value)) {
     return false
   }
+
   return value.every((entry) => isAchievementId(entry.id) && typeof entry.unlockedAt === 'string')
 }
 
@@ -550,10 +720,11 @@ function isLegacyAchievementUnlocks(value: unknown): value is LegacyAchievementU
   if (!Array.isArray(value)) {
     return false
   }
+
   return value.every((entry) => typeof entry.id === 'string' && typeof entry.unlockedAt === 'string')
 }
 
-function isRankRewardsClaimed(value: unknown): value is RankId[] {
+function isLegacyRankRewardsClaimed(value: unknown): value is string[] {
   if (!Array.isArray(value)) {
     return false
   }
@@ -563,7 +734,49 @@ function isRankRewardsClaimed(value: unknown): value is RankId[] {
     return false
   }
 
-  return value.every((rankId) => rankIds.includes(rankId as RankId))
+  return value.every((rankId) => legacyRankIds.has(rankId))
+}
+
+function isRankedState(value: unknown): value is PlayerProfile['ranked'] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false
+  }
+
+  const candidate = value as Partial<PlayerProfile['ranked']>
+
+  if (!candidate.tier || !rankedTierIds.has(candidate.tier as RankedTierId)) {
+    return false
+  }
+
+  const tier = candidate.tier as RankedTierId
+  const expectedDivisionState = tiersWithDivisions.has(tier)
+
+  if (expectedDivisionState) {
+    if (!candidate.division || !rankedDivisions.has(candidate.division as RankedDivision)) {
+      return false
+    }
+  } else if (candidate.division !== null) {
+    return false
+  }
+
+  return (
+    Number.isInteger(candidate.lp) &&
+    Number(candidate.lp) >= 0 &&
+    Number(candidate.lp) <= 99 &&
+    Number.isInteger(candidate.wins) &&
+    Number(candidate.wins) >= 0 &&
+    Number.isInteger(candidate.losses) &&
+    Number(candidate.losses) >= 0 &&
+    Number.isInteger(candidate.draws) &&
+    Number(candidate.draws) >= 0 &&
+    Number.isInteger(candidate.matchesPlayed) &&
+    Number(candidate.matchesPlayed) >= 0 &&
+    (candidate.resultStreak?.type === 'none' || candidate.resultStreak?.type === 'win' || candidate.resultStreak?.type === 'loss') &&
+    Number.isInteger(candidate.resultStreak?.count) &&
+    Number(candidate.resultStreak?.count) >= 0 &&
+    Number.isInteger(candidate.demotionShieldLosses) &&
+    Number(candidate.demotionShieldLosses) >= 0
+  )
 }
 
 function isCardCopiesById(value: unknown): value is Record<CardId, number> {

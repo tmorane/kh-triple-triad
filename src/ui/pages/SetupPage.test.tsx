@@ -86,6 +86,8 @@ describe('SetupPage', () => {
     expect(screen.getByTestId('setup-opponent-level')).toHaveTextContent('L1')
     expect(screen.getByTestId('setup-opponent-score-range')).toHaveTextContent('45-50')
     expect(screen.getByTestId('setup-opponent-bonus')).toHaveTextContent('+0')
+    expect(screen.getByTestId('setup-ranked-note')).toHaveTextContent('Ranked uses Open only')
+    expect(screen.getByTestId('start-ranked-match-button')).toBeInTheDocument()
   })
 
   test('shows five selected cards in preview strip for active deck slot', () => {

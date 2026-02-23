@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import { getCard } from '../cards/cardPool'
 import { createDefaultProfile } from '../progression/profile'
-import { rankTiers } from '../progression/ranks'
 import type { OpponentLevel } from './opponents'
 import {
   buildAutoPlayerDeck,
@@ -11,17 +10,11 @@ import {
   opponentLevelConfigs,
 } from './opponents'
 
-function makeProfileAtRank(rankId: (typeof rankTiers)[number]['id']) {
+function makeProfileAtTier(tierId: ReturnType<typeof createDefaultProfile>['ranked']['tier']) {
   const profile = createDefaultProfile()
-  const tier = rankTiers.find((entry) => entry.id === rankId)
-  if (!tier) {
-    throw new Error(`Unknown rank ${rankId}`)
-  }
-
-  profile.stats.played = Math.floor(tier.minScore / 100)
-  profile.stats.won = 0
-  profile.stats.streak = 0
-  profile.stats.bestStreak = 0
+  profile.ranked.tier = tierId
+  profile.ranked.division =
+    tierId === 'master' || tierId === 'grandmaster' || tierId === 'challenger' ? null : 'IV'
   return profile
 }
 
@@ -31,20 +24,22 @@ function median(values: number[]): number {
 }
 
 describe('opponents', () => {
-  test('maps rank tiers to opponent levels 1..8', () => {
-    const expectedByRank: Array<{ rankId: (typeof rankTiers)[number]['id']; level: OpponentLevel }> = [
-      { rankId: 'R1', level: 1 },
-      { rankId: 'R2', level: 2 },
-      { rankId: 'R3', level: 3 },
-      { rankId: 'R4', level: 4 },
-      { rankId: 'R5', level: 5 },
-      { rankId: 'R6', level: 6 },
-      { rankId: 'R7', level: 7 },
-      { rankId: 'R8', level: 8 },
+  test('maps ranked tiers to opponent levels 1..8', () => {
+    const expectedByTier: Array<{ tierId: ReturnType<typeof createDefaultProfile>['ranked']['tier']; level: OpponentLevel }> = [
+      { tierId: 'iron', level: 1 },
+      { tierId: 'bronze', level: 2 },
+      { tierId: 'silver', level: 3 },
+      { tierId: 'gold', level: 4 },
+      { tierId: 'platinum', level: 5 },
+      { tierId: 'emerald', level: 6 },
+      { tierId: 'diamond', level: 7 },
+      { tierId: 'master', level: 8 },
+      { tierId: 'grandmaster', level: 8 },
+      { tierId: 'challenger', level: 8 },
     ]
 
-    for (const { rankId, level } of expectedByRank) {
-      const profile = makeProfileAtRank(rankId)
+    for (const { tierId, level } of expectedByTier) {
+      const profile = makeProfileAtTier(tierId)
       expect(getOpponentLevelForProfile(profile)).toBe(level)
     }
   })
@@ -66,7 +61,7 @@ describe('opponents', () => {
     const playerDeck = playerProfile.deckSlots[0].cards
 
     for (const config of opponentLevelConfigs) {
-      const profile = makeProfileAtRank(config.rankId)
+      const profile = makeProfileAtTier(config.tierId)
       const opponent = buildCpuOpponent(profile, playerDeck, config.level * 11)
       const allowedRarities = new Set(Object.keys(config.rarityWeights))
 
@@ -77,7 +72,7 @@ describe('opponents', () => {
   })
 
   test('is deterministic for identical inputs and seed', () => {
-    const profile = makeProfileAtRank('R6')
+    const profile = makeProfileAtTier('emerald')
     const playerDeck = ['c41', 'c42', 'c43', 'c44', 'c45']
 
     const a = buildCpuOpponent(profile, playerDeck, 123456)
@@ -92,7 +87,7 @@ describe('opponents', () => {
 
     for (let level = 1 as OpponentLevel; level <= 8; level = (level + 1) as OpponentLevel) {
       const config = opponentLevelConfigs[level - 1]
-      const profile = makeProfileAtRank(config.rankId)
+      const profile = makeProfileAtTier(config.tierId)
       const samples: number[] = []
       for (let seed = 1; seed <= 21; seed += 1) {
         samples.push(buildCpuOpponent(profile, playerDeck, seed).deckScore)

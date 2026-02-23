@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useGame } from '../../app/useGame'
 import { getCard } from '../../domain/cards/cardPool'
@@ -6,27 +6,17 @@ import { selectCpuMove } from '../../domain/match/ai'
 import { applyMove, listLegalMoves, resolveMatchResult } from '../../domain/match/engine'
 import { getAchievementDefinition } from '../../domain/progression/achievements'
 import { applyMatchRewards } from '../../domain/progression/rewards'
-import { applyRankRewards, type RankRewardGrant } from '../../domain/progression/ranks'
-import type { CardId } from '../../domain/types'
+import { applyRankedMatchResult } from '../../domain/progression/ranked'
+import type { Actor, CardId } from '../../domain/types'
+import { playCriticalVictorySound } from '../audio/criticalVictorySound'
 import { PixiBoard } from '../components/PixiBoard'
 import { RuleBadges } from '../components/RuleBadges'
 import { TriadCard } from '../components/TriadCard'
 
-function formatRankReward(grant: RankRewardGrant): string {
-  const packRewards = Object.entries(grant.reward.packs)
-    .filter(([, count]) => count && count > 0)
-    .map(([rarity, count]) => `${count} ${rarity} pack${count === 1 ? '' : 's'}`)
-
-  if (packRewards.length === 0) {
-    return `${grant.rankName}: +${grant.reward.gold} gold`
-  }
-
-  return `${grant.rankName}: +${grant.reward.gold} gold + ${packRewards.join(', ')}`
-}
-
 function formatGoldBonusDetails(rewards: {
   bonusGoldFromDuplicate: number
   bonusGoldFromDifficulty: number
+  bonusGoldFromCriticalVictory: number
   bonusGoldFromAutoDeck: number
 }): string {
   const parts: string[] = []
@@ -36,11 +26,18 @@ function formatGoldBonusDetails(rewards: {
   if (rewards.bonusGoldFromDuplicate > 0) {
     parts.push(`+${rewards.bonusGoldFromDuplicate} duplicate`)
   }
+  if (rewards.bonusGoldFromCriticalVictory > 0) {
+    parts.push(`+${rewards.bonusGoldFromCriticalVictory} critical`)
+  }
   if (rewards.bonusGoldFromAutoDeck > 0) {
     parts.push(`+${rewards.bonusGoldFromAutoDeck} auto deck`)
   }
   return parts.length > 0 ? ` (${parts.join(', ')})` : ''
 }
+
+const STARTER_SPIN_DURATION_MS = 1600
+const STARTER_REVEAL_HOLD_MS = 340
+const STARTER_BASE_TURNS = 6
 
 export function MatchPage() {
   const navigate = useNavigate()
@@ -48,6 +45,10 @@ export function MatchPage() {
   const [selectedCard, setSelectedCard] = useState<CardId | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isFinishing, setIsFinishing] = useState(false)
+  const [starterNeedleAngleDeg, setStarterNeedleAngleDeg] = useState(0)
+  const [starterSpinSettled, setStarterSpinSettled] = useState(false)
+  const [starterRevealComplete, setStarterRevealComplete] = useState(true)
+  const criticalVictorySoundPlayedMatchKeyRef = useRef<string | null>(null)
 
   const state = currentMatch?.state ?? null
 
@@ -97,21 +98,107 @@ export function MatchPage() {
       currentMatch.opponent.level,
       currentMatch.rewardMultiplier,
     )
-    const rankRewardPreview = applyRankRewards(progression.profile)
+    const rankedUpdate =
+      currentMatch.queue === 'ranked' ? applyRankedMatchResult(progression.profile.ranked, result.winner) : null
 
     return {
+      queue: currentMatch.queue,
       result,
-      rewards: {
-        ...progression.rewards,
-        rankRewards: rankRewardPreview.granted,
-      },
+      rewards: progression.rewards,
       newlyOwnedCards: progression.newlyOwnedCards,
       opponent: currentMatch.opponent,
+      rankedUpdate,
     }
   }, [currentMatch, profile, state])
 
+  const matchSeed = currentMatch?.seed ?? null
+  const matchStatus = state?.status ?? null
+
   useEffect(() => {
-    if (!currentMatch || !state || state.turn !== 'cpu' || state.status === 'finished') {
+    if (!finishPreview || !currentMatch || state?.status !== 'finished') {
+      criticalVictorySoundPlayedMatchKeyRef.current = null
+      return
+    }
+
+    if (!finishPreview.rewards.criticalVictory) {
+      return
+    }
+
+    const matchKey = `${currentMatch.seed}:${state.turns}`
+    if (criticalVictorySoundPlayedMatchKeyRef.current === matchKey) {
+      return
+    }
+
+    playCriticalVictorySound()
+    criticalVictorySoundPlayedMatchKeyRef.current = matchKey
+  }, [currentMatch, finishPreview, state?.status, state?.turns])
+
+  useEffect(() => {
+    if (matchSeed === null || matchStatus === null || matchStatus === 'finished') {
+      setStarterNeedleAngleDeg(0)
+      setStarterSpinSettled(false)
+      setStarterRevealComplete(true)
+      return
+    }
+
+    const finalStarter: Actor = state?.turn ?? 'player'
+    const finalAngle = finalStarter === 'player' ? 0 : 180
+    const startAngle = ((matchSeed % 360) + 360) % 360
+
+    const clockwiseDeltaToFinal = ((finalAngle - startAngle) % 360 + 360) % 360
+    const totalTravelDeg = STARTER_BASE_TURNS * 360 + clockwiseDeltaToFinal
+
+    setStarterNeedleAngleDeg(startAngle)
+    setStarterSpinSettled(false)
+    setStarterRevealComplete(false)
+
+    let frameId: number | null = null
+    let revealTimer: number | null = null
+    let startTs: number | null = null
+
+    const animate = (timestamp: number) => {
+      if (startTs === null) {
+        startTs = timestamp
+      }
+
+      const elapsed = timestamp - startTs
+      const progress = Math.min(1, elapsed / STARTER_SPIN_DURATION_MS)
+      const eased = 1 - (1 - progress) ** 3
+      const angle = startAngle + totalTravelDeg * eased
+
+      setStarterNeedleAngleDeg(angle)
+
+      if (progress < 1) {
+        frameId = window.requestAnimationFrame(animate)
+        return
+      }
+
+      setStarterNeedleAngleDeg(finalAngle)
+      setStarterSpinSettled(true)
+      revealTimer = window.setTimeout(() => {
+        setStarterRevealComplete(true)
+      }, STARTER_REVEAL_HOLD_MS)
+    }
+
+    frameId = window.requestAnimationFrame(animate)
+
+    return () => {
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId)
+      }
+      if (revealTimer !== null) {
+        window.clearTimeout(revealTimer)
+      }
+    }
+  }, [matchSeed, matchStatus, state?.turn])
+
+  const isStarterRollActive =
+    !!currentMatch && !!state && state.status === 'active' && state.turns === 0 && !starterRevealComplete
+  const isStarterRollSpinning = isStarterRollActive && !starterSpinSettled
+  const displayedStarter: Actor = state?.turn ?? 'player'
+
+  useEffect(() => {
+    if (!starterRevealComplete || !currentMatch || !state || state.turn !== 'cpu' || state.status === 'finished') {
       return
     }
 
@@ -129,14 +216,14 @@ export function MatchPage() {
     return () => {
       window.clearTimeout(timer)
     }
-  }, [currentMatch, state, updateCurrentMatch])
+  }, [currentMatch, starterRevealComplete, state, updateCurrentMatch])
 
   if (!currentMatch || !state) {
     return null
   }
 
   const handleCellClick = (cell: number) => {
-    if (state.turn !== 'player' || state.status === 'finished') {
+    if (!starterRevealComplete || state.turn !== 'player' || state.status === 'finished') {
       return
     }
     if (!selectedCard) {
@@ -177,7 +264,7 @@ export function MatchPage() {
 
     try {
       finalizeCurrentMatch()
-      startMatch(rematchDeck, rematchRules)
+      startMatch(currentMatch.queue, rematchDeck, rematchRules)
       setSelectedCard(null)
       setError(null)
     } catch (err) {
@@ -205,7 +292,9 @@ export function MatchPage() {
         <section className="match-board-stage" data-testid="match-board-stage">
           <div className="match-board-hud">
             <p className="small match-turn-indicator" data-testid="match-turn-indicator">
-              Turn {state.turns + 1}: {state.turn === 'player' ? 'Player' : 'CPU'}
+              {isStarterRollActive
+                ? 'Determining first turn...'
+                : `Turn ${state.turns + 1}: ${state.turn === 'player' ? 'Player' : 'CPU'}`}
             </p>
             <p className="small" data-testid="match-opponent-badge">
               CPU L{currentMatch.opponent.level} • Score {currentMatch.opponent.deckScore}
@@ -215,11 +304,56 @@ export function MatchPage() {
           <PixiBoard
             board={board}
             highlightedCells={highlightedCells}
-            interactive={state.turn === 'player' && state.status !== 'finished'}
+            interactive={starterRevealComplete && state.turn === 'player' && state.status !== 'finished'}
             onCellClick={handleCellClick}
             turnActor={state.turn}
             status={state.status}
           />
+          {isStarterRollActive && (
+            <div
+              className={`match-starter-overlay ${isStarterRollSpinning ? 'is-rolling' : 'is-reveal'}`}
+              role="status"
+              aria-live="polite"
+              data-testid="match-starter-overlay"
+            >
+              <p className="small match-starter-label">{isStarterRollSpinning ? 'First Turn Clock' : 'First Turn Selected'}</p>
+              <div
+                className={`match-starter-clock ${isStarterRollSpinning ? 'is-rolling' : 'is-reveal'}`}
+                data-testid="match-starter-clock"
+              >
+                <div className="match-starter-clock-ring" />
+                <p
+                  className={`match-starter-side match-starter-side--left ${
+                    starterSpinSettled && displayedStarter === 'cpu' ? 'is-selected' : ''
+                  }`}
+                  data-testid="match-starter-side-opponent"
+                >
+                  Opponent
+                </p>
+                <p
+                  className={`match-starter-side match-starter-side--right ${
+                    starterSpinSettled && displayedStarter === 'player' ? 'is-selected' : ''
+                  }`}
+                  data-testid="match-starter-side-you"
+                >
+                  You
+                </p>
+                <div
+                  className="match-starter-needle"
+                  data-testid="match-starter-needle"
+                  style={{ transform: `translateY(-50%) rotate(${starterNeedleAngleDeg}deg)` }}
+                />
+                <div className="match-starter-hub" />
+              </div>
+              <p
+                className={`match-starter-result ${
+                  isStarterRollSpinning ? 'match-starter-result--pending' : `match-starter-result--${displayedStarter}`
+                }`}
+              >
+                {isStarterRollSpinning ? 'Rolling...' : displayedStarter === 'player' ? 'You start' : 'CPU starts'}
+              </p>
+            </div>
+          )}
         </section>
 
         <aside className="match-lane match-lane--player" data-testid="match-lane-player">
@@ -235,7 +369,7 @@ export function MatchPage() {
                   selected={selectedCard === cardId}
                   interactive
                   onClick={() => setSelectedCard(cardId)}
-                  disabled={state.turn !== 'player' || state.status === 'finished'}
+                  disabled={!starterRevealComplete || state.turn !== 'player' || state.status === 'finished'}
                   testId={`player-card-${cardId}`}
                 />
               )
@@ -259,15 +393,9 @@ export function MatchPage() {
             <p className="lead">
               Winner: {finishPreview.result.winner === 'draw' ? 'Draw' : finishPreview.result.winner === 'player' ? 'Player' : 'CPU'}
             </p>
+            {finishPreview.rewards.criticalVictory ? <p className="small">Critical Victory</p> : null}
+            <p className="small">Queue: {finishPreview.queue === 'ranked' ? 'Ranked' : 'Normal'}</p>
 
-            <div className="stat-row">
-              <span>Player Cards</span>
-              <strong>{finishPreview.result.playerCount}</strong>
-            </div>
-            <div className="stat-row">
-              <span>CPU Cards</span>
-              <strong>{finishPreview.result.cpuCount}</strong>
-            </div>
             <div className="stat-row">
               <span>Gold Earned</span>
               <strong>
@@ -307,18 +435,20 @@ export function MatchPage() {
               )}
             </div>
 
-            <div className="result-block">
-              <h2>Rank Rewards</h2>
-              {finishPreview.rewards.rankRewards.length > 0 ? (
-                <ul>
-                  {finishPreview.rewards.rankRewards.map((grant) => (
-                    <li key={grant.rankId}>{formatRankReward(grant)}</li>
-                  ))}
-                </ul>
-              ) : (
-                <p>No rank rewards earned this match.</p>
-              )}
-            </div>
+            {finishPreview.rankedUpdate ? (
+              <div className="result-block">
+                <h2>Ranked LP</h2>
+                <p>
+                  {finishPreview.rankedUpdate.deltaLp >= 0 ? '+' : ''}
+                  {finishPreview.rankedUpdate.deltaLp} LP
+                  {' • '}
+                  {finishPreview.rankedUpdate.next.tier.toUpperCase()}
+                  {finishPreview.rankedUpdate.next.division ? ` ${finishPreview.rankedUpdate.next.division}` : ''}
+                  {' • '}
+                  {finishPreview.rankedUpdate.next.lp} LP
+                </p>
+              </div>
+            ) : null}
 
             {finishPreview.newlyOwnedCards.length > 0 && (
               <div className="result-block">

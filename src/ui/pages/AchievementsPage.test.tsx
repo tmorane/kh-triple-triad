@@ -22,6 +22,9 @@ function renderAchievements(valueOverrides: Partial<GameContextValue> = {}) {
     selectDeckSlot: () => {
       throw new Error('Not implemented in test.')
     },
+    renamePlayer: () => {
+      throw new Error('Not implemented in test.')
+    },
     renameDeckSlot: () => {
       throw new Error('Not implemented in test.')
     },
@@ -50,10 +53,6 @@ function renderAchievements(valueOverrides: Partial<GameContextValue> = {}) {
       throw new Error('Not implemented in test.')
     },
     resetProfile: () => {
-      throw new Error('Not implemented in test.')
-    },
-    recentRankRewards: [],
-    clearRecentRankRewards: () => {
       throw new Error('Not implemented in test.')
     },
     ...valueOverrides,

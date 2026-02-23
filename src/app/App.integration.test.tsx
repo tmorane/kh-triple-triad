@@ -20,13 +20,21 @@ function renderApp(initialPath = '/') {
   )
 }
 
+async function waitForStarterAnimation() {
+  await screen.findByTestId('match-starter-overlay')
+  await waitFor(
+    () => {
+      expect(screen.queryByTestId('match-starter-overlay')).not.toBeInTheDocument()
+    },
+    { timeout: 3200 },
+  )
+}
+
 function RewardsHarness() {
   const {
     profile,
     currentMatch,
     lastMatchSummary,
-    recentRankRewards,
-    clearRecentRankRewards,
     startMatch,
     updateCurrentMatch,
     finalizeCurrentMatch,
@@ -38,7 +46,7 @@ function RewardsHarness() {
       <button
         type="button"
         data-testid="harness-start"
-        onClick={() => startMatch(selectedSlot.cards, { open: true, ...selectedSlot.rules })}
+        onClick={() => startMatch('normal', selectedSlot.cards, { open: true, ...selectedSlot.rules })}
       >
         start
       </button>
@@ -75,17 +83,14 @@ function RewardsHarness() {
       >
         finalize
       </button>
-      <button type="button" data-testid="harness-clear-recent-rank-rewards" onClick={clearRecentRankRewards}>
-        clear-rank-rewards
-      </button>
 
       <span data-testid="has-match">{currentMatch ? 'yes' : 'no'}</span>
       <span data-testid="played">{profile.stats.played}</span>
+      <span data-testid="ranked-played">{profile.ranked.matchesPlayed}</span>
       <span data-testid="gold">{profile.gold}</span>
       <span data-testid="current-opponent-level">{currentMatch?.opponent?.level ?? '-'}</span>
       <span data-testid="last-opponent-level">{lastMatchSummary?.opponent?.level ?? '-'}</span>
-      <span data-testid="last-rank-reward-count">{lastMatchSummary?.rewards.rankRewards.length ?? 0}</span>
-      <span data-testid="recent-rank-reward-count">{recentRankRewards.length}</span>
+      <span data-testid="last-ranked-delta">{lastMatchSummary?.rankedUpdate?.deltaLp ?? 0}</span>
     </section>
   )
 }
@@ -99,7 +104,7 @@ function MatchReplayHarness() {
       <button
         type="button"
         data-testid="replay-harness-start"
-        onClick={() => startMatch(selectedSlot.cards, { open: true, ...selectedSlot.rules })}
+        onClick={() => startMatch('normal', selectedSlot.cards, { open: true, ...selectedSlot.rules })}
       >
         start-match
       </button>
@@ -131,6 +136,45 @@ function MatchReplayHarness() {
   )
 }
 
+function ForcedPlayerVictoryHarness() {
+  const { currentMatch, updateCurrentMatch } = useGame()
+
+  return (
+    <section>
+      <button
+        type="button"
+        data-testid="force-player-victory"
+        onClick={() => {
+          if (!currentMatch) {
+            return
+          }
+
+          const playerDeck = currentMatch.state.config.playerDeck
+          const fallbackCardId = playerDeck[0] ?? currentMatch.state.config.cpuDeck[0]
+          const forcedBoard = Array.from({ length: 9 }, (_, index) => ({
+            owner: 'player' as const,
+            cardId: playerDeck[index % playerDeck.length] ?? fallbackCardId,
+          }))
+
+          const forcedState = {
+            ...currentMatch.state,
+            board: forcedBoard,
+            hands: { player: [], cpu: [] },
+            turns: 9,
+            status: 'finished' as const,
+            turn: 'player' as const,
+            lastMove: null,
+          }
+
+          updateCurrentMatch(forcedState)
+        }}
+      >
+        force-player-victory
+      </button>
+    </section>
+  )
+}
+
 describe('app integration', () => {
   beforeEach(() => {
     localStorage.clear()
@@ -150,9 +194,10 @@ describe('app integration', () => {
     await user.click(plusToggle)
 
     await user.click(screen.getByTestId('start-match-button'))
+    await waitForStarterAnimation()
 
     expect(screen.queryAllByRole('heading', { name: 'Match' })).toHaveLength(0)
-    expect(screen.getByTestId('match-turn-indicator')).toHaveTextContent('Turn 1: Player')
+    expect(screen.getByTestId('match-turn-indicator')).toHaveTextContent(/Turn [1-2]: (Player|CPU)/)
     expect(screen.getByTestId('match-opponent-badge')).toHaveTextContent('CPU L1')
     const cpuLane = screen.getByTestId('match-lane-cpu')
     const boardStage = screen.getByTestId('match-board-stage')
@@ -167,6 +212,25 @@ describe('app integration', () => {
     expect(screen.getByText('Plus')).toHaveClass('active')
   })
 
+  test('match shows starter roll animation before first turn is active', async () => {
+    const user = userEvent.setup()
+    renderApp('/setup')
+
+    await user.click(screen.getByTestId('start-match-button'))
+
+    const overlay = await screen.findByTestId('match-starter-overlay')
+    expect(overlay).toBeInTheDocument()
+    expect(overlay).toHaveTextContent(/First Turn/i)
+    expect(screen.getByTestId('match-starter-clock')).toBeInTheDocument()
+    expect(screen.getByTestId('match-starter-needle')).toBeInTheDocument()
+    expect(screen.getByTestId('match-starter-side-opponent')).toHaveTextContent('Opponent')
+    expect(screen.getByTestId('match-starter-side-you')).toHaveTextContent('You')
+
+    await waitForStarterAnimation()
+    expect(screen.queryByTestId('match-starter-overlay')).not.toBeInTheDocument()
+    expect(screen.getByTestId('match-turn-indicator')).toHaveTextContent(/Turn [1-2]: (Player|CPU)/)
+  })
+
   test('topbar CTA switches from Play to Continue when a match is active', async () => {
     const user = userEvent.setup()
     renderApp('/setup')
@@ -178,6 +242,40 @@ describe('app integration', () => {
 
     expect(screen.getByTestId('topbar-cta-link')).toHaveTextContent('Continue')
     expect(screen.getByTestId('topbar-cta-link')).toHaveAttribute('href', '/match')
+  })
+
+  test('player name replaces the static title and is editable from home', async () => {
+    const user = userEvent.setup()
+    renderApp('/')
+
+    expect(screen.getByRole('link', { name: 'Joueur' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Joueur' })).toBeInTheDocument()
+
+    const playerNameInput = screen.getByTestId('home-player-name-input')
+    await user.clear(playerNameInput)
+    await user.type(playerNameInput, 'Terra')
+
+    expect(screen.getByRole('link', { name: 'Terra' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Terra' })).toBeInTheDocument()
+
+    const saved = JSON.parse(localStorage.getItem(PROFILE_STORAGE_KEY) ?? '{}') as { playerName?: string }
+    expect(saved.playerName).toBe('Terra')
+  })
+
+  test('brand links route back to home from another page', async () => {
+    const user = userEvent.setup()
+    renderApp('/shop')
+
+    expect(screen.getByRole('heading', { name: 'Shop' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('link', { name: 'Joueur' }))
+    expect(screen.getByTestId('home-quick-action-play')).toBeInTheDocument()
+
+    await user.click(screen.getByTestId('topbar-link-shop'))
+    expect(screen.getByRole('heading', { name: 'Shop' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('link', { name: 'Garden Console' }))
+    expect(screen.getByTestId('home-quick-action-play')).toBeInTheDocument()
   })
 
   test('setup blocks invalid deck sizes', async () => {
@@ -219,7 +317,8 @@ describe('app integration', () => {
     expect(screen.getByTestId('start-match-button')).toBeEnabled()
 
     await user.click(screen.getByTestId('start-match-button'))
-    expect(screen.getByTestId('match-turn-indicator')).toHaveTextContent('Turn 1: Player')
+    await waitForStarterAnimation()
+    expect(screen.getByTestId('match-turn-indicator')).toHaveTextContent(/Turn [1-2]: (Player|CPU)/)
     expect(screen.getByLabelText('Player hand').children).toHaveLength(5)
   })
 
@@ -285,8 +384,9 @@ describe('app integration', () => {
     expect(screen.getByTestId('start-match-button')).toBeEnabled()
 
     await user.click(screen.getByTestId('start-match-button'))
+    await waitForStarterAnimation()
 
-    expect(screen.getByTestId('match-turn-indicator')).toHaveTextContent('Turn 1: Player')
+    expect(screen.getByTestId('match-turn-indicator')).toHaveTextContent(/Turn [1-2]: (Player|CPU)/)
   })
 
   test('match finish modal can start a rematch with the same deck', async () => {
@@ -313,7 +413,8 @@ describe('app integration', () => {
     expect(deckBeforeRematch).not.toBe('-')
 
     await user.click(screen.getByTestId('topbar-cta-link'))
-    expect(screen.getByTestId('match-turn-indicator')).toHaveTextContent('Turn 1: Player')
+    await waitForStarterAnimation()
+    expect(screen.getByTestId('match-turn-indicator')).toHaveTextContent(/Turn [1-2]: (Player|CPU)/)
 
     await user.click(screen.getByTestId('replay-harness-simulate-finish'))
 
@@ -324,11 +425,58 @@ describe('app integration', () => {
 
     await waitFor(() => {
       expect(screen.queryByTestId('match-finish-modal')).not.toBeInTheDocument()
-      expect(screen.getByTestId('match-turn-indicator')).toHaveTextContent('Turn 1: Player')
     })
+    await waitForStarterAnimation()
+    expect(screen.getByTestId('match-turn-indicator')).toHaveTextContent(/Turn [1-2]: (Player|CPU)/)
 
     expect(screen.getByTestId('replay-harness-current-deck')).toHaveTextContent(deckBeforeRematch ?? '')
     expect(screen.getByTestId('replay-harness-played')).toHaveTextContent('1')
+  })
+
+  test('victory requires claiming one cpu card before continue and persists the claimed copy', async () => {
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter initialEntries={['/setup']}>
+        <GameProvider>
+          <App />
+          <ForcedPlayerVictoryHarness />
+        </GameProvider>
+      </MemoryRouter>,
+    )
+
+    await user.click(screen.getByTestId('start-match-button'))
+    await waitForStarterAnimation()
+
+    await user.click(screen.getByTestId('force-player-victory'))
+
+    const finishModal = await screen.findByTestId('match-finish-modal')
+    expect(within(finishModal).getByText('Choose 1 opponent card to claim')).toBeInTheDocument()
+
+    const continueButton = within(finishModal).getByTestId('finish-match-button')
+    expect(continueButton).toBeDisabled()
+
+    const claimCards = within(finishModal).getAllByTestId(/^match-claim-card-/)
+    expect(claimCards).toHaveLength(5)
+
+    const firstClaimCardId = (claimCards[0].getAttribute('data-testid') ?? '').replace('match-claim-card-', '')
+    expect(firstClaimCardId).not.toBe('')
+
+    const beforeRaw = localStorage.getItem(PROFILE_STORAGE_KEY)
+    expect(beforeRaw).toBeTruthy()
+    const beforeProfile = JSON.parse(beforeRaw!) as { cardCopiesById: Record<string, number> }
+    const beforeCopies = beforeProfile.cardCopiesById[firstClaimCardId] ?? 0
+
+    await user.click(claimCards[0])
+    expect(continueButton).toBeEnabled()
+
+    await user.click(continueButton)
+    expect(await screen.findByRole('heading', { name: 'Results' })).toBeInTheDocument()
+    expect(screen.getByText(`Claimed card: ${firstClaimCardId.toUpperCase()}`)).toBeInTheDocument()
+
+    const afterRaw = localStorage.getItem(PROFILE_STORAGE_KEY)
+    expect(afterRaw).toBeTruthy()
+    const afterProfile = JSON.parse(afterRaw!) as { cardCopiesById: Record<string, number> }
+    expect(afterProfile.cardCopiesById[firstClaimCardId]).toBe(beforeCopies + 1)
   })
 
   test('shop is reachable from home and buying a pack updates gold and pack inventory', async () => {
@@ -410,13 +558,31 @@ describe('app integration', () => {
       stats: { played: number; won: number; streak: number; bestStreak: number }
       achievements: Array<{ id: string; unlockedAt: string }>
       selectedDeckSlotId: string
-      rankRewardsClaimed: string[]
+      ranked: {
+        tier: string
+        division: string | null
+        lp: number
+        wins: number
+        losses: number
+        draws: number
+        matchesPlayed: number
+      }
     }
     expect(parsed.gold).toBe(100)
     expect(parsed.selectedDeckSlotId).toBe('slot-1')
     expect(parsed.stats).toEqual({ played: 0, won: 0, streak: 0, bestStreak: 0 })
     expect(parsed.achievements).toEqual([])
-    expect(parsed.rankRewardsClaimed).toEqual([])
+    expect(parsed.ranked).toEqual(
+      expect.objectContaining({
+        tier: 'iron',
+        division: 'IV',
+        lp: 0,
+        wins: 0,
+        losses: 0,
+        draws: 0,
+        matchesPlayed: 0,
+      }),
+    )
     expect(parsed.packInventoryByRarity).toEqual({
       common: 0,
       uncommon: 0,
@@ -485,19 +651,39 @@ describe('app integration', () => {
     expect(screen.getByRole('img', { name: 'Uncommon Pack artwork' })).toBeInTheDocument()
     expect(screen.getByRole('img', { name: 'Rare Pack artwork' })).toBeInTheDocument()
     expect(screen.getByRole('img', { name: 'Legendary Pack artwork' })).toBeInTheDocument()
+    expect(screen.getByTestId('shop-pack-rates-common')).toHaveTextContent('Common 70%')
+    expect(screen.getByTestId('shop-pack-rates-common')).toHaveTextContent('Legendary 1%')
+    expect(screen.getByTestId('shop-pack-rates-rare')).toHaveTextContent('Legendary 5%')
+    expect(screen.getByTestId('shop-pack-rates-legendary')).toHaveTextContent(/Legendary [0-9]+%/)
+    expect(screen.getByTestId('shop-pack-rates-legendary')).toHaveTextContent('Common 5%')
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
 
     await user.click(screen.getByTestId('toggle-pack-cards-common'))
     const dialog = screen.getByTestId('shop-pack-modal-common')
     expect(dialog).toBeInTheDocument()
     const sectionHeadings = within(dialog).getAllByRole('heading', { level: 3 }).map((node) => node.textContent?.trim())
-    expect(sectionHeadings).toEqual(['Not owned', 'Owned'])
+    expect(sectionHeadings).toEqual(['Common', 'Uncommon', 'Rare', 'Epic', 'Legendary'])
     const commonIds = cardPool.filter((card) => card.rarity === 'common').slice(0, 2).map((card) => card.id)
     expect(within(dialog).getByTestId(`shop-pack-modal-card-common-${commonIds[0]}`)).toBeInTheDocument()
     expect(within(dialog).getByTestId(`shop-pack-modal-card-common-${commonIds[1]}`)).toBeInTheDocument()
 
     await user.click(screen.getByTestId('shop-pack-modal-close'))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  test('shop can open a bought pack directly without leaving the page', async () => {
+    const user = userEvent.setup()
+    renderApp('/shop')
+
+    await user.click(screen.getByTestId('shop-add-test-gold'))
+    await user.click(screen.getByTestId('buy-pack-rare'))
+    expect(screen.getByTestId('shop-pack-stock-rare')).toHaveTextContent('x1')
+
+    await user.click(screen.getByTestId('open-owned-pack-rare'))
+    const reveal = screen.getByTestId('shop-opened-reveal-modal')
+    expect(reveal).toBeInTheDocument()
+    expect(within(reveal).getAllByTestId(/^shop-opened-reveal-triad-/)).toHaveLength(3)
+    expect(screen.getByTestId('shop-pack-stock-rare')).toHaveTextContent('x0')
   })
 
   test('packs page can open another pack of the same rarity directly from reveal modal', async () => {
@@ -562,12 +748,30 @@ describe('app integration', () => {
     expect(screen.getByTestId('achievements-unlocked-count')).toHaveTextContent('Unlocked 0/40')
   })
 
-  test('more menu closes on backdrop click and mobile nav is rendered with primary actions', async () => {
+  test('ranks page is reachable from more menu and shows all tiers', async () => {
     const user = userEvent.setup()
     renderApp('/')
 
     await user.click(screen.getByTestId('topbar-more-toggle'))
+    await user.click(screen.getByTestId('topbar-more-link-ranks'))
+
+    expect(screen.getByRole('heading', { name: 'Ranks' })).toBeInTheDocument()
+    expect(screen.getAllByTestId(/^ranks-tier-/)).toHaveLength(10)
+  })
+
+  test('more menu keeps only secondary links and mobile nav includes packs', async () => {
+    const user = userEvent.setup()
+    renderApp('/')
+
+    expect(screen.getByTestId('topbar-link-packs')).toHaveAttribute('href', '/packs')
+
+    await user.click(screen.getByTestId('topbar-more-toggle'))
     expect(screen.getByTestId('topbar-more-menu')).toBeInTheDocument()
+    expect(screen.getByTestId('topbar-more-link-achievements')).toHaveAttribute('href', '/achievements')
+    expect(screen.getByTestId('topbar-more-link-rules')).toHaveAttribute('href', '/rules')
+    expect(screen.getByTestId('topbar-more-link-ranks')).toHaveAttribute('href', '/ranks')
+    expect(screen.queryByTestId('topbar-more-link-packs')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('topbar-more-link-home')).not.toBeInTheDocument()
 
     await user.click(screen.getByTestId('topbar-more-backdrop'))
     expect(screen.queryByTestId('topbar-more-menu')).not.toBeInTheDocument()
@@ -576,6 +780,7 @@ describe('app integration', () => {
     expect(within(mobileNav).getByText('Play')).toHaveAttribute('href', '/setup')
     expect(within(mobileNav).getByText('Collection')).toHaveAttribute('href', '/collection')
     expect(within(mobileNav).getByText('Shop')).toHaveAttribute('href', '/shop')
+    expect(within(mobileNav).getByText('Packs')).toHaveAttribute('href', '/packs')
     expect(within(mobileNav).getByTestId('mobile-main-nav-more-toggle')).toBeInTheDocument()
   })
 
@@ -675,17 +880,14 @@ describe('app integration', () => {
     expect(screen.getByTestId('played')).toHaveTextContent('1')
     expect(screen.getByTestId('current-opponent-level')).toHaveTextContent('-')
     expect(screen.getByTestId('last-opponent-level')).toHaveTextContent('1')
-    expect(screen.getByTestId('last-rank-reward-count')).toHaveTextContent('1')
-    expect(screen.getByTestId('recent-rank-reward-count')).toHaveTextContent('1')
+    expect(screen.getByTestId('ranked-played')).toHaveTextContent('0')
+    expect(screen.getByTestId('last-ranked-delta')).toHaveTextContent('0')
     expect(Number(screen.getByTestId('gold').textContent)).toBeGreaterThan(100)
-
-    await user.click(screen.getByTestId('harness-clear-recent-rank-rewards'))
-    expect(screen.getByTestId('recent-rank-reward-count')).toHaveTextContent('0')
 
     const saved = localStorage.getItem(PROFILE_STORAGE_KEY)
     expect(saved).toBeTruthy()
-    const parsed = JSON.parse(saved!) as { stats: { played: number }; rankRewardsClaimed: string[] }
+    const parsed = JSON.parse(saved!) as { stats: { played: number }; ranked: { matchesPlayed: number } }
     expect(parsed.stats.played).toBe(1)
-    expect(parsed.rankRewardsClaimed).toEqual(['R1'])
+    expect(parsed.ranked.matchesPlayed).toBe(0)
   })
 })

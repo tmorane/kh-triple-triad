@@ -58,6 +58,7 @@ export function TriadCard({
   const [artUnavailable, setArtUnavailable] = useState(false)
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setArtCandidateIndex(0)
     setArtUnavailable(false)
   }, [card.name, locked])

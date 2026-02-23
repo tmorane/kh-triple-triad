@@ -7,6 +7,7 @@ import { HomePage } from './ui/pages/HomePage'
 import { MatchPage } from './ui/pages/MatchPage'
 import { PacksPage } from './ui/pages/PacksPage'
 import { ResultsPage } from './ui/pages/ResultsPage'
+import { RanksPage } from './ui/pages/RanksPage'
 import { RulesPage } from './ui/pages/RulesPage'
 import { ShopPage } from './ui/pages/ShopPage'
 import { SetupPage } from './ui/pages/SetupPage'
@@ -30,6 +31,7 @@ function App() {
   const ctaTarget = currentMatch ? '/match' : '/setup'
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsMoreOpen(false)
   }, [location.pathname])
 
@@ -69,8 +71,12 @@ function App() {
 
       <header className="topbar">
         <div className="brand-block">
-          <p className="brand">KH Triple Triad</p>
-          <p className="brand-sub">Garden Console</p>
+          <NavLink to="/" className="brand brand-link">
+            {profile.playerName}
+          </NavLink>
+          <NavLink to="/" className="brand-sub brand-sub-link">
+            Garden Console
+          </NavLink>
         </div>
 
         <nav className="main-nav" aria-label="Primary navigation">
@@ -82,6 +88,9 @@ function App() {
           </NavLink>
           <NavLink to="/shop" data-testid="topbar-link-shop">
             Shop
+          </NavLink>
+          <NavLink to="/packs" data-testid="topbar-link-packs">
+            Packs
           </NavLink>
           <button
             type="button"
@@ -122,17 +131,14 @@ function App() {
               </button>
             </div>
             <nav className="topbar-more-links" aria-label="More navigation">
-              <NavLink to="/packs" data-testid="topbar-more-link-packs" onClick={() => setIsMoreOpen(false)}>
-                Packs
-              </NavLink>
               <NavLink to="/achievements" data-testid="topbar-more-link-achievements" onClick={() => setIsMoreOpen(false)}>
                 Achievements
               </NavLink>
+              <NavLink to="/ranks" data-testid="topbar-more-link-ranks" onClick={() => setIsMoreOpen(false)}>
+                Ranks
+              </NavLink>
               <NavLink to="/rules" data-testid="topbar-more-link-rules" onClick={() => setIsMoreOpen(false)}>
                 Rules
-              </NavLink>
-              <NavLink to="/" data-testid="topbar-more-link-home" onClick={() => setIsMoreOpen(false)}>
-                Home
               </NavLink>
             </nav>
           </section>
@@ -150,6 +156,7 @@ function App() {
           <Route path="/results" element={<ResultsPage />} />
           <Route path="/collection" element={<CollectionPage />} />
           <Route path="/achievements" element={<AchievementsPage />} />
+          <Route path="/ranks" element={<RanksPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
@@ -163,6 +170,9 @@ function App() {
         </NavLink>
         <NavLink to="/shop" className="mobile-main-nav__item">
           Shop
+        </NavLink>
+        <NavLink to="/packs" className="mobile-main-nav__item">
+          Packs
         </NavLink>
         <button
           type="button"

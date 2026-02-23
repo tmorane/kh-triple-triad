@@ -35,6 +35,8 @@ export interface ShopOpenProgressionResult {
   opened: OpenedPackResult
 }
 
+const dropRarityOrder: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary']
+
 const PACK_PRICES: Record<ShopPackId, number> = {
   common: 60,
   uncommon: 120,
@@ -43,8 +45,24 @@ const PACK_PRICES: Record<ShopPackId, number> = {
   legendary: 360,
 }
 
+type PackDropRates = Readonly<Record<Rarity, number>>
+
+const PACK_DROP_RATES: Readonly<Record<ShopPackId, PackDropRates>> = {
+  common: { common: 70, uncommon: 22, rare: 5, epic: 2, legendary: 1 },
+  uncommon: { common: 35, uncommon: 40, rare: 15, epic: 7, legendary: 3 },
+  rare: { common: 15, uncommon: 25, rare: 35, epic: 20, legendary: 5 },
+  epic: { common: 0, uncommon: 0, rare: 0, epic: 100, legendary: 0 },
+  legendary: { common: 5, uncommon: 10, rare: 20, epic: 55, legendary: 10 },
+}
+
+assertPackDropRates()
+
 export function getPackPrice(packId: ShopPackId): number {
   return PACK_PRICES[packId]
+}
+
+export function getPackDropRates(packId: ShopPackId): PackDropRates {
+  return PACK_DROP_RATES[packId]
 }
 
 export function purchaseShopPack(profile: PlayerProfile, packId: ShopPackId): ShopPurchaseProgressionResult {
@@ -78,7 +96,8 @@ export function openOwnedPack(profile: PlayerProfile, packId: ShopPackId, rng: S
 
   const pulls: ShopCardPull[] = []
   for (let index = 0; index < 3; index += 1) {
-    const cardId = chooseWeightedCard(packId, updatedProfile.cardCopiesById, rng)
+    const pulledRarity = chooseWeightedRarity(packId, rng)
+    const cardId = chooseWeightedCard(pulledRarity, updatedProfile.cardCopiesById, rng)
     const existingCopies = updatedProfile.cardCopiesById[cardId] ?? 0
     const copiesAfter = existingCopies + 1
     const isNewOwnership = existingCopies === 0
@@ -91,7 +110,7 @@ export function openOwnedPack(profile: PlayerProfile, packId: ShopPackId, rng: S
 
     pulls.push({
       cardId,
-      rarity: packId,
+      rarity: pulledRarity,
       isNewOwnership,
       copiesAfter,
     })
@@ -125,15 +144,33 @@ function cloneProfile(profile: PlayerProfile): PlayerProfile {
     })) as PlayerProfile['deckSlots'],
     stats: { ...profile.stats },
     achievements: [...profile.achievements],
-    rankRewardsClaimed: [...profile.rankRewardsClaimed],
+    ranked: {
+      ...profile.ranked,
+      resultStreak: { ...profile.ranked.resultStreak },
+    },
     settings: { ...profile.settings },
   }
 }
 
-function chooseWeightedCard(packId: ShopPackId, cardCopiesById: Record<CardId, number>, rng: SeededRng): CardId {
-  const candidates = cardPool.filter((card) => card.rarity === packId)
+function chooseWeightedRarity(packId: ShopPackId, rng: SeededRng): Rarity {
+  const rates = getPackDropRates(packId)
+  const totalWeight = dropRarityOrder.reduce((sum, rarity) => sum + rates[rarity], 0)
+  let roll = rng.nextInt(totalWeight)
+
+  for (const rarity of dropRarityOrder) {
+    roll -= rates[rarity]
+    if (roll < 0) {
+      return rarity
+    }
+  }
+
+  return dropRarityOrder[dropRarityOrder.length - 1]!
+}
+
+function chooseWeightedCard(rarity: Rarity, cardCopiesById: Record<CardId, number>, rng: SeededRng): CardId {
+  const candidates = cardPool.filter((card) => card.rarity === rarity)
   if (candidates.length === 0) {
-    throw new Error(`No cards found for pack rarity: ${packId}`)
+    throw new Error(`No cards found for rarity: ${rarity}`)
   }
 
   let totalWeight = 0
@@ -153,4 +190,14 @@ function chooseWeightedCard(packId: ShopPackId, cardCopiesById: Record<CardId, n
   }
 
   return weightedCandidates[weightedCandidates.length - 1]!.cardId
+}
+
+function assertPackDropRates(): void {
+  for (const packId of Object.keys(PACK_DROP_RATES) as ShopPackId[]) {
+    const rates = PACK_DROP_RATES[packId]
+    const total = dropRarityOrder.reduce((sum, rarity) => sum + rates[rarity], 0)
+    if (total !== 100) {
+      throw new Error(`Drop rates for pack "${packId}" must sum to 100 (received ${total}).`)
+    }
+  }
 }

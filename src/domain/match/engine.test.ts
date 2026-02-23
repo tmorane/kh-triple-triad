@@ -190,6 +190,14 @@ function play(state: ReturnType<typeof createMatch>, moves: Move[]) {
 }
 
 describe('match engine', () => {
+  test('uses the configured starting turn when creating a match', () => {
+    const cpuStart = createMatch(makeConfig({ startingTurn: 'cpu' }))
+    const playerStart = createMatch(makeConfig({ startingTurn: 'player' }))
+
+    expect(cpuStart.turn).toBe('cpu')
+    expect(playerStart.turn).toBe('player')
+  })
+
   test('captures a left-adjacent enemy card with normal rules', () => {
     const state = createMatch(makeConfig())
 

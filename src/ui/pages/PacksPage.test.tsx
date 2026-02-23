@@ -33,6 +33,9 @@ function renderPacksWithContext(options: {
     selectDeckSlot: () => {
       throw new Error('Not implemented in test.')
     },
+    renamePlayer: () => {
+      throw new Error('Not implemented in test.')
+    },
     renameDeckSlot: () => {
       throw new Error('Not implemented in test.')
     },
@@ -59,10 +62,6 @@ function renderPacksWithContext(options: {
       throw new Error('Not implemented in test.')
     },
     resetProfile: () => {
-      throw new Error('Not implemented in test.')
-    },
-    recentRankRewards: [],
-    clearRecentRankRewards: () => {
       throw new Error('Not implemented in test.')
     },
   }

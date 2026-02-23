@@ -1,23 +1,11 @@
 import { Link, Navigate } from 'react-router-dom'
 import { useGame } from '../../app/useGame'
 import { getAchievementDefinition } from '../../domain/progression/achievements'
-import type { RankRewardGrant } from '../../domain/progression/ranks'
-
-function formatRankReward(grant: RankRewardGrant): string {
-  const packRewards = Object.entries(grant.reward.packs)
-    .filter(([, count]) => count && count > 0)
-    .map(([rarity, count]) => `${count} ${rarity} pack${count === 1 ? '' : 's'}`)
-
-  if (packRewards.length === 0) {
-    return `${grant.rankName}: +${grant.reward.gold} gold`
-  }
-
-  return `${grant.rankName}: +${grant.reward.gold} gold + ${packRewards.join(', ')}`
-}
 
 function formatGoldBonusDetails(rewards: {
   bonusGoldFromDuplicate: number
   bonusGoldFromDifficulty: number
+  bonusGoldFromCriticalVictory: number
   bonusGoldFromAutoDeck: number
 }): string {
   const parts: string[] = []
@@ -26,6 +14,9 @@ function formatGoldBonusDetails(rewards: {
   }
   if (rewards.bonusGoldFromDuplicate > 0) {
     parts.push(`+${rewards.bonusGoldFromDuplicate} duplicate`)
+  }
+  if (rewards.bonusGoldFromCriticalVictory > 0) {
+    parts.push(`+${rewards.bonusGoldFromCriticalVictory} critical`)
   }
   if (rewards.bonusGoldFromAutoDeck > 0) {
     parts.push(`+${rewards.bonusGoldFromAutoDeck} auto deck`)
@@ -40,12 +31,14 @@ export function ResultsPage() {
     return <Navigate to="/" replace />
   }
 
-  const { result, rewards, newlyOwnedCards, opponent } = lastMatchSummary
+  const { queue, result, rewards, newlyOwnedCards, opponent, rankedUpdate } = lastMatchSummary
 
   return (
     <section className="panel">
       <h1>Results</h1>
       <p className="lead">Winner: {result.winner === 'draw' ? 'Draw' : result.winner === 'player' ? 'Player' : 'CPU'}</p>
+      {rewards.criticalVictory ? <p className="small">Critical Victory</p> : null}
+      <p className="small">Queue: {queue === 'ranked' ? 'Ranked' : 'Normal'}</p>
 
       <div className="stat-row">
         <span>Player Cards</span>
@@ -93,18 +86,20 @@ export function ResultsPage() {
         )}
       </div>
 
-      <div className="result-block">
-        <h2>Rank Rewards</h2>
-        {rewards.rankRewards.length > 0 ? (
-          <ul>
-            {rewards.rankRewards.map((grant) => (
-              <li key={grant.rankId}>{formatRankReward(grant)}</li>
-            ))}
-          </ul>
-        ) : (
-          <p>No rank rewards earned this match.</p>
-        )}
-      </div>
+      {rankedUpdate ? (
+        <div className="result-block">
+          <h2>Ranked LP</h2>
+          <p>
+            {rankedUpdate.deltaLp >= 0 ? '+' : ''}
+            {rankedUpdate.deltaLp} LP
+            {' • '}
+            {rankedUpdate.next.tier.toUpperCase()}
+            {rankedUpdate.next.division ? ` ${rankedUpdate.next.division}` : ''}
+            {' • '}
+            {rankedUpdate.next.lp} LP
+          </p>
+        </div>
+      ) : null}
 
       {newlyOwnedCards.length > 0 && (
         <div className="result-block">

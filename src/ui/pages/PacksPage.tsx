@@ -85,6 +85,7 @@ export function PacksPage() {
     playedSoundByRevealKeyRef.current.clear()
 
     if (!openResult) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setRevealedCount(0)
       setIsRevealRunning(false)
       return

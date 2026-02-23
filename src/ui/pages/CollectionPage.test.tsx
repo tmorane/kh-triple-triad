@@ -2,7 +2,7 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ComponentProps } from 'react'
 import { MemoryRouter } from 'react-router-dom'
-import { describe, expect, test } from 'vitest'
+import { beforeEach, describe, expect, test } from 'vitest'
 import { GameContext } from '../../app/GameContext'
 import { cardPool } from '../../domain/cards/cardPool'
 import { createDefaultProfile } from '../../domain/progression/profile'
@@ -21,6 +21,7 @@ function renderCollection(valueOverrides: Partial<GameContextValue> = {}) {
     profile,
     currentMatch: null,
     lastMatchSummary: {
+      queue: 'normal',
       result: {
         winner: 'player',
         playerCount: 6,
@@ -34,9 +35,10 @@ function renderCollection(valueOverrides: Partial<GameContextValue> = {}) {
         duplicateConverted: false,
         bonusGoldFromDuplicate: 0,
         bonusGoldFromDifficulty: 0,
+        bonusGoldFromCriticalVictory: 0,
         bonusGoldFromAutoDeck: 0,
+        criticalVictory: false,
         newlyUnlockedAchievements: [],
-        rankRewards: [],
       },
       newlyOwnedCards: ['c11'],
       opponent: {
@@ -46,11 +48,15 @@ function renderCollection(valueOverrides: Partial<GameContextValue> = {}) {
         deckScore: 45,
         winGoldBonus: 0,
       },
+      rankedUpdate: null,
     },
     startMatch: () => {
       throw new Error('Not implemented in test.')
     },
     selectDeckSlot: () => {
+      throw new Error('Not implemented in test.')
+    },
+    renamePlayer: () => {
       throw new Error('Not implemented in test.')
     },
     renameDeckSlot: () => {
@@ -83,10 +89,6 @@ function renderCollection(valueOverrides: Partial<GameContextValue> = {}) {
     resetProfile: () => {
       throw new Error('Not implemented in test.')
     },
-    recentRankRewards: [],
-    clearRecentRankRewards: () => {
-      throw new Error('Not implemented in test.')
-    },
     ...valueOverrides,
   }
 
@@ -112,6 +114,10 @@ const raritySectionLabels = {
 } as const
 
 describe('CollectionPage', () => {
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
   test('shows NEW badge for recently obtained card', () => {
     renderCollection()
 
@@ -228,6 +234,23 @@ describe('CollectionPage', () => {
     expect(screen.getByTestId('collection-filter-result-count')).toHaveTextContent(
       `${cardPool.length} cards shown / ${cardPool.length} total`,
     )
+  })
+
+  test('persists selected filters when leaving and returning to collection', async () => {
+    const user = userEvent.setup()
+    const { unmount } = renderCollection()
+
+    await user.click(screen.getByTestId('collection-filter-discovery-owned'))
+    await user.click(screen.getByTestId('collection-filter-rarity-common'))
+
+    expect(screen.getByTestId('collection-filter-discovery-owned')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTestId('collection-filter-rarity-common')).toHaveAttribute('aria-pressed', 'false')
+
+    unmount()
+    renderCollection()
+
+    expect(screen.getByTestId('collection-filter-discovery-owned')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTestId('collection-filter-rarity-common')).toHaveAttribute('aria-pressed', 'false')
   })
 
   test('shows empty state when no cards match filters', async () => {

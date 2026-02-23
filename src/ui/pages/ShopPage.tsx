@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useGame } from '../../app/useGame'
-import { getPackPrice, type ShopPackId } from '../../domain/progression/shop'
-import { cardPool } from '../../domain/cards/cardPool'
+import { getPackDropRates, getPackPrice, type OpenedPackResult, type ShopPackId } from '../../domain/progression/shop'
+import { cardPool, getCard } from '../../domain/cards/cardPool'
+import type { Rarity } from '../../domain/types'
 import { TriadCard } from '../components/TriadCard'
 
 const packOrder: ShopPackId[] = ['common', 'uncommon', 'rare', 'legendary']
+const dropRarityOrder: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary']
 
 interface PackVisual {
   tagline: string
@@ -39,40 +41,65 @@ function formatPackLabel(packId: ShopPackId): string {
   return `${packId.charAt(0).toUpperCase()}${packId.slice(1)} Pack`
 }
 
+function formatRarityLabel(rarity: Rarity): string {
+  return `${rarity.charAt(0).toUpperCase()}${rarity.slice(1)}`
+}
+
 export function ShopPage() {
-  const { profile, purchaseShopPack, addTestGold } = useGame()
+  const { profile, purchaseShopPack, openOwnedPack, addTestGold } = useGame()
   const [purchaseToast, setPurchaseToast] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [openPackId, setOpenPackId] = useState<ShopPackId | null>(null)
+  const [openedPackResult, setOpenedPackResult] = useState<OpenedPackResult | null>(null)
   const ownedCardIdsSet = useMemo(() => new Set(profile.ownedCardIds), [profile.ownedCardIds])
-  const modalCards = useMemo(
-    () => (openPackId ? cardPool.filter((card) => card.rarity === openPackId) : []),
-    [openPackId],
-  )
-  const ownedModalCards = useMemo(
-    () => modalCards.filter((card) => ownedCardIdsSet.has(card.id)),
-    [modalCards, ownedCardIdsSet],
-  )
-  const missingModalCards = useMemo(
-    () => modalCards.filter((card) => !ownedCardIdsSet.has(card.id)),
-    [modalCards, ownedCardIdsSet],
+  const modalSections = useMemo(() => {
+    if (!openPackId) {
+      return []
+    }
+
+    const dropRates = getPackDropRates(openPackId)
+
+    return dropRarityOrder
+      .filter((rarity) => dropRates[rarity] > 0)
+      .map((rarity) => {
+        const cards = cardPool.filter((card) => card.rarity === rarity)
+        const ownedCount = cards.filter((card) => ownedCardIdsSet.has(card.id)).length
+        return {
+          rarity,
+          cards,
+          ownedCount,
+          dropRate: dropRates[rarity],
+        }
+      })
+  }, [openPackId, ownedCardIdsSet])
+  const openedRevealEntries = useMemo(
+    () =>
+      openedPackResult
+        ? openedPackResult.pulls.map((pull) => ({
+            pull,
+            card: getCard(pull.cardId),
+          }))
+        : [],
+    [openedPackResult],
   )
   const openPackVisual = openPackId ? packVisuals[openPackId] : null
+  const openedPackVisual = openedPackResult ? packVisuals[openedPackResult.packId] : null
 
   useEffect(() => {
-    if (!openPackId) {
+    if (!openPackId && !openedPackResult) {
       return
     }
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setOpenPackId(null)
+        setOpenedPackResult(null)
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [openPackId])
+  }, [openPackId, openedPackResult])
 
   const handleBuyPack = (packId: ShopPackId) => {
     try {
@@ -83,6 +110,26 @@ export function ShopPage() {
       const message = err instanceof Error ? err.message : 'Unable to complete purchase.'
       setError(message)
     }
+  }
+
+  const handleOpenOwnedPack = (packId: ShopPackId) => {
+    try {
+      const result = openOwnedPack(packId)
+      setOpenedPackResult(result)
+      setOpenPackId(null)
+      setPurchaseToast(null)
+      setError(null)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unable to open this pack.'
+      setError(message)
+    }
+  }
+
+  const handleOpenAnotherOwnedPack = () => {
+    if (!openedPackResult || openedPackResult.remainingPackCount <= 0) {
+      return
+    }
+    handleOpenOwnedPack(openedPackResult.packId)
   }
 
   useEffect(() => {
@@ -125,9 +172,11 @@ export function ShopPage() {
       <div className="shop-pack-grid" aria-label="Shop packs">
         {packOrder.map((packId) => {
           const price = getPackPrice(packId)
+          const dropRates = getPackDropRates(packId)
           const affordable = profile.gold >= price
           const cardsInRarity = cardPool.filter((card) => card.rarity === packId)
           const ownedInRarity = cardsInRarity.filter((card) => profile.ownedCardIds.includes(card.id)).length
+          const ownedPackCount = profile.packInventoryByRarity[packId]
           const isOpen = openPackId === packId
           const packVisual = packVisuals[packId]
 
@@ -142,12 +191,23 @@ export function ShopPage() {
                   decoding="async"
                 />
                 <span className="shop-pack-stock" data-testid={`shop-pack-stock-${packId}`}>
-                  x{profile.packInventoryByRarity[packId]}
+                  x{ownedPackCount}
                 </span>
               </div>
               <p className="small shop-pack-progress">
                 Owned {ownedInRarity}/{cardsInRarity.length}
               </p>
+              <div className="shop-pack-rates" data-testid={`shop-pack-rates-${packId}`}>
+                {dropRarityOrder.map((rarity) => (
+                  <span
+                    key={rarity}
+                    className={`shop-pack-rate shop-pack-rate--${rarity}`}
+                    data-testid={`shop-pack-rate-${packId}-${rarity}`}
+                  >
+                    {formatRarityLabel(rarity)} {dropRates[rarity]}%
+                  </span>
+                ))}
+              </div>
               <button
                 type="button"
                 className={`shop-price-buy shop-price-buy--${packId}`}
@@ -162,6 +222,15 @@ export function ShopPage() {
                   <span className="shop-price-buy__unit">G</span>
                 </span>
                 <span className="shop-price-buy__hint">{affordable ? 'Tap to buy this pack' : 'Not enough gold'}</span>
+              </button>
+              <button
+                type="button"
+                className={`button shop-open-owned-button shop-open-owned-button--${packId}`}
+                disabled={ownedPackCount <= 0}
+                onClick={() => handleOpenOwnedPack(packId)}
+                data-testid={`open-owned-pack-${packId}`}
+              >
+                {ownedPackCount > 0 ? 'Open now' : 'No pack to open'}
               </button>
               <button
                 type="button"
@@ -211,51 +280,100 @@ export function ShopPage() {
               </button>
             </div>
             <div className="shop-pack-modal-sections">
-              {missingModalCards.length > 0 ? (
-                <section className="shop-pack-modal-section" aria-labelledby={`shop-pack-modal-missing-title-${openPackId}`}>
+              {modalSections.map((section) => (
+                <section
+                  className="shop-pack-modal-section"
+                  aria-labelledby={`shop-pack-modal-rarity-title-${openPackId}-${section.rarity}`}
+                  key={section.rarity}
+                >
                   <div className="shop-pack-modal-section-head">
-                    <h3 id={`shop-pack-modal-missing-title-${openPackId}`}>Not owned</h3>
-                    <p className="small">{missingModalCards.length}</p>
+                    <h3 id={`shop-pack-modal-rarity-title-${openPackId}-${section.rarity}`}>
+                      {formatRarityLabel(section.rarity)}
+                    </h3>
+                    <p className="small">
+                      {section.ownedCount}/{section.cards.length} owned | {section.dropRate}%
+                    </p>
                   </div>
                   <div className="shop-pack-modal-grid">
-                    {missingModalCards.map((card) => (
-                      <TriadCard
-                        key={card.id}
-                        card={card}
-                        context="collection-list"
-                        owned={false}
-                        copies={0}
-                        testId={`shop-pack-modal-card-${openPackId}-${card.id}`}
-                      />
-                    ))}
+                    {section.cards.length > 0 ? (
+                      section.cards.map((card) => {
+                        const owned = ownedCardIdsSet.has(card.id)
+                        return (
+                          <TriadCard
+                            key={card.id}
+                            card={card}
+                            context="collection-list"
+                            owned={owned}
+                            copies={owned ? (profile.cardCopiesById[card.id] ?? 0) : 0}
+                            testId={`shop-pack-modal-card-${openPackId}-${card.id}`}
+                          />
+                        )
+                      })
+                    ) : (
+                      <p className="small shop-pack-modal-empty">No cards available in this rarity.</p>
+                    )}
                   </div>
                 </section>
-              ) : null}
+              ))}
+            </div>
+          </section>
+        </div>
+      ) : null}
 
-              <section className="shop-pack-modal-section" aria-labelledby={`shop-pack-modal-owned-title-${openPackId}`}>
-                <div className="shop-pack-modal-section-head">
-                  <h3 id={`shop-pack-modal-owned-title-${openPackId}`}>Owned</h3>
-                  <p className="small">
-                    {ownedModalCards.length}/{modalCards.length}
-                  </p>
+      {openedPackResult ? (
+        <div className="packs-reveal-backdrop" role="presentation" onClick={() => setOpenedPackResult(null)}>
+          <section
+            className={`packs-reveal-modal packs-reveal-modal--${openedPackResult.packId}`}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="shop-opened-reveal-title"
+            data-testid="shop-opened-reveal-modal"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="packs-reveal-head">
+              <div className="packs-reveal-headline">
+                <img className="packs-reveal-art" src={openedPackVisual?.artSrc} alt="" aria-hidden="true" />
+                <div>
+                  <h2 id="shop-opened-reveal-title">{formatPackLabel(openedPackResult.packId)} Opened</h2>
+                  <p className="small">Remaining: x{openedPackResult.remainingPackCount}</p>
                 </div>
-                <div className="shop-pack-modal-grid">
-                  {ownedModalCards.length > 0 ? (
-                    ownedModalCards.map((card) => (
-                      <TriadCard
-                        key={card.id}
-                        card={card}
-                        context="collection-list"
-                        owned
-                        copies={profile.cardCopiesById[card.id] ?? 0}
-                        testId={`shop-pack-modal-card-${openPackId}-${card.id}`}
-                      />
-                    ))
-                  ) : (
-                    <p className="small shop-pack-modal-empty">No owned cards in this rarity yet.</p>
-                  )}
-                </div>
-              </section>
+              </div>
+              <div className="packs-reveal-actions">
+                {openedPackResult.remainingPackCount > 0 ? (
+                  <button
+                    type="button"
+                    className="button button-primary"
+                    onClick={handleOpenAnotherOwnedPack}
+                    data-testid="shop-opened-reveal-open-another"
+                  >
+                    Open another
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className="button"
+                  onClick={() => setOpenedPackResult(null)}
+                  data-testid="shop-opened-reveal-close"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            <div className="packs-reveal-grid">
+              {openedRevealEntries.map((entry, index) => (
+                <article className="packs-reveal-card is-revealed" key={`${entry.pull.cardId}-${index}`}>
+                  <TriadCard
+                    card={entry.card}
+                    context="collection-detail"
+                    owned
+                    copies={profile.cardCopiesById[entry.pull.cardId] ?? entry.pull.copiesAfter}
+                    showNew={entry.pull.isNewOwnership}
+                    newBadgeVariant="reveal"
+                    testId={`shop-opened-reveal-triad-${index}`}
+                  />
+                </article>
+              ))}
             </div>
           </section>
         </div>

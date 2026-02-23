@@ -3,7 +3,7 @@ import { cardPool } from '../cards/cardPool'
 import { createSeededRng, type SeededRng } from '../random/seededRng'
 import type { PlayerProfile } from '../types'
 import { createDefaultProfile } from './profile'
-import { getPackPrice, openOwnedPack, purchaseShopPack } from './shop'
+import { getPackDropRates, getPackPrice, openOwnedPack, purchaseShopPack } from './shop'
 
 function cloneProfile(profile: PlayerProfile): PlayerProfile {
   return {
@@ -18,7 +18,10 @@ function cloneProfile(profile: PlayerProfile): PlayerProfile {
     })) as PlayerProfile['deckSlots'],
     stats: { ...profile.stats },
     achievements: [...profile.achievements],
-    rankRewardsClaimed: [...profile.rankRewardsClaimed],
+    ranked: {
+      ...profile.ranked,
+      resultStreak: { ...profile.ranked.resultStreak },
+    },
     settings: { ...profile.settings },
   }
 }
@@ -74,6 +77,30 @@ describe('shop progression', () => {
     expect(getPackPrice('legendary')).toBe(360)
   })
 
+  test('exposes configured drop rates for shop packs', () => {
+    expect(getPackDropRates('common')).toEqual({
+      common: 70,
+      uncommon: 22,
+      rare: 5,
+      epic: 2,
+      legendary: 1,
+    })
+    expect(getPackDropRates('rare')).toEqual({
+      common: 15,
+      uncommon: 25,
+      rare: 35,
+      epic: 20,
+      legendary: 5,
+    })
+    expect(getPackDropRates('legendary')).toEqual({
+      common: 5,
+      uncommon: 10,
+      rare: 20,
+      epic: 55,
+      legendary: 10,
+    })
+  })
+
   test('openOwnedPack rejects opening when no pack is owned', () => {
     const profile = createDefaultProfile()
 
@@ -91,17 +118,26 @@ describe('shop progression', () => {
     expect(result.profile.packInventoryByRarity.common).toBe(1)
   })
 
-  test('openOwnedPack pulls only cards from selected rarity pool', () => {
+  test('openOwnedPack can pull multiple rarities from one common pack', () => {
+    const profile = createDefaultProfile()
+    profile.packInventoryByRarity.common = 1
+
+    const result = openOwnedPack(profile, 'common', createFixedIntRng([0, 0, 70, 0, 99, 0]))
+
+    expect(result.opened.pulls).toHaveLength(3)
+    expect(result.opened.pulls.map((pull) => pull.rarity)).toEqual(['common', 'uncommon', 'legendary'])
+  })
+
+  test('openOwnedPack pull rarity always matches dropped card rarity', () => {
     const profile = createDefaultProfile()
     profile.packInventoryByRarity.legendary = 1
 
-    const result = openOwnedPack(profile, 'legendary', createSeededRng(19))
+    const result = openOwnedPack(profile, 'legendary', createFixedIntRng([0, 0, 99, 0, 50, 0]))
 
     expect(result.opened.pulls).toHaveLength(3)
     for (const pull of result.opened.pulls) {
-      expect(pull.rarity).toBe('legendary')
       const card = cardPool.find((entry) => entry.id === pull.cardId)
-      expect(card?.rarity).toBe('legendary')
+      expect(card?.rarity).toBe(pull.rarity)
     }
   })
 
@@ -128,13 +164,16 @@ describe('shop progression', () => {
     profile.packInventoryByRarity.rare = 1
     const firstRareCardId = rarePool[0]
 
-    const result = openOwnedPack(profile, 'rare', createFixedIntRng([0, 0, 0]))
+    const result = openOwnedPack(profile, 'rare', createFixedIntRng([40, 0, 40, 0, 40, 0]))
 
     expect(result.opened.pulls[0].cardId).toBe(firstRareCardId)
+    expect(result.opened.pulls[0].rarity).toBe('rare')
     expect(result.opened.pulls[0].isNewOwnership).toBe(true)
     expect(result.opened.pulls[1].cardId).toBe(firstRareCardId)
+    expect(result.opened.pulls[1].rarity).toBe('rare')
     expect(result.opened.pulls[1].isNewOwnership).toBe(false)
     expect(result.opened.pulls[2].cardId).toBe(firstRareCardId)
+    expect(result.opened.pulls[2].rarity).toBe('rare')
     expect(result.opened.pulls[2].isNewOwnership).toBe(false)
 
     expect(result.profile.ownedCardIds.filter((cardId) => cardId === firstRareCardId)).toEqual([firstRareCardId])
@@ -149,9 +188,10 @@ describe('shop progression', () => {
     base.ownedCardIds = [...ownedRareIds]
     base.cardCopiesById = Object.fromEntries(ownedRareIds.map((cardId) => [cardId, 1]))
 
-    const result = openOwnedPack(cloneProfile(base), 'rare', createFixedIntRng([6, 0, 0]))
+    const result = openOwnedPack(cloneProfile(base), 'rare', createFixedIntRng([40, 6]))
 
     expect(result.opened.pulls[0].cardId).toBe(weightedTarget)
+    expect(result.opened.pulls[0].rarity).toBe('rare')
     expect(result.opened.pulls[0].isNewOwnership).toBe(true)
   })
 })

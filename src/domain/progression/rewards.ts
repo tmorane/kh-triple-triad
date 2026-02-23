@@ -2,17 +2,17 @@ import { createSeededRng } from '../random/seededRng'
 import type { OpponentLevel } from '../match/opponents'
 import type { AchievementId, CardId, MatchResult, PlayerProfile } from '../types'
 import { evaluateAchievements } from './achievements'
-import type { RankRewardGrant } from './ranks'
 
 export interface RewardBreakdown {
   goldAwarded: number
   bonusGoldFromDuplicate: number
   bonusGoldFromDifficulty: number
+  bonusGoldFromCriticalVictory: number
   bonusGoldFromAutoDeck: number
+  criticalVictory: boolean
   droppedCardId: CardId | null
   duplicateConverted: boolean
   newlyUnlockedAchievements: AchievementId[]
-  rankRewards: RankRewardGrant[]
 }
 
 export interface MatchProgressionResult {
@@ -44,7 +44,10 @@ export function applyMatchRewards(
     selectedDeckSlotId: profile.selectedDeckSlotId,
     stats: { ...profile.stats },
     achievements: [...profile.achievements],
-    rankRewardsClaimed: [...profile.rankRewardsClaimed],
+    ranked: {
+      ...profile.ranked,
+      resultStreak: { ...profile.ranked.resultStreak },
+    },
     settings: { ...profile.settings },
   }
 
@@ -58,7 +61,7 @@ export function applyMatchRewards(
   }
 
   const baseGold = result.winner === 'player' ? 60 : result.winner === 'draw' ? 30 : 20
-  let bonusGold = 0
+  let bonusGoldFromDuplicate = 0
   const bonusGoldFromDifficulty = result.winner === 'player' ? (opponentLevel - 1) * 4 : 0
   const safeMultiplier = Number.isFinite(rewardMultiplier) && rewardMultiplier > 0 ? rewardMultiplier : 1
   let droppedCardId: CardId | null = null
@@ -69,7 +72,7 @@ export function applyMatchRewards(
     const drop = chooseWinDrop(updatedProfile.ownedCardIds, cpuDeck, rng.nextInt(cpuDeck.length))
     droppedCardId = drop.cardId
     if (drop.isDuplicate) {
-      bonusGold += 15
+      bonusGoldFromDuplicate += 15
       duplicateConverted = true
     } else {
       updatedProfile.ownedCardIds.push(drop.cardId)
@@ -82,7 +85,7 @@ export function applyMatchRewards(
       const cardId = cpuDeck[rng.nextInt(cpuDeck.length)]
       droppedCardId = cardId
       if (updatedProfile.ownedCardIds.includes(cardId)) {
-        bonusGold += 15
+        bonusGoldFromDuplicate += 15
         duplicateConverted = true
       } else {
         updatedProfile.ownedCardIds.push(cardId)
@@ -92,7 +95,10 @@ export function applyMatchRewards(
     }
   }
 
-  const rawTotalGold = baseGold + bonusGold + bonusGoldFromDifficulty
+  const criticalVictory = result.winner === 'player' && result.playerCount === 9 && result.cpuCount === 0
+  const baseSubtotal = baseGold + bonusGoldFromDuplicate + bonusGoldFromDifficulty
+  const bonusGoldFromCriticalVictory = criticalVictory ? Math.floor(baseSubtotal * 0.25) : 0
+  const rawTotalGold = baseSubtotal + bonusGoldFromCriticalVictory
   const multipliedTotalGold = Math.floor(rawTotalGold * safeMultiplier)
   const bonusGoldFromAutoDeck = Math.max(0, multipliedTotalGold - rawTotalGold)
 
@@ -106,13 +112,14 @@ export function applyMatchRewards(
     newlyOwnedCards,
     rewards: {
       goldAwarded: baseGold,
-      bonusGoldFromDuplicate: bonusGold,
+      bonusGoldFromDuplicate,
       bonusGoldFromDifficulty,
+      bonusGoldFromCriticalVictory,
       bonusGoldFromAutoDeck,
+      criticalVictory,
       droppedCardId,
       duplicateConverted,
       newlyUnlockedAchievements: unlocked.map((entry) => entry.id),
-      rankRewards: [],
     },
   }
 }

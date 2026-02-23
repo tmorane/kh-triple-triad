@@ -1,7 +1,6 @@
 import { cardPool, getCard } from '../cards/cardPool'
-import { computeRankState } from '../progression/ranks'
 import { createSeededRng } from '../random/seededRng'
-import type { CardId, PlayerProfile, RankId, Rarity } from '../types'
+import type { CardId, PlayerProfile, RankedTierId, Rarity } from '../types'
 import type { CpuAiProfile } from './ai'
 
 export type OpponentLevel = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8
@@ -13,7 +12,7 @@ interface DeckScoreRange {
 
 interface OpponentLevelConfig {
   level: OpponentLevel
-  rankId: RankId
+  tierId: RankedTierId
   scoreRange: DeckScoreRange
   rarityWeights: Partial<Record<Rarity, number>>
   aiProfile: CpuAiProfile
@@ -22,7 +21,7 @@ interface OpponentLevelConfig {
 
 export interface CpuOpponentPreview {
   level: OpponentLevel
-  rankId: RankId
+  tierId: RankedTierId
   scoreRange: DeckScoreRange
   aiProfile: CpuAiProfile
   baseTargetScore: number
@@ -49,7 +48,7 @@ const autoDeckNarrowPoolSize = 60
 export const opponentLevelConfigs: ReadonlyArray<OpponentLevelConfig> = [
   {
     level: 1,
-    rankId: 'R1',
+    tierId: 'iron',
     scoreRange: { min: 45, max: 50 },
     rarityWeights: { common: 1 },
     aiProfile: 'novice',
@@ -57,7 +56,7 @@ export const opponentLevelConfigs: ReadonlyArray<OpponentLevelConfig> = [
   },
   {
     level: 2,
-    rankId: 'R2',
+    tierId: 'bronze',
     scoreRange: { min: 50, max: 62 },
     rarityWeights: { common: 0.75, uncommon: 0.25 },
     aiProfile: 'novice',
@@ -65,7 +64,7 @@ export const opponentLevelConfigs: ReadonlyArray<OpponentLevelConfig> = [
   },
   {
     level: 3,
-    rankId: 'R3',
+    tierId: 'silver',
     scoreRange: { min: 75, max: 88 },
     rarityWeights: { uncommon: 0.7, rare: 0.3 },
     aiProfile: 'standard',
@@ -73,7 +72,7 @@ export const opponentLevelConfigs: ReadonlyArray<OpponentLevelConfig> = [
   },
   {
     level: 4,
-    rankId: 'R4',
+    tierId: 'gold',
     scoreRange: { min: 86, max: 104 },
     rarityWeights: { uncommon: 0.45, rare: 0.55 },
     aiProfile: 'standard',
@@ -81,7 +80,7 @@ export const opponentLevelConfigs: ReadonlyArray<OpponentLevelConfig> = [
   },
   {
     level: 5,
-    rankId: 'R5',
+    tierId: 'platinum',
     scoreRange: { min: 110, max: 128 },
     rarityWeights: { rare: 0.7, epic: 0.3 },
     aiProfile: 'standard',
@@ -89,7 +88,7 @@ export const opponentLevelConfigs: ReadonlyArray<OpponentLevelConfig> = [
   },
   {
     level: 6,
-    rankId: 'R6',
+    tierId: 'emerald',
     scoreRange: { min: 124, max: 146 },
     rarityWeights: { rare: 0.45, epic: 0.55 },
     aiProfile: 'expert',
@@ -97,7 +96,7 @@ export const opponentLevelConfigs: ReadonlyArray<OpponentLevelConfig> = [
   },
   {
     level: 7,
-    rankId: 'R7',
+    tierId: 'diamond',
     scoreRange: { min: 140, max: 164 },
     rarityWeights: { epic: 0.65, legendary: 0.35 },
     aiProfile: 'expert',
@@ -105,7 +104,7 @@ export const opponentLevelConfigs: ReadonlyArray<OpponentLevelConfig> = [
   },
   {
     level: 8,
-    rankId: 'R8',
+    tierId: 'master',
     scoreRange: { min: 156, max: 183 },
     rarityWeights: { epic: 0.25, legendary: 0.75 },
     aiProfile: 'expert',
@@ -113,9 +112,9 @@ export const opponentLevelConfigs: ReadonlyArray<OpponentLevelConfig> = [
   },
 ]
 
-const configByRank: Record<RankId, OpponentLevelConfig> = Object.fromEntries(
-  opponentLevelConfigs.map((entry) => [entry.rankId, entry]),
-) as Record<RankId, OpponentLevelConfig>
+const configByTier: Partial<Record<RankedTierId, OpponentLevelConfig>> = Object.fromEntries(
+  opponentLevelConfigs.map((entry) => [entry.tierId, entry]),
+) as Partial<Record<RankedTierId, OpponentLevelConfig>>
 
 const cardsByRarity: Record<Rarity, CardId[]> = {
   common: cardPool.filter((card) => card.rarity === 'common').map((card) => card.id),
@@ -133,13 +132,11 @@ export function computeDeckScore(cardIds: CardId[]): number {
 }
 
 export function getOpponentLevelForProfile(profile: PlayerProfile): OpponentLevel {
-  const rankId = computeRankState(profile).currentRank.id
-  return configByRank[rankId].level
+  return getConfigForTier(profile.ranked.tier).level
 }
 
 export function getCpuOpponentPreview(profile: PlayerProfile, playerDeck: CardId[]): CpuOpponentPreview {
-  const rankId = computeRankState(profile).currentRank.id
-  const config = configByRank[rankId]
+  const config = getConfigForTier(profile.ranked.tier)
   const playerDeckScore = computeDeckScore(playerDeck)
   const { min, max } = config.scoreRange
   const baseTargetScore = Math.round((min + max) / 2)
@@ -147,7 +144,7 @@ export function getCpuOpponentPreview(profile: PlayerProfile, playerDeck: CardId
 
   return {
     level: config.level,
-    rankId: config.rankId,
+    tierId: config.tierId,
     scoreRange: { ...config.scoreRange },
     aiProfile: config.aiProfile,
     baseTargetScore,
@@ -158,7 +155,7 @@ export function getCpuOpponentPreview(profile: PlayerProfile, playerDeck: CardId
 
 export function buildCpuOpponent(profile: PlayerProfile, playerDeck: CardId[], seed: number): CpuOpponent {
   const preview = getCpuOpponentPreview(profile, playerDeck)
-  const config = configByRank[preview.rankId]
+  const config = getConfigForTier(preview.tierId)
   const rng = createSeededRng(seed)
 
   let bestInRange: CandidateDeck | null = null
@@ -188,6 +185,18 @@ export function buildCpuOpponent(profile: PlayerProfile, playerDeck: CardId[], s
     deck: [...chosen.deck],
     deckScore: chosen.score,
   }
+}
+
+function getConfigForTier(tierId: RankedTierId): OpponentLevelConfig {
+  if (tierId === 'grandmaster' || tierId === 'challenger') {
+    return opponentLevelConfigs[opponentLevelConfigs.length - 1]!
+  }
+
+  const config = configByTier[tierId]
+  if (!config) {
+    throw new Error(`No opponent config for tier ${tierId}.`)
+  }
+  return config
 }
 
 export function buildAutoPlayerDeck(scoreRange: CpuOpponentPreview['scoreRange'], seed: number): CardId[] {
