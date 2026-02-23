@@ -85,7 +85,7 @@ export interface SpecialPackProgressionResult {
 }
 
 const dropRarityOrder: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary']
-const legendaryFocusFillerCategories: CardCategoryId[] = ['boss_kh', 'heros']
+const legendaryFocusFillerCategories: CardCategoryId[] = ['humain']
 
 const PACK_PRICES: Record<ShopPackId, number> = {
   common: 60,

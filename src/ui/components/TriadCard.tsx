@@ -38,6 +38,14 @@ function normalizeRarity(rarity: CardDef['rarity']): string {
   return rarity.charAt(0).toUpperCase() + rarity.slice(1)
 }
 
+function getLongestNameSegmentLength(name: string): number {
+  return name
+    .split(/[\s-]+/)
+    .map((segment) => segment.trim())
+    .filter(Boolean)
+    .reduce((maxLength, segment) => Math.max(maxLength, segment.length), 0)
+}
+
 export const TriadCard = memo(function TriadCard({
   card,
   context,
@@ -91,6 +99,8 @@ export const TriadCard = memo(function TriadCard({
   const left = locked ? '?' : card.left
   const artSrc = !locked && !artUnavailable ? (artCandidates[0] ?? null) : null
   const showSigil = locked || artUnavailable
+  const useCompactName = context === 'setup' && !locked && getLongestNameSegmentLength(card.name) >= 9
+  const nameClassName = useCompactName ? 'triad-card__name triad-card__name--compact' : 'triad-card__name'
 
   function handleArtError(event: SyntheticEvent<HTMLImageElement>) {
     const nextCandidateIndex = artCandidateIndexRef.current + 1
@@ -167,7 +177,7 @@ export const TriadCard = memo(function TriadCard({
 
           {!isMatchHandContext && (
             <div className="triad-card__footer">
-              <span className="triad-card__name">{locked ? 'Locked Card' : card.name}</span>
+              <span className={nameClassName}>{locked ? 'Locked Card' : card.name}</span>
               <span className="triad-card__meta">
                 <span className="triad-card__id">{locked ? '????' : card.id.toUpperCase()}</span>
                 <span className="triad-card__rarity">{locked ? 'Unknown' : normalizeRarity(card.rarity)}</span>

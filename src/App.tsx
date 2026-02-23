@@ -19,18 +19,14 @@ import './index.css'
 
 const BACKGROUNDS = ['bg1', 'bg2', 'bg3', 'bg4'] as const
 type BackgroundMode = (typeof BACKGROUNDS)[number]
-
-function getNextBackground(current: BackgroundMode): BackgroundMode {
-  const currentIndex = BACKGROUNDS.indexOf(current)
-  return BACKGROUNDS[(currentIndex + 1) % BACKGROUNDS.length]
-}
+const THEME_STORAGE_KEY = 'kh-triple-triad-theme-mode-v1'
+const LOCKED_THEME_MODE = 'pokemon' as const
 
 function App() {
   const { profile, currentMatch } = useGame()
   const location = useLocation()
   const [backgroundMode, setBackgroundMode] = useState<BackgroundMode>('bg1')
   const [isMoreOpen, setIsMoreOpen] = useState(false)
-  const nextBackground = getNextBackground(backgroundMode).toUpperCase()
   const ctaLabel = currentMatch ? 'Continue' : 'Play'
   const ctaTarget = currentMatch ? '/match' : '/setup'
 
@@ -46,6 +42,19 @@ function App() {
       delete document.body.dataset.bg
     }
   }, [backgroundMode])
+
+  useEffect(() => {
+    document.body.dataset.theme = LOCKED_THEME_MODE
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, LOCKED_THEME_MODE)
+    } catch {
+      // Ignore storage write errors (private mode, disabled storage, etc.).
+    }
+
+    return () => {
+      delete document.body.dataset.theme
+    }
+  }, [])
 
   useEffect(() => {
     if (!isMoreOpen) {
@@ -66,14 +75,34 @@ function App() {
     <div className="app-shell">
       <CloudProfileAutoSync />
 
-      <button
-        type="button"
-        className="bg-toggle"
-        aria-label="Basculer le fond"
-        onClick={() => setBackgroundMode((current) => getNextBackground(current))}
-      >
-        {nextBackground}
-      </button>
+      <div className="visual-controls" data-testid="visual-controls" aria-label="Visual controls">
+        <div className="bg-options" role="group" aria-label="Background selection">
+          {BACKGROUNDS.map((background) => {
+            const isActive = backgroundMode === background
+            return (
+              <button
+                key={background}
+                type="button"
+                className={`bg-option ${isActive ? 'is-active' : ''}`}
+                data-testid={`bg-option-${background}`}
+                aria-pressed={isActive}
+                onClick={() => setBackgroundMode(background)}
+              >
+                {background.toUpperCase()}
+              </button>
+            )
+          })}
+        </div>
+        <button
+          type="button"
+          className="theme-toggle"
+          data-testid="theme-toggle"
+          aria-label="Theme locked to Pokemon"
+          disabled
+        >
+          Theme: Pokemon only
+        </button>
+      </div>
 
       <header className="topbar">
         <div className="brand-block">

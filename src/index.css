@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Crimson+Text:wght@400;600;700&family=Rajdhani:wght@500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Bungee&family=Cinzel:wght@500;700&family=Crimson+Text:wght@400;600;700&family=Rajdhani:wght@500;600;700&display=swap');
 
 :root {
   --bg-ink: #08161f;
@@ -97,34 +97,79 @@ h2 {
   padding: 1rem;
 }
 
-.bg-toggle {
+.visual-controls {
   position: fixed;
   top: 0.85rem;
   right: 0.85rem;
-  z-index: 60;
-  padding: 0.44rem 0.72rem;
+  z-index: 160;
+  display: grid;
+  justify-items: end;
+  gap: 0.34rem;
+}
+
+.bg-options {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.24rem;
+  padding: 0.28rem;
   border-radius: 999px;
-  border: 1px solid rgba(232, 181, 93, 0.62);
+  border: 1px solid rgba(232, 181, 93, 0.55);
   background: linear-gradient(165deg, rgba(8, 21, 29, 0.94), rgba(5, 14, 20, 0.92));
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 228, 168, 0.14),
+    0 8px 20px rgba(0, 0, 0, 0.3);
+}
+
+.bg-option,
+.theme-toggle {
+  border: 1px solid rgba(232, 181, 93, 0.56);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.02);
   color: var(--accent-strong);
   cursor: pointer;
   font-family: 'Rajdhani', sans-serif;
-  font-size: 0.88rem;
+  font-size: 0.8rem;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 228, 168, 0.13),
-    0 8px 20px rgba(0, 0, 0, 0.3);
-  transition: transform 0.16s ease, border-color 0.16s ease;
+  transition: transform 0.16s ease, border-color 0.16s ease, color 0.16s ease, background 0.16s ease;
 }
 
-.bg-toggle:hover {
+.bg-option {
+  min-width: 52px;
+  padding: 0.3rem 0.52rem;
+}
+
+.bg-option.is-active {
+  color: #fff7e2;
+  border-color: rgba(255, 220, 160, 0.88);
+  background: linear-gradient(140deg, rgba(197, 131, 52, 0.58), rgba(128, 82, 30, 0.58));
+}
+
+.theme-toggle {
+  padding: 0.34rem 0.68rem;
+}
+
+.theme-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.82;
+}
+
+.bg-option:hover,
+.theme-toggle:hover {
   transform: translateY(-1px);
-  border-color: rgba(255, 212, 145, 0.85);
+  border-color: rgba(255, 220, 160, 0.9);
+  color: #fff6df;
 }
 
-.bg-toggle:focus-visible {
+.theme-toggle:disabled:hover {
+  transform: none;
+  border-color: rgba(232, 181, 93, 0.56);
+  color: var(--accent-strong);
+}
+
+.bg-option:focus-visible,
+.theme-toggle:focus-visible {
   outline: 2px solid rgba(255, 212, 145, 0.95);
   outline-offset: 2px;
 }
@@ -3110,7 +3155,7 @@ h2 {
   --synergy-logo-filter-active: invert(1) brightness(1.3) contrast(1.3) drop-shadow(0 0 8px rgba(203, 173, 244, 0.46));
 }
 
-.synergy-legend__logo--r8 {
+.synergy-legend__logo--humain {
   --logo-accent: #f0ca7b;
   --synergy-logo-scale: 2.45;
 }
@@ -5097,7 +5142,7 @@ button.triad-card {
   --type-logo-filter: invert(1) brightness(1.15) contrast(1.22);
 }
 
-.triad-card__type-badge--r8 {
+.triad-card__type-badge--humain {
   border-color: rgba(244, 208, 129, 0.82);
   box-shadow:
     inset 0 1px 0 rgba(255, 241, 207, 0.18),
@@ -5414,6 +5459,18 @@ button.triad-card {
   font-size: clamp(0.6rem, 0.9vw, 0.76rem);
   line-height: 0.98;
   max-height: calc(2 * 0.98em);
+  white-space: normal;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  hyphens: auto;
+}
+
+.setup-card-grid .triad-card--setup .triad-card__name--compact,
+.setup-selected-cards .triad-card--setup .triad-card__name--compact {
+  font-size: clamp(0.5rem, 0.75vw, 0.66rem);
+  line-height: 0.94;
+  letter-spacing: 0.02em;
 }
 
 .setup-card-grid .triad-card--setup .triad-card__stat--bottom,
@@ -6827,10 +6884,20 @@ button.triad-card {
     grid-template-columns: 1fr;
   }
 
-  .bg-toggle {
+  .visual-controls {
     top: 0.62rem;
     right: 0.62rem;
-    padding: 0.38rem 0.58rem;
+    gap: 0.24rem;
+  }
+
+  .bg-options {
+    padding: 0.2rem;
+    gap: 0.2rem;
+  }
+
+  .bg-option,
+  .theme-toggle {
+    padding: 0.28rem 0.48rem;
     font-size: 0.8rem;
   }
 
@@ -7170,4 +7237,234 @@ button.triad-card {
   .home-missions-list {
     grid-template-columns: 1fr;
   }
+}
+
+body[data-theme='pokemon'] {
+  --bg-ink: #0a1730;
+  --bg-deep: #091327;
+  --bg-field: #0c3152;
+  --panel-bg: rgba(11, 25, 48, 0.86);
+  --panel-border: rgba(130, 177, 246, 0.6);
+  --panel-inner: rgba(255, 255, 255, 0.07);
+  --text-main: #edf5ff;
+  --text-muted: #bfd0eb;
+  --accent: #ffcc48;
+  --accent-strong: #ffe88f;
+  --accent-deep: #e0a91d;
+  --danger: #ff7d88;
+  --player: #4a8bf4;
+  --cpu: #ff5e5e;
+  --match-lane-bg: rgba(14, 30, 58, 0.78);
+  --match-lane-border: rgba(131, 170, 240, 0.44);
+  --match-board-shell: rgba(8, 20, 41, 0.92);
+  --match-board-frame: rgba(110, 166, 255, 0.58);
+  --match-aura-player: rgba(112, 173, 255, 0.6);
+  --match-aura-cpu: rgba(255, 125, 125, 0.58);
+  --setup-builder-bg: rgba(11, 23, 44, 0.92);
+  --setup-builder-border: rgba(117, 170, 252, 0.54);
+  --setup-collection-bg: rgba(10, 21, 39, 0.93);
+  --setup-collection-border: rgba(125, 170, 241, 0.32);
+  --setup-chip-active: rgba(255, 203, 71, 0.32);
+  --setup-chip-idle: rgba(255, 255, 255, 0.06);
+  --bg-overlay-start: rgba(4, 8, 18, 0.24);
+  --bg-overlay-end: rgba(4, 8, 18, 0.36);
+  color: var(--text-main);
+  font-family: 'Barlow Semi Condensed', sans-serif;
+}
+
+body[data-theme='pokemon'] h1,
+body[data-theme='pokemon'] h2,
+body[data-theme='pokemon'] h3 {
+  font-family: 'Bungee', sans-serif;
+  text-transform: none;
+  letter-spacing: 0.03em;
+}
+
+body[data-theme='pokemon'] .small,
+body[data-theme='pokemon'] .topbar-gold,
+body[data-theme='pokemon'] .brand-sub,
+body[data-theme='pokemon'] .home-panel .lead,
+body[data-theme='pokemon'] .home-rank-line,
+body[data-theme='pokemon'] .main-nav :is(a, button),
+body[data-theme='pokemon'] .button,
+body[data-theme='pokemon'] .mobile-main-nav__item {
+  font-family: 'Barlow Semi Condensed', sans-serif;
+}
+
+body[data-theme='pokemon'] .bg-options {
+  border-color: rgba(104, 163, 253, 0.62);
+  background: linear-gradient(162deg, rgba(12, 29, 55, 0.94), rgba(8, 20, 39, 0.94));
+  box-shadow:
+    inset 0 0 0 1px rgba(196, 222, 255, 0.14),
+    0 8px 20px rgba(2, 7, 18, 0.45);
+}
+
+body[data-theme='pokemon'] .bg-option,
+body[data-theme='pokemon'] .theme-toggle {
+  border-color: rgba(103, 161, 248, 0.66);
+  color: #deecff;
+  background: rgba(12, 24, 43, 0.9);
+}
+
+body[data-theme='pokemon'] .bg-option.is-active {
+  border-color: rgba(255, 226, 135, 0.95);
+  color: #17223a;
+  background: linear-gradient(135deg, #ffe284, #ffc94e);
+}
+
+body[data-theme='pokemon'] .theme-toggle:hover,
+body[data-theme='pokemon'] .bg-option:hover {
+  border-color: rgba(165, 204, 255, 0.9);
+  color: #f7fbff;
+}
+
+body[data-theme='pokemon'] .theme-toggle:disabled {
+  opacity: 0.84;
+  cursor: not-allowed;
+  border-color: rgba(103, 161, 248, 0.66);
+  color: #deecff;
+  background: rgba(12, 24, 43, 0.9);
+}
+
+body[data-theme='pokemon'] .theme-toggle:disabled:hover {
+  transform: none;
+  border-color: rgba(103, 161, 248, 0.66);
+  color: #deecff;
+}
+
+body[data-theme='pokemon'] .topbar {
+  border-color: rgba(110, 161, 244, 0.64);
+  background:
+    radial-gradient(circle at 100% 0, rgba(255, 89, 89, 0.16), transparent 34%),
+    radial-gradient(circle at 0 100%, rgba(88, 151, 255, 0.26), transparent 38%),
+    linear-gradient(142deg, rgba(16, 36, 66, 0.94), rgba(10, 23, 45, 0.96));
+  box-shadow:
+    inset 0 0 0 1px rgba(198, 220, 255, 0.12),
+    0 14px 32px rgba(3, 9, 21, 0.42);
+}
+
+body[data-theme='pokemon'] .topbar-gold {
+  border-color: rgba(255, 223, 129, 0.82);
+  color: #fff2bf;
+  background: rgba(255, 196, 74, 0.2);
+}
+
+body[data-theme='pokemon'] .main-nav :is(a, button) {
+  border-color: rgba(127, 170, 247, 0.48);
+  color: #ccddf9;
+  background: rgba(16, 31, 56, 0.78);
+}
+
+body[data-theme='pokemon'] .main-nav :is(a, button).active,
+body[data-theme='pokemon'] .main-nav :is(a, button):hover {
+  color: #fff6ce;
+  border-color: rgba(255, 218, 118, 0.88);
+}
+
+body[data-theme='pokemon'] .topbar-cta {
+  border-color: rgba(255, 98, 98, 0.86);
+  background: linear-gradient(145deg, rgba(255, 94, 94, 0.9), rgba(210, 45, 59, 0.94));
+  color: #fff7ef;
+}
+
+body[data-theme='pokemon'] .mobile-main-nav {
+  border-top-color: rgba(127, 171, 248, 0.46);
+  background: linear-gradient(172deg, rgba(12, 27, 49, 0.98), rgba(8, 18, 37, 0.98));
+}
+
+body[data-theme='pokemon'] .mobile-main-nav__item {
+  border-color: rgba(127, 170, 247, 0.46);
+  color: #cfe0ff;
+  background: rgba(14, 27, 49, 0.82);
+}
+
+body[data-theme='pokemon'] .mobile-main-nav__item.active {
+  color: #fff4cb;
+  border-color: rgba(255, 215, 110, 0.86);
+}
+
+body[data-theme='pokemon'] .panel {
+  border-color: rgba(128, 177, 246, 0.62);
+  background:
+    radial-gradient(circle at 100% 0, rgba(255, 87, 87, 0.15), transparent 35%),
+    radial-gradient(circle at 0 100%, rgba(97, 162, 255, 0.22), transparent 42%),
+    linear-gradient(165deg, rgba(12, 27, 50, 0.9), rgba(8, 18, 35, 0.92));
+  box-shadow:
+    inset 0 0 0 1px rgba(197, 221, 255, 0.12),
+    0 18px 40px rgba(4, 10, 22, 0.35);
+}
+
+body[data-theme='pokemon'] .button {
+  border-color: rgba(126, 172, 248, 0.55);
+  color: #d8e7ff;
+  background: linear-gradient(145deg, rgba(17, 34, 60, 0.9), rgba(10, 22, 44, 0.94));
+}
+
+body[data-theme='pokemon'] .button:hover {
+  border-color: rgba(255, 213, 108, 0.9);
+  color: #fff5d7;
+}
+
+body[data-theme='pokemon'] .button-primary {
+  border-color: rgba(255, 106, 106, 0.86);
+  background: linear-gradient(145deg, rgba(255, 103, 103, 0.92), rgba(214, 44, 59, 0.95));
+  color: #fff7ef;
+}
+
+body[data-theme='pokemon'] .button-danger {
+  border-color: rgba(255, 137, 137, 0.72);
+  background: linear-gradient(145deg, rgba(195, 43, 58, 0.92), rgba(133, 25, 39, 0.94));
+}
+
+body[data-theme='pokemon'] .home-panel {
+  border-color: rgba(129, 176, 247, 0.7);
+  background:
+    radial-gradient(circle at 90% 5%, rgba(255, 81, 81, 0.26), transparent 33%),
+    radial-gradient(circle at 5% 92%, rgba(96, 159, 255, 0.25), transparent 40%),
+    linear-gradient(146deg, rgba(13, 30, 55, 0.92), rgba(7, 17, 34, 0.95));
+  box-shadow:
+    inset 0 0 0 1px rgba(202, 224, 255, 0.16),
+    0 24px 52px rgba(2, 8, 18, 0.46),
+    0 0 38px rgba(94, 149, 234, 0.22);
+}
+
+body[data-theme='pokemon'] .home-eyebrow {
+  border-color: rgba(255, 213, 103, 0.8);
+  color: #ffeeba;
+  background: rgba(14, 28, 52, 0.76);
+}
+
+body[data-theme='pokemon'] .home-eyebrow::before {
+  background: #ffd45f;
+  box-shadow: 0 0 10px rgba(255, 205, 89, 0.82);
+}
+
+body[data-theme='pokemon'] :is(.setup-panel, .match-panel, .collection-panel, .ranks-panel, .achievements-panel, .shop-panel, .packs-panel, .missions-panel, .account-panel) {
+  border-color: rgba(129, 176, 247, 0.64);
+}
+
+body[data-theme='pokemon'] .match-board-stage {
+  border-color: rgba(137, 181, 248, 0.7);
+  background:
+    linear-gradient(160deg, rgba(12, 31, 58, 0.94), rgba(8, 20, 39, 0.94)),
+    radial-gradient(circle at center, rgba(112, 166, 255, 0.16), transparent 58%);
+}
+
+body[data-theme='pokemon'] .match-lane {
+  border-color: rgba(130, 174, 247, 0.56);
+}
+
+body[data-theme='pokemon'] .topbar-more-backdrop,
+body[data-theme='pokemon'] .match-finish-modal-backdrop,
+body[data-theme='pokemon'] .home-rank-modal-backdrop {
+  background: rgba(6, 14, 30, 0.72);
+}
+
+body[data-theme='pokemon'] .topbar-more-menu,
+body[data-theme='pokemon'] .home-rank-modal,
+body[data-theme='pokemon'] .match-finish-modal {
+  border-color: rgba(130, 176, 247, 0.56);
+  background:
+    radial-gradient(circle at 100% 0, rgba(255, 85, 85, 0.17), transparent 42%),
+    linear-gradient(165deg, rgba(13, 29, 54, 0.97), rgba(9, 20, 40, 0.96));
 }

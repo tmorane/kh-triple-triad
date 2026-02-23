@@ -16,8 +16,6 @@ function createEmptyTypeCounts(): Record<CardTypeId, number> {
     simili: 0,
     nescient: 0,
     humain: 0,
-    disney: 0,
-    boss: 0,
   }
 }
 

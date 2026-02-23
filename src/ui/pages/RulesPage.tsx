@@ -24,20 +24,19 @@ export function RulesPage() {
           <div>
             <dt>What does primary synergy do?</dt>
             <dd>
-              <strong>R1 Avant-garde (Sans coeur):</strong> On your first move only, your placed card gets <code>+1</code> on all 4
+              <strong>R1 Avant-garde (Obscur):</strong> On your first move only, your placed card gets <code>+1</code> on all 4
               sides.
             </dd>
             <dd>
-              <strong>R2 Coin Expert (Simili):</strong> If you place in a corner, you get <code>+1</code> on the active sides of that
+              <strong>R2 Coin Expert (Psy):</strong> If you place in a corner, you get <code>+1</code> on the active sides of that
               corner.
             </dd>
             <dd>
-              <strong>R7 Combo Bounty (Nescient):</strong> Each Same/Plus trigger gives <code>+3 gold</code> (cap <code>+12</code> per
+              <strong>R7 Combo Bounty (Combat):</strong> Each Same/Plus trigger gives <code>+3 gold</code> (cap <code>+12</code> per
               match).
             </dd>
             <dd>
-              <strong>R8 Victoire Propre (other primary types):</strong> If you win by <code>2+</code> points, you gain <code>+10
-              gold</code>.
+              <strong>R8 Victoire Propre (Nature):</strong> If you win by <code>2+</code> points, you gain <code>+10 gold</code>.
             </dd>
           </div>
 
@@ -53,7 +52,7 @@ export function RulesPage() {
               You also gain <code>+5 gold</code> once per winning match.
             </dd>
             <dd>
-              Secondary is only available for <code>Sans coeur</code>, <code>Simili</code>, and <code>Nescient</code>.
+              Secondary is only available for <code>Obscur</code>, <code>Psy</code>, and <code>Combat</code>.
             </dd>
           </div>
         </dl>

@@ -143,6 +143,14 @@ function getVisibleCollectionCards() {
   return screen.queryAllByTestId(/^collection-card-/)
 }
 
+function getCardIdByType(typeId: 'sans_coeur' | 'simili' | 'nescient' | 'humain'): string {
+  const card = cardPool.find((entry) => getTypeIdByCategory(entry.categoryId) === typeId)
+  if (!card) {
+    throw new Error(`Missing card for type ${typeId}`)
+  }
+  return card.id
+}
+
 const raritySectionLabels = {
   common: 'Communes',
   uncommon: 'Peu communes',
@@ -164,7 +172,7 @@ describe('CollectionPage', () => {
     expect(screen.getByTestId('synergy-legend-logo-sans_coeur')).toBeInTheDocument()
     expect(screen.getByTestId('synergy-legend-logo-simili')).toBeInTheDocument()
     expect(screen.getByTestId('synergy-legend-logo-nescient')).toBeInTheDocument()
-    expect(screen.getByTestId('synergy-legend-logo-r8')).toBeInTheDocument()
+    expect(screen.getByTestId('synergy-legend-logo-humain')).toBeInTheDocument()
     expect(screen.getByTestId('synergy-legend-description')).toBeInTheDocument()
     expect(screen.getByTestId('synergy-legend-description')).toHaveTextContent('')
   })
@@ -176,7 +184,7 @@ describe('CollectionPage', () => {
     const sansCoeurLogo = screen.getByTestId('synergy-legend-logo-sans_coeur')
     await user.hover(sansCoeurLogo)
     expect(screen.getByTestId('synergy-legend-description')).toHaveTextContent(
-      'Sans-coeur (3+) : +1 on all 4 sides on first move.',
+      'Obscur (3+) : +1 on all 4 sides on first move.',
     )
 
     await user.unhover(sansCoeurLogo)
@@ -186,16 +194,17 @@ describe('CollectionPage', () => {
   test('highlights R2 row when inspecting an owned simili card', async () => {
     const user = userEvent.setup()
     const profile = createDefaultProfile()
-    if (!profile.ownedCardIds.includes('c84')) {
-      profile.ownedCardIds.push('c84')
+    const similiCardId = getCardIdByType('simili')
+    if (!profile.ownedCardIds.includes(similiCardId)) {
+      profile.ownedCardIds.push(similiCardId)
     }
-    profile.cardCopiesById.c84 = 1
+    profile.cardCopiesById[similiCardId] = 1
     renderCollection({ profile })
 
-    await user.click(screen.getByTestId('collection-card-c84'))
+    await user.click(screen.getByTestId(`collection-card-${similiCardId}`))
 
     expect(screen.getByTestId('synergy-legend-logo-simili')).toHaveClass('is-active')
-    expect(screen.getByTestId('synergy-legend-logo-r8')).not.toHaveClass('is-active')
+    expect(screen.getByTestId('synergy-legend-logo-humain')).not.toHaveClass('is-active')
   })
 
   test('does not highlight legend rows when inspecting a locked card', async () => {
@@ -208,7 +217,7 @@ describe('CollectionPage', () => {
     expect(screen.getByTestId('synergy-legend-logo-sans_coeur')).not.toHaveClass('is-active')
     expect(screen.getByTestId('synergy-legend-logo-simili')).not.toHaveClass('is-active')
     expect(screen.getByTestId('synergy-legend-logo-nescient')).not.toHaveClass('is-active')
-    expect(screen.getByTestId('synergy-legend-logo-r8')).not.toHaveClass('is-active')
+    expect(screen.getByTestId('synergy-legend-logo-humain')).not.toHaveClass('is-active')
   })
 
   test('shows NEW badge for recently obtained card', () => {
@@ -223,7 +232,7 @@ describe('CollectionPage', () => {
 
     const card = screen.getByTestId('collection-card-c11')
     expect(within(card).getByTestId('triad-card-type-badge')).toBeInTheDocument()
-    expect(within(card).getByTestId('triad-card-type-logo')).toHaveAttribute('src', '/logos-types/humain.png')
+    expect(within(card).getByTestId('triad-card-type-logo')).toHaveAttribute('src', '/logos-types/obscur.png')
   })
 
   test('does not show type logo badge on locked cards in the collection grid', () => {
@@ -280,7 +289,7 @@ describe('CollectionPage', () => {
     renderCollection()
 
     const typeToKeep = 'simili'
-    for (const typeId of ['sans_coeur', 'nescient', 'humain', 'disney', 'boss'] as const) {
+    for (const typeId of ['sans_coeur', 'nescient', 'humain'] as const) {
       await user.click(screen.getByTestId(`collection-filter-type-${typeId}`))
     }
 

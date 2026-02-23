@@ -4,7 +4,7 @@ import { cardPool } from './cardPool'
 
 describe('card pool integrity', () => {
   test('contains uniquely identified cards with contiguous stable ids', () => {
-    expect(cardPool.length).toBeGreaterThan(0)
+    expect(cardPool.length).toBe(151)
 
     const ids = cardPool.map((card) => card.id)
     expect(new Set(ids).size).toBe(cardPool.length)
@@ -52,53 +52,41 @@ describe('card pool integrity', () => {
     }
   })
 
-  test('maps key cards from the spreadsheet to stable ids', () => {
+  test('maps key pokemon cards from the spreadsheet to stable ids', () => {
     expect(cardPool.find((card) => card.id === 'c01')).toMatchObject({
       id: 'c01',
-      name: 'Abu',
+      name: 'Bulbizarre',
       rarity: 'common',
       top: 2,
-      right: 2,
-      bottom: 1,
+      right: 3,
+      bottom: 2,
       left: 2,
-      categoryId: 'disney',
-      elementId: 'neutre',
+      categoryId: 'humain',
+      elementId: 'fleur',
     })
 
     expect(cardPool.find((card) => card.id === 'c75')).toMatchObject({
       id: 'c75',
-      name: 'Gros Ventre',
+      name: 'Onix',
       rarity: 'uncommon',
       top: 4,
       right: 2,
       bottom: 4,
-      left: 2,
-      categoryId: 'sans_coeur',
-      elementId: 'neutre',
+      left: 3,
+      categoryId: 'nescient',
+      elementId: 'terre',
     })
 
-    expect(cardPool.find((card) => card.id === 'c148')).toMatchObject({
-      id: 'c148',
-      name: 'Roi Mickey',
+    expect(cardPool.find((card) => card.id === 'c151')).toMatchObject({
+      id: 'c151',
+      name: 'Mew',
       rarity: 'legendary',
-      top: 9,
-      right: 7,
-      bottom: 8,
-      left: 9,
-      categoryId: 'heros',
-      elementId: 'lumiere',
-    })
-
-    expect(cardPool.find((card) => card.id === 'c150')).toMatchObject({
-      id: 'c150',
-      name: 'Sora',
-      rarity: 'legendary',
-      top: 9,
+      top: 8,
       right: 8,
       bottom: 8,
-      left: 9,
-      categoryId: 'heros',
-      elementId: 'lumiere',
+      left: 8,
+      categoryId: 'simili',
+      elementId: 'illusion',
     })
   })
 })

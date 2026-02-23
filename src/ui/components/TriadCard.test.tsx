@@ -15,16 +15,28 @@ const ombreCard: CardDef = {
   elementId: 'tenebres',
 }
 
-const xemnasCard: CardDef = {
+const humainCard: CardDef = {
   id: 'c999',
-  name: 'Xemnas',
+  name: 'Dresseur',
   top: 7,
   right: 8,
   bottom: 7,
   left: 8,
   rarity: 'legendary',
-  categoryId: 'boss_kh',
+  categoryId: 'humain',
   elementId: 'tenebres',
+}
+
+const longNameCard: CardDef = {
+  id: 'c110',
+  name: 'Hypnomade',
+  top: 4,
+  right: 5,
+  bottom: 5,
+  left: 5,
+  rarity: 'rare',
+  categoryId: 'simili',
+  elementId: 'illusion',
 }
 
 describe('TriadCard splashart', () => {
@@ -45,7 +57,7 @@ describe('TriadCard splashart', () => {
     expect(badge).not.toBeNull()
     expect(badge).toHaveClass('triad-card__type-badge--sans_coeur')
     expect(logo).not.toBeNull()
-    expect(logo?.getAttribute('src')).toBe('/logos-types/sans-coeur.webp')
+    expect(logo?.getAttribute('src')).toBe('/logos-types/obscur.png')
   })
 
   test('hides type logo badge for locked card', () => {
@@ -55,15 +67,15 @@ describe('TriadCard splashart', () => {
     expect(container.querySelector('.triad-card__type-logo')).toBeNull()
   })
 
-  test('maps boss card type to r8 logo', () => {
-    const { container } = render(<TriadCard card={xemnasCard} context="collection-list" owned />)
+  test('maps humain card type to humain logo', () => {
+    const { container } = render(<TriadCard card={humainCard} context="collection-list" owned />)
 
     const badge = container.querySelector('.triad-card__type-badge')
     const logo = container.querySelector<HTMLImageElement>('.triad-card__type-logo')
 
     expect(badge).not.toBeNull()
-    expect(badge).toHaveClass('triad-card__type-badge--r8')
-    expect(logo?.getAttribute('src')).toBe('/logos-types/humain.png')
+    expect(badge).toHaveClass('triad-card__type-badge--humain')
+    expect(logo?.getAttribute('src')).toBe('/logos-types/nature.png')
   })
 
   test('applies NEW collision classes per variant', () => {
@@ -85,5 +97,14 @@ describe('TriadCard splashart', () => {
     expect(cardRoot).toHaveClass('has-new-pill')
     expect(cardRoot).toHaveClass('has-new-pill--claim')
     expect(cardRoot).not.toHaveClass('has-new-pill--reveal')
+  })
+
+  test('uses compact name class for long setup card names', () => {
+    const { container } = render(<TriadCard card={longNameCard} context="setup" owned />)
+
+    const name = container.querySelector('.triad-card__name')
+    expect(name).not.toBeNull()
+    expect(name).toHaveClass('triad-card__name--compact')
+    expect(name).toHaveTextContent('Hypnomade')
   })
 })

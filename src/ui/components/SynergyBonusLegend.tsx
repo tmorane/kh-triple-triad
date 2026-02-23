@@ -2,7 +2,7 @@ import { useState } from 'react'
 import type { CardTypeId } from '../../domain/types'
 import { getTypeLogoMeta } from './typeLogos'
 
-type SynergyLegendLogoId = 'sans_coeur' | 'simili' | 'nescient' | 'r8'
+type SynergyLegendLogoId = 'sans_coeur' | 'simili' | 'nescient' | 'humain'
 
 interface SynergyBonusLegendProps {
   highlightTypeId: CardTypeId | null
@@ -20,26 +20,26 @@ const logos: SynergyLegendLogo[] = [
   {
     id: 'sans_coeur',
     typeId: 'sans_coeur',
-    name: 'Sans-coeur',
-    description: 'Sans-coeur (3+) : +1 on all 4 sides on first move.',
+    name: 'Obscur',
+    description: 'Obscur (3+) : +1 on all 4 sides on first move.',
   },
   {
     id: 'simili',
     typeId: 'simili',
-    name: 'Simili',
-    description: 'Simili (3+) : +1 on active corner sides.',
+    name: 'Psy',
+    description: 'Psy (3+) : +1 on active corner sides.',
   },
   {
     id: 'nescient',
     typeId: 'nescient',
-    name: 'Nescient',
-    description: 'Nescient (3+) : +3 gold per Same/Plus trigger (cap +12/match).',
+    name: 'Combat',
+    description: 'Combat (3+) : +3 gold per Same/Plus trigger (cap +12/match).',
   },
   {
-    id: 'r8',
+    id: 'humain',
     typeId: 'humain',
-    name: 'Humain/Disney/Boss',
-    description: 'Humain/Disney/Boss (3+) : +10 gold on 2+ point win.',
+    name: 'Nature',
+    description: 'Nature (3+) : +10 gold on 2+ point win.',
   },
 ]
 
@@ -51,11 +51,7 @@ function resolveActiveRowId(
     return null
   }
 
-  if (highlightTypeId === 'humain' || highlightTypeId === 'disney' || highlightTypeId === 'boss') {
-    return 'r8'
-  }
-
-  if (highlightTypeId === 'sans_coeur' || highlightTypeId === 'simili' || highlightTypeId === 'nescient') {
+  if (highlightTypeId === 'sans_coeur' || highlightTypeId === 'simili' || highlightTypeId === 'nescient' || highlightTypeId === 'humain') {
     return highlightTypeId
   }
 

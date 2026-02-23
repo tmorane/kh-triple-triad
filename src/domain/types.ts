@@ -3,26 +3,10 @@ export type CardId = string
 export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary'
 
 export type CardCategoryId =
-  | 'porteur_de_keyblade'
-  | 'antagoniste'
-  | 'entite'
-  | 'organisation_xiii'
-  | 'arme_legendaire'
-  | 'mechant_disney'
   | 'sans_coeur'
   | 'simili'
-  | 'allie'
-  | 'final_fantasy'
-  | 'invocation'
-  | 'allie_disney'
   | 'nescient'
-  | 'reve_mangeur'
-  | 'pnj'
-  | 'allie_twewy'
-  | 'alliee'
-  | 'disney'
-  | 'heros'
-  | 'boss_kh'
+  | 'humain'
 
 export type CardElementId =
   | 'lumiere'
@@ -45,7 +29,7 @@ export type CardElementId =
   | 'aube'
   | 'neutre'
 
-export type CardTypeId = 'sans_coeur' | 'simili' | 'nescient' | 'humain' | 'disney' | 'boss'
+export type CardTypeId = 'sans_coeur' | 'simili' | 'nescient' | 'humain'
 
 export type DeckSlotId = 'slot-1' | 'slot-2' | 'slot-3'
 

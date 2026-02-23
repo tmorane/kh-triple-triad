@@ -335,19 +335,17 @@ export function MatchPage() {
     }
   }, [currentMatch, starterRevealComplete, state, updateCurrentMatch])
 
-  if (!currentMatch || !state) {
-    return null
-  }
-
-  const isFourByFourMatch = state.config.mode === '4x4'
-  const isKeyboardControlEnabled = starterRevealComplete && state.status === 'active' && state.turn === 'player'
+  const isFourByFourMatch = state?.config.mode === '4x4'
+  const isKeyboardControlEnabled =
+    starterRevealComplete && !!state && state.status === 'active' && state.turn === 'player'
 
   useEffect(() => {
-    if (!isKeyboardControlEnabled) {
+    if (!state || !isKeyboardControlEnabled) {
       return
     }
 
-    const topCardId = state.hands.player[0] ?? null
+    const playerHand = state.hands.player
+    const topCardId = playerHand[0] ?? null
     if (topCardId === null) {
       if (selectedCard !== null) {
         setSelectedCard(null)
@@ -355,15 +353,15 @@ export function MatchPage() {
       return
     }
 
-    if (selectedCard !== null && state.hands.player.includes(selectedCard)) {
+    if (selectedCard !== null && playerHand.includes(selectedCard)) {
       return
     }
 
     setSelectedCard(topCardId)
-  }, [isKeyboardControlEnabled, selectedCard, state.hands.player])
+  }, [isKeyboardControlEnabled, selectedCard, state])
 
   const handleCellClick = (cell: number) => {
-    if (!starterRevealComplete || state.turn !== 'player' || state.status === 'finished') {
+    if (!state || !starterRevealComplete || state.turn !== 'player' || state.status === 'finished') {
       return
     }
     if (!selectedCard) {
@@ -402,7 +400,7 @@ export function MatchPage() {
   }, [legalCellSetForSelectedCard, legalMovesForSelectedCard, selectedCard])
 
   useEffect(() => {
-    if (!isKeyboardControlEnabled) {
+    if (!state || !isKeyboardControlEnabled) {
       return
     }
 
@@ -458,6 +456,10 @@ export function MatchPage() {
     selectedCard,
     state,
   ])
+
+  if (!currentMatch || !state) {
+    return null
+  }
 
   const focusedCell = isKeyboardControlEnabled && selectedCard ? keyboardTargetCell : null
 

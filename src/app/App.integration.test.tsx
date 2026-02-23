@@ -10,6 +10,8 @@ import { createDefaultProfile, PROFILE_STORAGE_KEY } from '../domain/progression
 import { GameProvider } from './GameContext'
 import { useGame } from './useGame'
 
+const THEME_STORAGE_KEY = 'kh-triple-triad-theme-mode-v1'
+
 function renderApp(initialPath = '/') {
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
@@ -233,13 +235,73 @@ describe('app integration', () => {
     localStorage.clear()
   })
 
+  test('theme defaults to pokemon when no preference exists', () => {
+    renderApp('/')
+
+    expect(document.body.dataset.theme).toBe('pokemon')
+  })
+
+  test('theme forces pokemon even when stored preference is kh', () => {
+    localStorage.setItem(THEME_STORAGE_KEY, 'kh')
+    renderApp('/')
+
+    expect(document.body.dataset.theme).toBe('pokemon')
+    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('pokemon')
+  })
+
+  test('theme toggle is disabled and cannot switch theme', async () => {
+    const user = userEvent.setup()
+    renderApp('/')
+
+    const themeToggle = screen.getByTestId('theme-toggle')
+    expect(themeToggle).toBeDisabled()
+    expect(document.body.dataset.theme).toBe('pokemon')
+    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('pokemon')
+
+    await user.click(themeToggle)
+    expect(document.body.dataset.theme).toBe('pokemon')
+    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('pokemon')
+  })
+
+  test('background controls are explicit and independent from theme', async () => {
+    const user = userEvent.setup()
+    renderApp('/')
+
+    expect(document.body.dataset.theme).toBe('pokemon')
+    expect(document.body.dataset.bg).toBe('bg1')
+
+    await user.click(screen.getByTestId('bg-option-bg3'))
+    expect(document.body.dataset.bg).toBe('bg3')
+    expect(document.body.dataset.theme).toBe('pokemon')
+  })
+
+  test('theme toggle is rendered under background controls', () => {
+    renderApp('/')
+
+    const controls = screen.getByTestId('visual-controls')
+    const bgControl = screen.getByTestId('bg-option-bg1').parentElement
+    const themeToggle = screen.getByTestId('theme-toggle')
+
+    expect(controls).toContainElement(bgControl)
+    expect(controls).toContainElement(themeToggle)
+    expect(themeToggle).toBeDisabled()
+
+    if (!bgControl) {
+      throw new Error('BG control group is missing.')
+    }
+
+    const children = Array.from(controls.children)
+    expect(children.indexOf(bgControl)).toBeLessThan(children.indexOf(themeToggle))
+  })
+
   test('home -> setup -> match happy path from preset selection', async () => {
     const user = userEvent.setup()
     renderApp('/')
 
     expect(screen.getByTestId('topbar-cta-link')).toHaveTextContent('Play')
     await user.click(screen.getByTestId('topbar-cta-link'))
-    expect(screen.getByRole('heading', { name: 'Play' })).toBeInTheDocument()
+    expect(screen.getByTestId('setup-layout')).toBeInTheDocument()
+    expect(screen.getByTestId('setup-mode-4x4')).toBeInTheDocument()
 
     await selectPlayPreset(user, 'setup-mode-4x4')
     await user.click(screen.getByTestId('start-match-button'))
@@ -293,26 +355,11 @@ describe('app integration', () => {
     expect(screen.getByTestId('topbar-cta-link')).toHaveAttribute('href', '/match')
   })
 
-  test('player name replaces the static title and is editable from home', async () => {
-    const user = userEvent.setup()
+  test('player name is rendered in both topbar brand and home heading', () => {
     renderApp('/')
 
     expect(screen.getByRole('link', { name: 'Joueur' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Joueur' })).toBeInTheDocument()
-    expect(screen.queryByTestId('home-player-name-input')).not.toBeInTheDocument()
-
-    await user.click(screen.getByTestId('home-player-name-trigger'))
-
-    const playerNameInput = await screen.findByTestId('home-player-name-input')
-    await user.clear(playerNameInput)
-    await user.type(playerNameInput, 'Terra{Enter}')
-
-    expect(screen.getByRole('link', { name: 'Terra' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Terra' })).toBeInTheDocument()
-    expect(screen.queryByTestId('home-player-name-input')).not.toBeInTheDocument()
-
-    const saved = JSON.parse(localStorage.getItem(PROFILE_STORAGE_KEY) ?? '{}') as { playerName?: string }
-    expect(saved.playerName).toBe('Terra')
   })
 
   test('brand links route back to home from another page', async () => {
@@ -673,122 +720,29 @@ describe('app integration', () => {
     expect(parsed.gold).toBe(1100)
   })
 
-  test('home reset confirms before clearing profile and restores default values', async () => {
+  test('home reflects updated profile metrics after earning shop gold', async () => {
     const user = userEvent.setup()
     renderApp('/shop')
 
     await user.click(screen.getByTestId('shop-add-test-gold'))
     expect(screen.getByTestId('shop-gold-value')).toHaveTextContent('Gold: 1100')
-    localStorage.setItem('external-key', 'keep-me')
-
-    await user.click(screen.getAllByRole('link', { name: 'Home' })[0])
+    await user.click(screen.getByRole('link', { name: 'Joueur' }))
     expect(screen.getByTestId('gold-value').textContent?.replaceAll(',', '')).toContain('1100')
-
-    await user.click(screen.getByTestId('home-reset-trigger'))
-    expect(screen.getByTestId('home-reset-confirm')).toBeInTheDocument()
-    expect(screen.getByTestId('home-reset-cancel')).toBeInTheDocument()
-
-    await user.click(screen.getByTestId('home-reset-confirm'))
-
-    expect(screen.queryByTestId('home-reset-confirm')).not.toBeInTheDocument()
-    expect(screen.getByTestId('gold-value')).toHaveTextContent('100')
-    expect(screen.getByText('0 matches played')).toBeInTheDocument()
-    expect(screen.getByText('0W / 0L')).toBeInTheDocument()
+    expect(screen.getByTestId('home-ranked-tier')).toHaveTextContent('Iron IV (Division 4)')
 
     const saved = localStorage.getItem(PROFILE_STORAGE_KEY)
     expect(saved).toBeTruthy()
-    const parsed = JSON.parse(saved!) as {
-      gold: number
-      ownedCardIds: string[]
-      cardCopiesById: Record<string, number>
-      packInventoryByRarity: Record<string, number>
-      deckSlots: Array<{ cards: string[] }>
-      stats: { played: number; won: number; streak: number; bestStreak: number }
-      achievements: Array<{ id: string; unlockedAt: string }>
-      selectedDeckSlotId: string
-      ranked: {
-        tier: string
-        division: string | null
-        lp: number
-        wins: number
-        losses: number
-        draws: number
-        matchesPlayed: number
-      }
-    }
-    expect(parsed.gold).toBe(100)
-    expect(parsed.selectedDeckSlotId).toBe('slot-1')
+    const parsed = JSON.parse(saved!) as { gold: number; stats: { played: number; won: number } }
+    expect(parsed.gold).toBe(1100)
     expect(parsed.stats).toEqual({ played: 0, won: 0, streak: 0, bestStreak: 0 })
-    expect(parsed.achievements).toEqual([])
-    expect(parsed.ranked).toEqual(
-      expect.objectContaining({
-        tier: 'iron',
-        division: 'IV',
-        lp: 0,
-        wins: 0,
-        losses: 0,
-        draws: 0,
-        matchesPlayed: 0,
-      }),
-    )
-    expect(parsed.packInventoryByRarity).toEqual({
-      common: 0,
-      uncommon: 0,
-      rare: 0,
-      epic: 0,
-      legendary: 0,
-    })
-
-    expect(parsed.ownedCardIds).toHaveLength(10)
-    expect(new Set(parsed.ownedCardIds).size).toBe(10)
-    expect(Object.keys(parsed.cardCopiesById)).toHaveLength(10)
-    expect(Object.values(parsed.cardCopiesById).every((count) => count === 1)).toBe(true)
-
-    const rarityCounts = parsed.ownedCardIds.reduce(
-      (counts, cardId) => {
-        const rarity = cardPool.find((card) => card.id === cardId)?.rarity
-        if (!rarity) {
-          return counts
-        }
-        counts[rarity] += 1
-        return counts
-      },
-      { common: 0, uncommon: 0, rare: 0, epic: 0, legendary: 0 },
-    )
-    expect(rarityCounts).toEqual({
-      common: 6,
-      uncommon: 2,
-      rare: 1,
-      epic: 1,
-      legendary: 0,
-    })
-
-    expect(parsed.deckSlots[0].cards).toHaveLength(5)
-    expect(parsed.deckSlots[0].cards.every((cardId) => parsed.ownedCardIds.includes(cardId))).toBe(true)
-    expect(localStorage.getItem('external-key')).toBe('keep-me')
   })
 
-  test('home reset cancel keeps profile unchanged', async () => {
-    const user = userEvent.setup()
-    renderApp('/shop')
+  test('home does not expose legacy reset controls', () => {
+    renderApp('/')
 
-    await user.click(screen.getByTestId('shop-add-test-gold'))
-    expect(screen.getByTestId('shop-gold-value')).toHaveTextContent('Gold: 1100')
-
-    await user.click(screen.getAllByRole('link', { name: 'Home' })[0])
-    expect(screen.getByTestId('gold-value').textContent?.replaceAll(',', '')).toContain('1100')
-
-    await user.click(screen.getByTestId('home-reset-trigger'))
-    await user.click(screen.getByTestId('home-reset-cancel'))
-
+    expect(screen.queryByTestId('home-reset-trigger')).not.toBeInTheDocument()
     expect(screen.queryByTestId('home-reset-confirm')).not.toBeInTheDocument()
-    expect(screen.getByTestId('gold-value').textContent?.replaceAll(',', '')).toContain('1100')
-
-    const saved = localStorage.getItem(PROFILE_STORAGE_KEY)
-    expect(saved).toBeTruthy()
-    const parsed = JSON.parse(saved!) as { gold: number; stats: { played: number } }
-    expect(parsed.gold).toBe(1100)
-    expect(parsed.stats.played).toBe(0)
+    expect(screen.queryByTestId('home-reset-cancel')).not.toBeInTheDocument()
   })
 
   test('shop lets players inspect which cards are inside a pack', async () => {
@@ -942,7 +896,7 @@ describe('app integration', () => {
     expect(screen.getByTestId('shop-special-pack-legendary-target')).toBeInTheDocument()
   })
 
-  test('shop can buy and open Sans-cœur focus special pack', async () => {
+  test('shop can buy and open Obscur focus special pack', async () => {
     const user = userEvent.setup()
     renderApp('/shop')
 
@@ -971,7 +925,7 @@ describe('app integration', () => {
     }
   })
 
-  test('shop can buy and open Simili focus special pack', async () => {
+  test('shop can buy and open Psy focus special pack', async () => {
     const user = userEvent.setup()
     renderApp('/shop')
 
@@ -1003,7 +957,7 @@ describe('app integration', () => {
   test('legendary focus hit resets pity chance to 1% and grants the selected target', async () => {
     const user = userEvent.setup()
     const profile = createDefaultProfile()
-    const targetLegendary = cardPool.find((card) => card.name === 'Séphiroth')
+    const targetLegendary = cardPool.find((card) => card.rarity === 'legendary')
     expect(targetLegendary).toBeTruthy()
     profile.gold = 2000
     profile.specialPackPity = { legendaryFocusChancePercent: 100 }

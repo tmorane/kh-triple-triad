@@ -1,6 +1,6 @@
 import type { CardTypeId } from '../../domain/types'
 
-export type TypeLogoId = 'sans_coeur' | 'simili' | 'nescient' | 'r8'
+export type TypeLogoId = 'sans_coeur' | 'simili' | 'nescient' | 'humain'
 
 export interface TypeLogoMeta {
   id: TypeLogoId
@@ -11,32 +11,28 @@ export interface TypeLogoMeta {
 const typeLogoById: Record<TypeLogoId, TypeLogoMeta> = {
   sans_coeur: {
     id: 'sans_coeur',
-    name: 'Sans-coeur',
-    imageSrc: '/logos-types/sans-coeur.webp',
+    name: 'Obscur',
+    imageSrc: '/logos-types/obscur.png',
   },
   simili: {
     id: 'simili',
-    name: 'Simili',
-    imageSrc: '/logos-types/simili.gif',
+    name: 'Psy',
+    imageSrc: '/logos-types/psy.png',
   },
   nescient: {
     id: 'nescient',
-    name: 'Nescient',
-    imageSrc: '/logos-types/nescient.webp',
+    name: 'Combat',
+    imageSrc: '/logos-types/combat.png',
   },
-  r8: {
-    id: 'r8',
-    name: 'Humain/Disney/Boss',
-    imageSrc: '/logos-types/humain.png',
+  humain: {
+    id: 'humain',
+    name: 'Nature',
+    imageSrc: '/logos-types/nature.png',
   },
 }
 
 export function resolveTypeLogoId(typeId: CardTypeId): TypeLogoId {
-  if (typeId === 'sans_coeur' || typeId === 'simili' || typeId === 'nescient') {
-    return typeId
-  }
-
-  return 'r8'
+  return typeId
 }
 
 export function getTypeLogoMeta(typeId: CardTypeId): TypeLogoMeta {

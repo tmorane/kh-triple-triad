@@ -261,7 +261,7 @@ describe('shop progression', () => {
     ).toThrow('Not enough gold for this special pack.')
   })
 
-  test('sans_coeur_focus pulls only Sans-cœur cards', () => {
+  test('sans_coeur_focus pulls only Obscur cards', () => {
     const profile = createDefaultProfile()
     profile.gold = 2000
 
@@ -275,11 +275,14 @@ describe('shop progression', () => {
     }
   })
 
-  test('simili_focus pulls only Simili cards and never unsupported rarities', () => {
+  test('simili_focus pulls only Psy cards and never unsupported rarities', () => {
     let profile = createDefaultProfile()
     profile.gold = 10000
     const rng = createSeededRng(33)
     const seenRarities = new Set<string>()
+    const similiAllowedRarities = new Set(
+      cardPool.filter((card) => card.categoryId === 'simili').map((card) => card.rarity),
+    )
 
     for (let index = 0; index < 10; index += 1) {
       const result = purchaseAndOpenSpecialPack(profile, { packId: 'simili_focus' }, rng)
@@ -291,9 +294,9 @@ describe('shop progression', () => {
       }
     }
 
-    expect(seenRarities.has('common')).toBe(false)
-    expect(seenRarities.has('epic')).toBe(false)
-    expect(seenRarities.has('legendary')).toBe(false)
+    for (const rarity of seenRarities) {
+      expect(similiAllowedRarities.has(rarity as (typeof cardPool)[number]['rarity'])).toBe(true)
+    }
   })
 
   test('legendary_focus miss at base 1% increases pity chance to 2%', () => {
@@ -347,7 +350,7 @@ describe('shop progression', () => {
     expect(result.profile.specialPackPity?.legendaryFocusChancePercent).toBe(100)
   })
 
-  test('legendary_focus pulls 2 and 3 are always boss/heros fillers', () => {
+  test('legendary_focus pulls 2 and 3 are always humain fillers', () => {
     const profile = createDefaultProfile()
     profile.gold = 5000
     const targetLegendaryCardId = legendaryPool[0]
@@ -360,7 +363,7 @@ describe('shop progression', () => {
 
     for (const filler of result.opened.pulls.slice(1)) {
       const card = cardPool.find((entry) => entry.id === filler.cardId)
-      expect(card && ['boss_kh', 'heros'].includes(card.categoryId)).toBe(true)
+      expect(card?.categoryId).toBe('humain')
     }
   })
 

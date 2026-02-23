@@ -1,27 +1,6 @@
 import type { CardCategoryId, CardElementId, CardTypeId } from '../types'
 
-export const cardCategoryIds: CardCategoryId[] = [
-  'porteur_de_keyblade',
-  'antagoniste',
-  'entite',
-  'organisation_xiii',
-  'arme_legendaire',
-  'mechant_disney',
-  'sans_coeur',
-  'simili',
-  'allie',
-  'final_fantasy',
-  'invocation',
-  'allie_disney',
-  'nescient',
-  'reve_mangeur',
-  'pnj',
-  'allie_twewy',
-  'alliee',
-  'disney',
-  'heros',
-  'boss_kh',
-]
+export const cardCategoryIds: CardCategoryId[] = ['sans_coeur', 'simili', 'nescient', 'humain']
 
 export const cardElementIds: CardElementId[] = [
   'lumiere',
@@ -45,29 +24,13 @@ export const cardElementIds: CardElementId[] = [
   'neutre',
 ]
 
-export const cardTypeIds: CardTypeId[] = ['sans_coeur', 'simili', 'nescient', 'humain', 'disney', 'boss']
+export const cardTypeIds: CardTypeId[] = ['sans_coeur', 'simili', 'nescient', 'humain']
 
 export const cardCategoryLabelById: Record<CardCategoryId, string> = {
-  porteur_de_keyblade: 'Porteur de Keyblade',
-  antagoniste: 'Antagoniste',
-  entite: 'Entité',
-  organisation_xiii: 'Organisation XIII',
-  arme_legendaire: 'Arme Légendaire',
-  mechant_disney: 'Méchant Disney',
-  sans_coeur: 'Sans-cœur',
-  simili: 'Simili',
-  allie: 'Allié',
-  final_fantasy: 'Final Fantasy',
-  invocation: 'Invocation',
-  allie_disney: 'Allié Disney',
-  nescient: 'Nescient',
-  reve_mangeur: 'Rêve-Mangeur',
-  pnj: 'PNJ',
-  allie_twewy: 'Allié TWEWY',
-  alliee: 'Alliée',
-  disney: 'Disney',
-  heros: 'Héros',
-  boss_kh: 'Boss KH',
+  sans_coeur: 'Obscur',
+  simili: 'Psy',
+  nescient: 'Combat',
+  humain: 'Nature',
 }
 
 export const cardElementLabelById: Record<CardElementId, string> = {
@@ -93,35 +56,17 @@ export const cardElementLabelById: Record<CardElementId, string> = {
 }
 
 export const cardTypeLabelById: Record<CardTypeId, string> = {
-  sans_coeur: 'Sans-coeur',
-  simili: 'Simili',
-  nescient: 'Nescient',
-  humain: 'Humain',
-  disney: 'Disney',
-  boss: 'Boss',
+  sans_coeur: 'Obscur',
+  simili: 'Psy',
+  nescient: 'Combat',
+  humain: 'Nature',
 }
 
 export const cardTypeByCategoryId: Record<CardCategoryId, CardTypeId> = {
-  porteur_de_keyblade: 'humain',
-  antagoniste: 'humain',
-  entite: 'boss',
-  organisation_xiii: 'simili',
-  arme_legendaire: 'humain',
-  mechant_disney: 'disney',
   sans_coeur: 'sans_coeur',
   simili: 'simili',
-  allie: 'humain',
-  final_fantasy: 'humain',
-  invocation: 'disney',
-  allie_disney: 'disney',
   nescient: 'nescient',
-  reve_mangeur: 'nescient',
-  pnj: 'humain',
-  allie_twewy: 'humain',
-  alliee: 'humain',
-  disney: 'disney',
-  heros: 'humain',
-  boss_kh: 'boss',
+  humain: 'humain',
 }
 
 export function getCategoryLabel(categoryId: CardCategoryId): string {

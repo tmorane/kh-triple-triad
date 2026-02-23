@@ -57,15 +57,15 @@ const packVisuals: Record<AnyShopPackId, PackVisual> = {
     artSrc: '/packs/legendary-pack.svg',
   },
   sans_coeur_focus: {
-    tagline: 'Only Sans-cœur cards with remapped rarity odds.',
+    tagline: 'Theme Booster: 3 pulls from the Obscur pool with tuned rarity odds.',
     artSrc: '/packs/sans-coeur-focus-pack.svg',
   },
   simili_focus: {
-    tagline: 'Only Simili cards with remapped rarity odds.',
+    tagline: 'Theme Booster: 3 pulls from the Psy pool with tuned rarity odds.',
     artSrc: '/packs/simili-focus-pack.svg',
   },
   legendary_focus: {
-    tagline: 'Target a specific legendary with pity odds that ramp after misses.',
+    tagline: 'Target Booster: pick a legendary target, pity ramps after each miss.',
     artSrc: '/packs/legendary-focus-pack.svg',
   },
 }
@@ -76,9 +76,9 @@ const packLabels: Record<AnyShopPackId, string> = {
   rare: 'Rare Pack',
   epic: 'Epic Pack',
   legendary: 'Legendary Pack',
-  sans_coeur_focus: 'Sans-cœur Focus Pack',
-  simili_focus: 'Simili Focus Pack',
-  legendary_focus: 'Legendary Focus Pack',
+  sans_coeur_focus: 'Obscur Theme Booster',
+  simili_focus: 'Psy Theme Booster',
+  legendary_focus: 'Legendary Target Booster',
 }
 
 function formatPackLabel(packId: AnyShopPackId): string {
@@ -462,7 +462,7 @@ export function ShopPage() {
       <section className="shop-special-section" aria-labelledby="shop-special-title">
         <div className="shop-special-head">
           <h2 id="shop-special-title">Special Packs</h2>
-          <p className="small">Instant opening with 3 pulls focused by type or legendary target.</p>
+          <p className="small">Instant opening with TCG-style theme/target boosters.</p>
         </div>
         <div className="shop-special-grid">
           {specialPackOrder.map((packId) => {
@@ -549,7 +549,7 @@ export function ShopPage() {
                   </div>
                 ) : (
                   <div className="shop-special-pack-intel">
-                    <span className="shop-special-pack-intel-tag">100% Type Focus · 3 Pulls</span>
+                      <span className="shop-special-pack-intel-tag">Theme Booster · 3 Pulls</span>
                     <div className="shop-special-pack-intel-stats">
                       <span>Pool: {typeFocusPool.length}</span>
                       <span>
