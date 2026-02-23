@@ -1,9 +1,10 @@
 import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest'
-import type { MatchConfig } from '../types'
+import type { MatchConfig, Move } from '../types'
 import type { MatchState } from './types'
 
 let applyMove: typeof import('./engine')['applyMove']
 let createMatch: typeof import('./engine')['createMatch']
+let listLegalMoves: typeof import('./engine')['listLegalMoves']
 let selectCpuMove: typeof import('./ai')['selectCpuMove']
 
 beforeAll(async () => {
@@ -146,7 +147,7 @@ beforeAll(async () => {
     }
   })
 
-  ;({ applyMove, createMatch } = await import('./engine'))
+  ;({ applyMove, createMatch, listLegalMoves } = await import('./engine'))
   ;({ selectCpuMove } = await import('./ai'))
 })
 
@@ -216,4 +217,97 @@ describe('cpu ai', () => {
 
     expect(a).toEqual(b)
   })
+
+  test('keeps legacy behavior when standard profile is explicit', () => {
+    const start = createMatch(config())
+    const afterPlayerMove = applyMove(start, { actor: 'player', cardId: 'c20', cell: 0 })
+
+    const defaultMove = selectCpuMove(afterPlayerMove)
+    const standardMove = selectCpuMove(afterPlayerMove, 'standard')
+
+    expect(standardMove).toEqual(defaultMove)
+  })
+
+  test('expert profile improves at least one tactical trap over standard', () => {
+    const candidateStates = collectCpuTurnStates(createMatch(config()), 5, 2)
+
+    const improvement = candidateStates.find((state) => {
+      const standardMove = selectCpuMove(state, 'standard')
+      const expertMove = selectCpuMove(state, 'expert')
+      if (standardMove.cardId === expertMove.cardId && standardMove.cell === expertMove.cell) {
+        return false
+      }
+
+      const standardWorstCase = scoreAfterBestPlayerResponse(state, standardMove)
+      const expertWorstCase = scoreAfterBestPlayerResponse(state, expertMove)
+      return expertWorstCase > standardWorstCase
+    })
+
+    expect(improvement).toBeTruthy()
+  })
 })
+
+function collectCpuTurnStates(initial: MatchState, maxDepth: number, branchFactor: number): MatchState[] {
+  let frontier: MatchState[] = [initial]
+  const cpuStates: MatchState[] = []
+
+  for (let depth = 0; depth < maxDepth; depth += 1) {
+    const nextFrontier: MatchState[] = []
+
+    for (const state of frontier) {
+      if (state.status !== 'active') {
+        continue
+      }
+
+      if (state.turn === 'cpu') {
+        cpuStates.push(state)
+      }
+
+      const moves = listLegalMoves(state).slice(0, branchFactor)
+      for (const move of moves) {
+        nextFrontier.push(applyMove(state, move))
+      }
+    }
+
+    frontier = nextFrontier
+    if (frontier.length === 0) {
+      break
+    }
+  }
+
+  return cpuStates
+}
+
+function scoreAfterBestPlayerResponse(state: MatchState, cpuMove: Move): number {
+  if (cpuMove.actor !== 'cpu') {
+    throw new Error('Expected a CPU move.')
+  }
+
+  const afterCpu = applyMove(state, cpuMove)
+  if (afterCpu.status === 'finished') {
+    return countCpuLead(afterCpu)
+  }
+
+  const playerMoves = listLegalMoves(afterCpu).filter((move) => move.actor === 'player')
+  if (playerMoves.length === 0) {
+    return countCpuLead(afterCpu)
+  }
+
+  return Math.min(...playerMoves.map((move) => countCpuLead(applyMove(afterCpu, move))))
+}
+
+function countCpuLead(state: MatchState): number {
+  let cpu = 0
+  let player = 0
+  for (const slot of state.board) {
+    if (!slot) {
+      continue
+    }
+    if (slot.owner === 'cpu') {
+      cpu += 1
+    } else {
+      player += 1
+    }
+  }
+  return cpu - player
+}

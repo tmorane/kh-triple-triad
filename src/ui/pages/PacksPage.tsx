@@ -6,7 +6,7 @@ import type { OpenedPackResult, ShopPackId } from '../../domain/progression/shop
 import { playNewCardSound } from '../audio/newCardSound'
 import { TriadCard } from '../components/TriadCard'
 
-const packOrder: ShopPackId[] = ['common', 'uncommon', 'rare', 'legendary']
+const packOrder: ShopPackId[] = ['common', 'uncommon', 'rare', 'epic', 'legendary']
 const revealStepDelaysMs = [0, 666, 1333] as const
 const revealTotalDurationMs = 2000
 
@@ -23,6 +23,9 @@ const packVisuals: Record<ShopPackId, PackVisual> = {
   },
   rare: {
     artSrc: '/packs/rare-pack.svg',
+  },
+  epic: {
+    artSrc: '/packs/epic-pack.svg',
   },
   legendary: {
     artSrc: '/packs/legendary-pack.svg',
@@ -176,20 +179,9 @@ export function PacksPage() {
                   decoding="async"
                 />
               </button>
-              <div className="packs-entry-meta">
-                <h2>{formatPackLabel(packId)}</h2>
-                <p className="small packs-entry-count" data-testid={`packs-count-${packId}`}>
-                  x{count}
-                </p>
-              </div>
-              <button
-                type="button"
-                className="button packs-entry-open-label"
-                disabled={count <= 0}
-                onClick={() => handleOpenPack(packId)}
-              >
-                {count > 0 ? 'Open' : 'Empty'}
-              </button>
+              <p className="small packs-entry-count" data-testid={`packs-count-${packId}`}>
+                x{count}
+              </p>
             </article>
           )
         })}

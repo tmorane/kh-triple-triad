@@ -70,6 +70,7 @@ describe('shop progression', () => {
     expect(getPackPrice('common')).toBe(60)
     expect(getPackPrice('uncommon')).toBe(120)
     expect(getPackPrice('rare')).toBe(220)
+    expect(getPackPrice('epic')).toBe(300)
     expect(getPackPrice('legendary')).toBe(360)
   })
 

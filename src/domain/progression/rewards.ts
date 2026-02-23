@@ -1,4 +1,5 @@
 import { createSeededRng } from '../random/seededRng'
+import type { OpponentLevel } from '../match/opponents'
 import type { AchievementId, CardId, MatchResult, PlayerProfile } from '../types'
 import { evaluateAchievements } from './achievements'
 import type { RankRewardGrant } from './ranks'
@@ -6,6 +7,8 @@ import type { RankRewardGrant } from './ranks'
 export interface RewardBreakdown {
   goldAwarded: number
   bonusGoldFromDuplicate: number
+  bonusGoldFromDifficulty: number
+  bonusGoldFromAutoDeck: number
   droppedCardId: CardId | null
   duplicateConverted: boolean
   newlyUnlockedAchievements: AchievementId[]
@@ -23,6 +26,8 @@ export function applyMatchRewards(
   result: MatchResult,
   cpuDeck: CardId[],
   seed: number,
+  opponentLevel: OpponentLevel = 1,
+  rewardMultiplier = 1,
 ): MatchProgressionResult {
   const rng = createSeededRng(seed)
 
@@ -54,6 +59,8 @@ export function applyMatchRewards(
 
   const baseGold = result.winner === 'player' ? 60 : result.winner === 'draw' ? 30 : 20
   let bonusGold = 0
+  const bonusGoldFromDifficulty = result.winner === 'player' ? (opponentLevel - 1) * 4 : 0
+  const safeMultiplier = Number.isFinite(rewardMultiplier) && rewardMultiplier > 0 ? rewardMultiplier : 1
   let droppedCardId: CardId | null = null
   let duplicateConverted = false
   const newlyOwnedCards: CardId[] = []
@@ -85,7 +92,11 @@ export function applyMatchRewards(
     }
   }
 
-  updatedProfile.gold += baseGold + bonusGold
+  const rawTotalGold = baseGold + bonusGold + bonusGoldFromDifficulty
+  const multipliedTotalGold = Math.floor(rawTotalGold * safeMultiplier)
+  const bonusGoldFromAutoDeck = Math.max(0, multipliedTotalGold - rawTotalGold)
+
+  updatedProfile.gold += multipliedTotalGold
 
   const unlocked = evaluateAchievements(updatedProfile)
   updatedProfile.achievements.push(...unlocked)
@@ -96,6 +107,8 @@ export function applyMatchRewards(
     rewards: {
       goldAwarded: baseGold,
       bonusGoldFromDuplicate: bonusGold,
+      bonusGoldFromDifficulty,
+      bonusGoldFromAutoDeck,
       droppedCardId,
       duplicateConverted,
       newlyUnlockedAchievements: unlocked.map((entry) => entry.id),

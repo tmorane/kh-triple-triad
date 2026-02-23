@@ -4,6 +4,7 @@ import { applyMoveDetailed, listLegalMoves } from './engine'
 import type { MatchState } from './types'
 
 type Direction = 'up' | 'right' | 'down' | 'left'
+export type CpuAiProfile = 'novice' | 'standard' | 'expert'
 
 interface ScoredMove {
   move: Move
@@ -12,6 +13,39 @@ interface ScoredMove {
   exposureRisk: number
   cornerBonus: number
   centerBonus: number
+  lookaheadScore: number
+}
+
+interface AiTuning {
+  flipWeight: number
+  riskWeight: number
+  cornerWeight: number
+  centerWeight: number
+  lookaheadWeight: number
+}
+
+const aiTuningByProfile: Record<CpuAiProfile, AiTuning> = {
+  novice: {
+    flipWeight: 70,
+    riskWeight: 4,
+    cornerWeight: 2,
+    centerWeight: 6,
+    lookaheadWeight: 0,
+  },
+  standard: {
+    flipWeight: 100,
+    riskWeight: 8,
+    cornerWeight: 6,
+    centerWeight: 4,
+    lookaheadWeight: 0,
+  },
+  expert: {
+    flipWeight: 120,
+    riskWeight: 14,
+    cornerWeight: 8,
+    centerWeight: 3,
+    lookaheadWeight: 0.45,
+  },
 }
 
 const oppositeDirection: Record<Direction, Direction> = {
@@ -28,7 +62,7 @@ const directionDelta: Record<Direction, [number, number]> = {
   left: [0, -1],
 }
 
-export function selectCpuMove(state: MatchState): Move {
+export function selectCpuMove(state: MatchState, aiProfile: CpuAiProfile = 'standard'): Move {
   if (state.status !== 'active') {
     throw new Error('Cannot pick a move for a finished match.')
   }
@@ -41,7 +75,7 @@ export function selectCpuMove(state: MatchState): Move {
     throw new Error('No legal moves available for CPU.')
   }
 
-  const scoredMoves = legalMoves.map((move) => scoreMove(state, move))
+  const scoredMoves = legalMoves.map((move) => scoreMove(state, move, aiProfile))
 
   scoredMoves.sort((a, b) => {
     if (b.score !== a.score) {
@@ -67,13 +101,21 @@ export function selectCpuMove(state: MatchState): Move {
   return scoredMoves[0].move
 }
 
-function scoreMove(state: MatchState, move: Move): ScoredMove {
+function scoreMove(state: MatchState, move: Move, aiProfile: CpuAiProfile): ScoredMove {
+  const tuning = aiTuningByProfile[aiProfile]
   const resolution = applyMoveDetailed(state, move)
   const immediateFlips = resolution.immediateFlips
   const exposureRisk = calculateExposureRisk(resolution.state, move.cell)
   const cornerBonus = isCorner(move.cell) ? 1 : 0
   const centerBonus = move.cell === 4 ? 1 : 0
-  const score = immediateFlips * 100 - exposureRisk * 8 + cornerBonus * 6 + centerBonus * 4
+  const lookaheadScore =
+    tuning.lookaheadWeight > 0 ? calculateWorstCaseCpuLeadAfterPlayerTurn(resolution.state) * tuning.lookaheadWeight * 20 : 0
+  const score =
+    immediateFlips * tuning.flipWeight -
+    exposureRisk * tuning.riskWeight +
+    cornerBonus * tuning.cornerWeight +
+    centerBonus * tuning.centerWeight +
+    lookaheadScore
 
   return {
     move,
@@ -82,7 +124,46 @@ function scoreMove(state: MatchState, move: Move): ScoredMove {
     exposureRisk,
     cornerBonus,
     centerBonus,
+    lookaheadScore,
   }
+}
+
+function calculateWorstCaseCpuLeadAfterPlayerTurn(state: MatchState): number {
+  if (state.status !== 'active' || state.turn !== 'player') {
+    return countCpuLead(state)
+  }
+
+  const playerMoves = listLegalMoves(state).filter((move) => move.actor === 'player')
+  if (playerMoves.length === 0) {
+    return countCpuLead(state)
+  }
+
+  let worstLead = Number.POSITIVE_INFINITY
+  for (const playerMove of playerMoves) {
+    const afterPlayer = applyMoveDetailed(state, playerMove).state
+    const lead = countCpuLead(afterPlayer)
+    if (lead < worstLead) {
+      worstLead = lead
+    }
+  }
+
+  return worstLead
+}
+
+function countCpuLead(state: MatchState): number {
+  let cpu = 0
+  let player = 0
+  for (const slot of state.board) {
+    if (!slot) {
+      continue
+    }
+    if (slot.owner === 'cpu') {
+      cpu += 1
+    } else {
+      player += 1
+    }
+  }
+  return cpu - player
 }
 
 function calculateExposureRisk(state: MatchState, placedCell: number): number {

@@ -4,10 +4,12 @@ import { useGame } from '../../app/useGame'
 import { getCard } from '../../domain/cards/cardPool'
 import { getSelectedDeckSlot, hasExactlyFiveUniqueCards } from '../../domain/cards/decks'
 import { cardPool } from '../../domain/cards/cardPool'
+import { getCpuOpponentPreview } from '../../domain/match/opponents'
 import type { CardDef, CardId, Rarity } from '../../domain/types'
 import { TriadCard } from '../components/TriadCard'
 
 type SetupSortMode = 'selected-first' | 'power-desc' | 'name-asc'
+type SetupDeckMode = 'manual' | 'auto'
 
 const rarityFilterOrder: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary']
 
@@ -59,6 +61,7 @@ export function SetupPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedRarities, setSelectedRarities] = useState<Rarity[]>(availableRarities)
   const [sortMode, setSortMode] = useState<SetupSortMode>('selected-first')
+  const [deckMode, setDeckMode] = useState<SetupDeckMode>('manual')
 
   useEffect(() => {
     setSelectedRarities((current) => {
@@ -70,7 +73,11 @@ export function SetupPage() {
     })
   }, [availableRarities])
 
-  const canStart = hasExactlyFiveUniqueCards(selectedSlot.cards)
+  const canStart = deckMode === 'auto' ? true : hasExactlyFiveUniqueCards(selectedSlot.cards)
+  const opponentPreview = useMemo(
+    () => getCpuOpponentPreview(profile, selectedSlot.cards),
+    [profile, selectedSlot.cards],
+  )
 
   const selectedCardSet = useMemo(() => new Set(selectedSlot.cards), [selectedSlot.cards])
   const selectedRaritySet = useMemo(() => new Set(selectedRarities), [selectedRarities])
@@ -146,7 +153,7 @@ export function SetupPage() {
         open: true,
         same: selectedSlot.rules.same,
         plus: selectedSlot.rules.plus,
-      })
+      }, { useAutoDeck: deckMode === 'auto' })
       navigate('/match')
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unable to start match.'
@@ -261,6 +268,45 @@ export function SetupPage() {
               </label>
             </div>
           </fieldset>
+
+          <fieldset className="setup-rule-block">
+            <legend>Deck Mode</legend>
+            <div className="rule-toggle-group">
+              <label className="setup-rule-toggle">
+                <input
+                  type="radio"
+                  name="setup-deck-mode"
+                  checked={deckMode === 'manual'}
+                  onChange={() => setDeckMode('manual')}
+                  data-testid="setup-deck-mode-manual"
+                />
+                <span>Use My Deck</span>
+              </label>
+              <label className="setup-rule-toggle">
+                <input
+                  type="radio"
+                  name="setup-deck-mode"
+                  checked={deckMode === 'auto'}
+                  onChange={() => setDeckMode('auto')}
+                  data-testid="setup-deck-mode-auto"
+                />
+                <span>Auto Deck (random, in-range, +50% rewards)</span>
+              </label>
+            </div>
+          </fieldset>
+
+          <section className="setup-opponent-preview" aria-label="Opponent preview">
+            <h2>Next Opponent</h2>
+            <p className="small" data-testid="setup-opponent-level">
+              CPU L{opponentPreview.level} ({opponentPreview.aiProfile})
+            </p>
+            <p className="small" data-testid="setup-opponent-score-range">
+              Deck score range: {opponentPreview.scoreRange.min}-{opponentPreview.scoreRange.max}
+            </p>
+            <p className="small" data-testid="setup-opponent-bonus">
+              Win bonus: +{opponentPreview.winGoldBonus}
+            </p>
+          </section>
 
           <p className="small setup-deck-count">Deck: {selectedSlot.cards.length}/5 selected</p>
 

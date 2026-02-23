@@ -24,9 +24,27 @@ function formatRankReward(grant: RankRewardGrant): string {
   return `${grant.rankName}: +${grant.reward.gold} gold + ${packRewards.join(', ')}`
 }
 
+function formatGoldBonusDetails(rewards: {
+  bonusGoldFromDuplicate: number
+  bonusGoldFromDifficulty: number
+  bonusGoldFromAutoDeck: number
+}): string {
+  const parts: string[] = []
+  if (rewards.bonusGoldFromDifficulty > 0) {
+    parts.push(`+${rewards.bonusGoldFromDifficulty} difficulty`)
+  }
+  if (rewards.bonusGoldFromDuplicate > 0) {
+    parts.push(`+${rewards.bonusGoldFromDuplicate} duplicate`)
+  }
+  if (rewards.bonusGoldFromAutoDeck > 0) {
+    parts.push(`+${rewards.bonusGoldFromAutoDeck} auto deck`)
+  }
+  return parts.length > 0 ? ` (${parts.join(', ')})` : ''
+}
+
 export function MatchPage() {
   const navigate = useNavigate()
-  const { profile, currentMatch, updateCurrentMatch, finalizeCurrentMatch } = useGame()
+  const { profile, currentMatch, startMatch, updateCurrentMatch, finalizeCurrentMatch } = useGame()
   const [selectedCard, setSelectedCard] = useState<CardId | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isFinishing, setIsFinishing] = useState(false)
@@ -71,7 +89,14 @@ export function MatchPage() {
     }
 
     const result = resolveMatchResult(state)
-    const progression = applyMatchRewards(profile, result, currentMatch.cpuDeck, currentMatch.seed + state.turns)
+    const progression = applyMatchRewards(
+      profile,
+      result,
+      currentMatch.cpuDeck,
+      currentMatch.seed + state.turns,
+      currentMatch.opponent.level,
+      currentMatch.rewardMultiplier,
+    )
     const rankRewardPreview = applyRankRewards(progression.profile)
 
     return {
@@ -81,17 +106,18 @@ export function MatchPage() {
         rankRewards: rankRewardPreview.granted,
       },
       newlyOwnedCards: progression.newlyOwnedCards,
+      opponent: currentMatch.opponent,
     }
   }, [currentMatch, profile, state])
 
   useEffect(() => {
-    if (!state || state.turn !== 'cpu' || state.status === 'finished') {
+    if (!currentMatch || !state || state.turn !== 'cpu' || state.status === 'finished') {
       return
     }
 
     const timer = window.setTimeout(() => {
       try {
-        const move = selectCpuMove(state)
+        const move = selectCpuMove(state, currentMatch.opponent.aiProfile)
         const nextState = applyMove(state, move)
         updateCurrentMatch(nextState)
       } catch (err) {
@@ -103,7 +129,7 @@ export function MatchPage() {
     return () => {
       window.clearTimeout(timer)
     }
-  }, [state, updateCurrentMatch])
+  }, [currentMatch, state, updateCurrentMatch])
 
   if (!currentMatch || !state) {
     return null
@@ -139,6 +165,30 @@ export function MatchPage() {
     navigate('/results')
   }
 
+  const handleRematch = () => {
+    if (!currentMatch) {
+      return
+    }
+
+    const rematchDeck = [...currentMatch.state.config.playerDeck]
+    const rematchRules = { ...currentMatch.state.rules }
+
+    setIsFinishing(true)
+
+    try {
+      finalizeCurrentMatch()
+      startMatch(rematchDeck, rematchRules)
+      setSelectedCard(null)
+      setError(null)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unable to start rematch.'
+      setError(message)
+      navigate('/results')
+    } finally {
+      setIsFinishing(false)
+    }
+  }
+
   return (
     <section className="panel match-panel">
       <div className="match-arena">
@@ -156,6 +206,9 @@ export function MatchPage() {
           <div className="match-board-hud">
             <p className="small match-turn-indicator" data-testid="match-turn-indicator">
               Turn {state.turns + 1}: {state.turn === 'player' ? 'Player' : 'CPU'}
+            </p>
+            <p className="small" data-testid="match-opponent-badge">
+              CPU L{currentMatch.opponent.level} • Score {currentMatch.opponent.deckScore}
             </p>
             <RuleBadges rules={state.rules} />
           </div>
@@ -219,9 +272,14 @@ export function MatchPage() {
               <span>Gold Earned</span>
               <strong>
                 +{finishPreview.rewards.goldAwarded}
-                {finishPreview.rewards.bonusGoldFromDuplicate > 0
-                  ? ` (+${finishPreview.rewards.bonusGoldFromDuplicate} duplicate)`
-                  : ''}
+                {formatGoldBonusDetails(finishPreview.rewards)}
+              </strong>
+            </div>
+
+            <div className="stat-row">
+              <span>Opponent</span>
+              <strong>
+                CPU L{finishPreview.opponent.level} ({finishPreview.opponent.aiProfile})
               </strong>
             </div>
 
@@ -270,6 +328,14 @@ export function MatchPage() {
             )}
 
             <div className="actions">
+              <button
+                type="button"
+                className="button"
+                onClick={handleRematch}
+                data-testid="restart-match-button"
+              >
+                Rematch
+              </button>
               <button
                 type="button"
                 className="button button-primary"

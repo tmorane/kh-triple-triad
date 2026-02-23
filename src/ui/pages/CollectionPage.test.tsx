@@ -33,10 +33,19 @@ function renderCollection(valueOverrides: Partial<GameContextValue> = {}) {
         droppedCardId: 'c11',
         duplicateConverted: false,
         bonusGoldFromDuplicate: 0,
+        bonusGoldFromDifficulty: 0,
+        bonusGoldFromAutoDeck: 0,
         newlyUnlockedAchievements: [],
         rankRewards: [],
       },
       newlyOwnedCards: ['c11'],
+      opponent: {
+        level: 1,
+        aiProfile: 'novice',
+        scoreRange: { min: 45, max: 50 },
+        deckScore: 45,
+        winGoldBonus: 0,
+      },
     },
     startMatch: () => {
       throw new Error('Not implemented in test.')

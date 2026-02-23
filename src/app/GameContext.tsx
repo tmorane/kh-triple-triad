@@ -1,6 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useCallback, useMemo, useState } from 'react'
-import { getCpuDeckForMatch, isDeckNameValid, toggleCardInDeck, validateDeck } from '../domain/cards/decks'
+import { isDeckNameValid, toggleCardInDeck, validateDeck } from '../domain/cards/decks'
+import { buildAutoPlayerDeck, buildCpuOpponent, type CpuOpponent } from '../domain/match/opponents'
 import { createMatchRuntime, type MatchRuntime } from '../domain/match/runtimeEcs'
 import type { MatchState } from '../domain/match/types'
 import { createMatch, resolveMatchResult } from '../domain/match/engine'
@@ -23,12 +24,24 @@ interface CurrentMatch {
   runtime: MatchRuntime
   cpuDeck: CardId[]
   seed: number
+  opponent: CpuOpponent
+  rewardMultiplier: number
+  usedAutoDeck: boolean
+}
+
+export interface MatchOpponentSummary {
+  level: CpuOpponent['level']
+  aiProfile: CpuOpponent['aiProfile']
+  scoreRange: CpuOpponent['scoreRange']
+  deckScore: CpuOpponent['deckScore']
+  winGoldBonus: CpuOpponent['winGoldBonus']
 }
 
 export interface LastMatchSummary {
   result: MatchResult
   rewards: RewardBreakdown
   newlyOwnedCards: CardId[]
+  opponent: MatchOpponentSummary
 }
 
 interface GameContextValue {
@@ -36,7 +49,7 @@ interface GameContextValue {
   currentMatch: CurrentMatch | null
   lastMatchSummary: LastMatchSummary | null
   recentRankRewards: RankRewardGrant[]
-  startMatch(deck: CardId[], rules: RuleSet): void
+  startMatch(deck: CardId[], rules: RuleSet, options?: { useAutoDeck?: boolean }): void
   selectDeckSlot(slotId: DeckSlotId): void
   renameDeckSlot(slotId: DeckSlotId, name: string): { valid: boolean; reason?: string }
   toggleDeckSlotCard(slotId: DeckSlotId, cardId: CardId): void
@@ -108,16 +121,26 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       currentMatch,
       lastMatchSummary,
       recentRankRewards,
-      startMatch: (deck, rules) => {
-        const validation = validateDeck(deck, profile.ownedCardIds)
-        if (!validation.valid) {
-          throw new Error(validation.reason)
+      startMatch: (deck, rules, options) => {
+        const useAutoDeck = options?.useAutoDeck ?? false
+        if (!useAutoDeck) {
+          const validation = validateDeck(deck, profile.ownedCardIds)
+          if (!validation.valid) {
+            throw new Error(validation.reason)
+          }
         }
 
-        const cpuDeck = getCpuDeckForMatch(profile.stats.played)
+        const referenceDeck = deck.length === 5 ? deck : profile.ownedCardIds.slice(0, 5)
+        if (referenceDeck.length !== 5) {
+          throw new Error('Unable to determine a reference deck for CPU matching.')
+        }
         const seed = Date.now()
+        const opponent = buildCpuOpponent(profile, referenceDeck, seed)
+        const playerDeck = useAutoDeck ? buildAutoPlayerDeck(opponent.scoreRange, seed + 1) : [...deck]
+        const rewardMultiplier = useAutoDeck ? 1.5 : 1
+        const cpuDeck = [...opponent.deck]
         const state = createMatch({
-          playerDeck: [...deck],
+          playerDeck,
           cpuDeck,
           rules,
           seed,
@@ -125,7 +148,15 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
         const runtime = createMatchRuntime(state)
 
-        setCurrentMatch({ state, runtime, cpuDeck, seed })
+        setCurrentMatch({
+          state,
+          runtime,
+          cpuDeck,
+          seed,
+          opponent,
+          rewardMultiplier,
+          usedAutoDeck: useAutoDeck,
+        })
       },
       selectDeckSlot: (slotId) => {
         persistProfileUpdate((nextProfile) => {
@@ -189,7 +220,14 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         }
 
         const result = resolveMatchResult(currentMatch.state)
-        const progression = applyMatchRewards(profile, result, currentMatch.cpuDeck, currentMatch.seed + currentMatch.state.turns)
+        const progression = applyMatchRewards(
+          profile,
+          result,
+          currentMatch.cpuDeck,
+          currentMatch.seed + currentMatch.state.turns,
+          currentMatch.opponent.level,
+          currentMatch.rewardMultiplier,
+        )
         const committed = commitComputedProfile(progression.profile, { captureRecentRankRewards: true })
 
         const summary: LastMatchSummary = {
@@ -199,6 +237,13 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
             rankRewards: committed.granted,
           },
           newlyOwnedCards: progression.newlyOwnedCards,
+          opponent: {
+            level: currentMatch.opponent.level,
+            aiProfile: currentMatch.opponent.aiProfile,
+            scoreRange: { ...currentMatch.opponent.scoreRange },
+            deckScore: currentMatch.opponent.deckScore,
+            winGoldBonus: currentMatch.opponent.winGoldBonus,
+          },
         }
 
         setLastMatchSummary(summary)

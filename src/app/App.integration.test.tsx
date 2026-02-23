@@ -82,11 +82,55 @@ function RewardsHarness() {
       <span data-testid="has-match">{currentMatch ? 'yes' : 'no'}</span>
       <span data-testid="played">{profile.stats.played}</span>
       <span data-testid="gold">{profile.gold}</span>
+      <span data-testid="current-opponent-level">{currentMatch?.opponent?.level ?? '-'}</span>
+      <span data-testid="last-opponent-level">{lastMatchSummary?.opponent?.level ?? '-'}</span>
       <span data-testid="last-rank-reward-count">{lastMatchSummary?.rewards.rankRewards.length ?? 0}</span>
       <span data-testid="recent-rank-reward-count">{recentRankRewards.length}</span>
     </section>
   )
 }
+
+function MatchReplayHarness() {
+  const { profile, currentMatch, startMatch, updateCurrentMatch } = useGame()
+  const selectedSlot = getSelectedDeckSlot(profile)
+
+  return (
+    <section>
+      <button
+        type="button"
+        data-testid="replay-harness-start"
+        onClick={() => startMatch(selectedSlot.cards, { open: true, ...selectedSlot.rules })}
+      >
+        start-match
+      </button>
+      <button
+        type="button"
+        data-testid="replay-harness-simulate-finish"
+        onClick={() => {
+          if (!currentMatch) {
+            return
+          }
+
+          let next = currentMatch.state
+          while (next.status === 'active') {
+            const move = listLegalMoves(next)[0]
+            if (!move) {
+              break
+            }
+            next = applyMove(next, move)
+          }
+
+          updateCurrentMatch(next)
+        }}
+      >
+        simulate-finish
+      </button>
+      <span data-testid="replay-harness-current-deck">{currentMatch ? currentMatch.state.config.playerDeck.join(',') : '-'}</span>
+      <span data-testid="replay-harness-played">{profile.stats.played}</span>
+    </section>
+  )
+}
+
 describe('app integration', () => {
   beforeEach(() => {
     localStorage.clear()
@@ -96,7 +140,8 @@ describe('app integration', () => {
     const user = userEvent.setup()
     renderApp('/')
 
-    await user.click(screen.getByRole('link', { name: 'Play' }))
+    expect(screen.getByTestId('topbar-cta-link')).toHaveTextContent('Play')
+    await user.click(screen.getByTestId('topbar-cta-link'))
     expect(screen.getByRole('heading', { name: 'Match Setup' })).toBeInTheDocument()
 
     const sameToggle = screen.getByLabelText('Enable Same')
@@ -108,6 +153,7 @@ describe('app integration', () => {
 
     expect(screen.queryAllByRole('heading', { name: 'Match' })).toHaveLength(0)
     expect(screen.getByTestId('match-turn-indicator')).toHaveTextContent('Turn 1: Player')
+    expect(screen.getByTestId('match-opponent-badge')).toHaveTextContent('CPU L1')
     const cpuLane = screen.getByTestId('match-lane-cpu')
     const boardStage = screen.getByTestId('match-board-stage')
     const playerLane = screen.getByTestId('match-lane-player')
@@ -119,6 +165,19 @@ describe('app integration', () => {
     expect(screen.getByLabelText('Player hand').children).toHaveLength(5)
     expect(screen.getByText('Same')).toHaveClass('active')
     expect(screen.getByText('Plus')).toHaveClass('active')
+  })
+
+  test('topbar CTA switches from Play to Continue when a match is active', async () => {
+    const user = userEvent.setup()
+    renderApp('/setup')
+
+    expect(screen.getByTestId('topbar-cta-link')).toHaveTextContent('Play')
+    expect(screen.getByTestId('topbar-cta-link')).toHaveAttribute('href', '/setup')
+
+    await user.click(screen.getByTestId('start-match-button'))
+
+    expect(screen.getByTestId('topbar-cta-link')).toHaveTextContent('Continue')
+    expect(screen.getByTestId('topbar-cta-link')).toHaveAttribute('href', '/match')
   })
 
   test('setup blocks invalid deck sizes', async () => {
@@ -147,6 +206,21 @@ describe('app integration', () => {
     }
 
     expect(screen.getByTestId('start-match-button')).toBeEnabled()
+  })
+
+  test('setup can start with auto deck mode from an empty slot', async () => {
+    const user = userEvent.setup()
+    renderApp('/setup')
+
+    await user.click(screen.getByTestId('deck-slot-slot-2'))
+    expect(screen.getByTestId('start-match-button')).toBeDisabled()
+
+    await user.click(screen.getByTestId('setup-deck-mode-auto'))
+    expect(screen.getByTestId('start-match-button')).toBeEnabled()
+
+    await user.click(screen.getByTestId('start-match-button'))
+    expect(screen.getByTestId('match-turn-indicator')).toHaveTextContent('Turn 1: Player')
+    expect(screen.getByLabelText('Player hand').children).toHaveLength(5)
   })
 
   test('setup keeps per-slot rule presets when switching slots', async () => {
@@ -215,12 +289,53 @@ describe('app integration', () => {
     expect(screen.getByTestId('match-turn-indicator')).toHaveTextContent('Turn 1: Player')
   })
 
+  test('match finish modal can start a rematch with the same deck', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <MemoryRouter initialEntries={['/setup']}>
+        <GameProvider>
+          <App />
+          <MatchReplayHarness />
+        </GameProvider>
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByTestId('replay-harness-played')).toHaveTextContent('0')
+    await user.click(screen.getByTestId('replay-harness-start'))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('topbar-cta-link')).toHaveAttribute('href', '/match')
+    })
+
+    const deckBeforeRematch = screen.getByTestId('replay-harness-current-deck').textContent
+    expect(deckBeforeRematch).toBeTruthy()
+    expect(deckBeforeRematch).not.toBe('-')
+
+    await user.click(screen.getByTestId('topbar-cta-link'))
+    expect(screen.getByTestId('match-turn-indicator')).toHaveTextContent('Turn 1: Player')
+
+    await user.click(screen.getByTestId('replay-harness-simulate-finish'))
+
+    const finishModal = await screen.findByTestId('match-finish-modal')
+    expect(finishModal).toBeInTheDocument()
+
+    await user.click(within(finishModal).getByTestId('restart-match-button'))
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('match-finish-modal')).not.toBeInTheDocument()
+      expect(screen.getByTestId('match-turn-indicator')).toHaveTextContent('Turn 1: Player')
+    })
+
+    expect(screen.getByTestId('replay-harness-current-deck')).toHaveTextContent(deckBeforeRematch ?? '')
+    expect(screen.getByTestId('replay-harness-played')).toHaveTextContent('1')
+  })
+
   test('shop is reachable from home and buying a pack updates gold and pack inventory', async () => {
     const user = userEvent.setup()
     renderApp('/')
 
-    expect(screen.getAllByRole('link', { name: 'Shop' }).length).toBeGreaterThanOrEqual(1)
-    await user.click(screen.getByRole('link', { name: 'Shop' }))
+    await user.click(screen.getByTestId('topbar-link-shop'))
 
     expect(screen.getByRole('heading', { name: 'Shop' })).toBeInTheDocument()
     expect(screen.getByTestId('shop-gold-value')).toHaveTextContent('Gold: 100')
@@ -375,6 +490,8 @@ describe('app integration', () => {
     await user.click(screen.getByTestId('toggle-pack-cards-common'))
     const dialog = screen.getByTestId('shop-pack-modal-common')
     expect(dialog).toBeInTheDocument()
+    const sectionHeadings = within(dialog).getAllByRole('heading', { level: 3 }).map((node) => node.textContent?.trim())
+    expect(sectionHeadings).toEqual(['Not owned', 'Owned'])
     const commonIds = cardPool.filter((card) => card.rarity === 'common').slice(0, 2).map((card) => card.id)
     expect(within(dialog).getByTestId(`shop-pack-modal-card-common-${commonIds[0]}`)).toBeInTheDocument()
     expect(within(dialog).getByTestId(`shop-pack-modal-card-common-${commonIds[1]}`)).toBeInTheDocument()
@@ -433,10 +550,33 @@ describe('app integration', () => {
     const user = userEvent.setup()
     renderApp('/')
 
-    await user.click(screen.getAllByRole('link', { name: 'Achievements' })[0])
+    await user.click(screen.getByTestId('topbar-more-toggle'))
+    expect(screen.getByTestId('topbar-more-menu')).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    expect(screen.queryByTestId('topbar-more-menu')).not.toBeInTheDocument()
+
+    await user.click(screen.getByTestId('topbar-more-toggle'))
+    await user.click(screen.getByTestId('topbar-more-link-achievements'))
 
     expect(screen.getByRole('heading', { name: 'Achievements' })).toBeInTheDocument()
     expect(screen.getByTestId('achievements-unlocked-count')).toHaveTextContent('Unlocked 0/40')
+  })
+
+  test('more menu closes on backdrop click and mobile nav is rendered with primary actions', async () => {
+    const user = userEvent.setup()
+    renderApp('/')
+
+    await user.click(screen.getByTestId('topbar-more-toggle'))
+    expect(screen.getByTestId('topbar-more-menu')).toBeInTheDocument()
+
+    await user.click(screen.getByTestId('topbar-more-backdrop'))
+    expect(screen.queryByTestId('topbar-more-menu')).not.toBeInTheDocument()
+
+    const mobileNav = screen.getByTestId('mobile-main-nav')
+    expect(within(mobileNav).getByText('Play')).toHaveAttribute('href', '/setup')
+    expect(within(mobileNav).getByText('Collection')).toHaveAttribute('href', '/collection')
+    expect(within(mobileNav).getByText('Shop')).toHaveAttribute('href', '/shop')
+    expect(within(mobileNav).getByTestId('mobile-main-nav-more-toggle')).toBeInTheDocument()
   })
 
   test('collection selects first card by default and updates inspect panel on selection', async () => {
@@ -518,18 +658,23 @@ describe('app integration', () => {
 
     expect(screen.getByTestId('played')).toHaveTextContent('0')
     expect(screen.getByTestId('gold')).toHaveTextContent('100')
+    expect(screen.getByTestId('current-opponent-level')).toHaveTextContent('-')
+    expect(screen.getByTestId('last-opponent-level')).toHaveTextContent('-')
 
     await user.click(screen.getByTestId('harness-start'))
 
     await waitFor(() => {
       expect(screen.getByTestId('has-match')).toHaveTextContent('yes')
     })
+    expect(screen.getByTestId('current-opponent-level')).toHaveTextContent('1')
 
     await user.click(screen.getByTestId('harness-simulate'))
     await user.click(screen.getByTestId('harness-finalize'))
 
     expect(screen.getByTestId('has-match')).toHaveTextContent('no')
     expect(screen.getByTestId('played')).toHaveTextContent('1')
+    expect(screen.getByTestId('current-opponent-level')).toHaveTextContent('-')
+    expect(screen.getByTestId('last-opponent-level')).toHaveTextContent('1')
     expect(screen.getByTestId('last-rank-reward-count')).toHaveTextContent('1')
     expect(screen.getByTestId('recent-rank-reward-count')).toHaveTextContent('1')
     expect(Number(screen.getByTestId('gold').textContent)).toBeGreaterThan(100)

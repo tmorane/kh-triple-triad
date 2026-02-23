@@ -3,7 +3,7 @@ import type { CardId, PlayerProfile, Rarity } from '../types'
 import type { SeededRng } from '../random/seededRng'
 import { evaluateAchievements } from './achievements'
 
-export type ShopPackId = 'common' | 'uncommon' | 'rare' | 'legendary'
+export type ShopPackId = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary'
 
 export interface ShopCardPull {
   cardId: CardId
@@ -39,6 +39,7 @@ const PACK_PRICES: Record<ShopPackId, number> = {
   common: 60,
   uncommon: 120,
   rare: 220,
+  epic: 300,
   legendary: 360,
 }
 

@@ -1,45 +1,53 @@
-<svg width="720" height="420" viewBox="0 0 720 420" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
-  <title id="title">Uncommon Pack Artwork</title>
-  <desc id="desc">An emerald KH Triple Triad pack with a winged crystal crest.</desc>
+<svg width="640" height="900" viewBox="0 0 640 900" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Uncommon Pack</title>
+  <desc id="desc">Emerald uncommon card pack artwork in the epic vertical format.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#16262a"/>
-      <stop offset="55%" stop-color="#1f3d3b"/>
-      <stop offset="100%" stop-color="#12272d"/>
+      <stop offset="0%" stop-color="#132129"/>
+      <stop offset="55%" stop-color="#214c43"/>
+      <stop offset="100%" stop-color="#2f7a62"/>
     </linearGradient>
     <linearGradient id="foil" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#b9f3d1"/>
-      <stop offset="50%" stop-color="#6ab289"/>
-      <stop offset="100%" stop-color="#3f7e5d"/>
+      <stop offset="0%" stop-color="#d5ffe9"/>
+      <stop offset="50%" stop-color="#87ddb3"/>
+      <stop offset="100%" stop-color="#4d9a73"/>
     </linearGradient>
-    <radialGradient id="glow" cx="0.5" cy="0.42" r="0.62">
-      <stop offset="0%" stop-color="#9de5c6" stop-opacity="0.48"/>
-      <stop offset="100%" stop-color="#9de5c6" stop-opacity="0"/>
+    <radialGradient id="shine" cx="30%" cy="20%" r="70%">
+      <stop offset="0%" stop-color="#d7ffe8" stop-opacity="0.76"/>
+      <stop offset="100%" stop-color="#d7ffe8" stop-opacity="0"/>
     </radialGradient>
   </defs>
 
-  <rect width="720" height="420" rx="26" fill="url(#bg)"/>
-  <rect x="12" y="12" width="696" height="396" rx="22" fill="none" stroke="#62a784" stroke-opacity="0.82"/>
-  <rect x="26" y="26" width="668" height="368" rx="18" fill="url(#glow)"/>
+  <rect x="0" y="0" width="640" height="900" rx="36" fill="url(#bg)"/>
+  <rect x="24" y="24" width="592" height="852" rx="28" fill="none" stroke="#abf1cc" stroke-opacity="0.64" stroke-width="4"/>
+  <ellipse cx="180" cy="170" rx="220" ry="180" fill="url(#shine)"/>
 
-  <g transform="translate(360 188)">
-    <circle r="100" fill="#14262a" stroke="#88d3b0" stroke-width="8"/>
-    <circle r="76" fill="none" stroke="#88d3b0" stroke-opacity="0.54" stroke-width="3"/>
-    <path d="M0 -56 L26 -4 L0 52 L-26 -4 Z" fill="url(#foil)"/>
-    <path d="M-88 6 L-34 -18 L-26 0 L-34 18 Z" fill="#79be99"/>
-    <path d="M88 6 L34 -18 L26 0 L34 18 Z" fill="#79be99"/>
-    <circle r="12" fill="#0f2124" stroke="#a7e8ca" stroke-width="2"/>
+  <g fill="none" stroke="#d9ffee" stroke-opacity="0.74" stroke-width="6">
+    <path d="M120 180 L320 100 L520 180 L520 420 L320 500 L120 420 Z"/>
+    <path d="M165 250 L320 190 L475 250 L475 380 L320 440 L165 380 Z" stroke-opacity="0.5"/>
   </g>
 
-  <g fill="#c6eed8">
-    <circle cx="234" cy="100" r="6"/>
-    <circle cx="272" cy="82" r="6"/>
-    <circle cx="312" cy="68" r="6"/>
-    <circle cx="408" cy="68" r="6"/>
-    <circle cx="448" cy="82" r="6"/>
-    <circle cx="486" cy="100" r="6"/>
+  <g transform="translate(320 326)">
+    <circle r="82" fill="none" stroke="#9ce7c0" stroke-opacity="0.58" stroke-width="5"/>
+    <path d="M0 -60 L30 -4 L0 52 L-30 -4 Z" fill="url(#foil)"/>
+    <path d="M-104 2 L-44 -24 L-32 -2 L-44 20 Z" fill="#8adbb0"/>
+    <path d="M104 2 L44 -24 L32 -2 L44 20 Z" fill="#8adbb0"/>
+    <circle r="12" fill="#e7fff2"/>
   </g>
 
-  <text x="360" y="326" text-anchor="middle" fill="#daf6e8" font-family="Cinzel, serif" font-size="54" font-weight="700" letter-spacing="7">UNCOMMON</text>
-  <text x="360" y="360" text-anchor="middle" fill="#9fd6bb" font-family="Rajdhani, sans-serif" font-size="24" font-weight="700" letter-spacing="4">TACTICAL BLOOM</text>
+  <g fill="#e7fff3">
+    <circle cx="258" cy="236" r="4"/>
+    <circle cx="284" cy="220" r="4"/>
+    <circle cx="320" cy="214" r="4"/>
+    <circle cx="356" cy="220" r="4"/>
+    <circle cx="382" cy="236" r="4"/>
+  </g>
+
+  <g fill="#ebfff4" font-family="Rajdhani, sans-serif" text-anchor="middle">
+    <text x="320" y="660" font-size="68" font-weight="700" letter-spacing="7">UNCOMMON</text>
+    <text x="320" y="728" font-size="40" font-weight="600" letter-spacing="6">TRIPLE TRIAD</text>
+  </g>
+
+  <circle cx="320" cy="570" r="28" fill="#defde9" fill-opacity="0.95"/>
+  <circle cx="320" cy="570" r="14" fill="#4f9f75"/>
 </svg>

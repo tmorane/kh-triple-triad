@@ -80,6 +80,14 @@ describe('SetupPage', () => {
     expect(screen.getByLabelText('Deck selection')).toBeInTheDocument()
   })
 
+  test('shows opponent preview with level, score range, and win bonus', () => {
+    renderSetup()
+
+    expect(screen.getByTestId('setup-opponent-level')).toHaveTextContent('L1')
+    expect(screen.getByTestId('setup-opponent-score-range')).toHaveTextContent('45-50')
+    expect(screen.getByTestId('setup-opponent-bonus')).toHaveTextContent('+0')
+  })
+
   test('shows five selected cards in preview strip for active deck slot', () => {
     renderSetup()
 
@@ -100,6 +108,17 @@ describe('SetupPage', () => {
     expect(within(preview).getAllByTestId(/^setup-selected-slot-empty-/)).toHaveLength(1)
     expect(screen.getByText('Deck: 4/5 selected')).toBeInTheDocument()
     expect(screen.getByTestId('start-match-button')).toBeDisabled()
+  })
+
+  test('auto deck mode allows starting even when selected slot has no cards', async () => {
+    const user = userEvent.setup()
+    renderSetup()
+
+    await user.click(screen.getByTestId('deck-slot-slot-2'))
+    expect(screen.getByTestId('start-match-button')).toBeDisabled()
+
+    await user.click(screen.getByTestId('setup-deck-mode-auto'))
+    expect(screen.getByTestId('start-match-button')).toBeEnabled()
   })
 
   test('search + rarity filters change result set and reset restores defaults', async () => {

@@ -15,6 +15,24 @@ function formatRankReward(grant: RankRewardGrant): string {
   return `${grant.rankName}: +${grant.reward.gold} gold + ${packRewards.join(', ')}`
 }
 
+function formatGoldBonusDetails(rewards: {
+  bonusGoldFromDuplicate: number
+  bonusGoldFromDifficulty: number
+  bonusGoldFromAutoDeck: number
+}): string {
+  const parts: string[] = []
+  if (rewards.bonusGoldFromDifficulty > 0) {
+    parts.push(`+${rewards.bonusGoldFromDifficulty} difficulty`)
+  }
+  if (rewards.bonusGoldFromDuplicate > 0) {
+    parts.push(`+${rewards.bonusGoldFromDuplicate} duplicate`)
+  }
+  if (rewards.bonusGoldFromAutoDeck > 0) {
+    parts.push(`+${rewards.bonusGoldFromAutoDeck} auto deck`)
+  }
+  return parts.length > 0 ? ` (${parts.join(', ')})` : ''
+}
+
 export function ResultsPage() {
   const { lastMatchSummary } = useGame()
 
@@ -22,7 +40,7 @@ export function ResultsPage() {
     return <Navigate to="/" replace />
   }
 
-  const { result, rewards, newlyOwnedCards } = lastMatchSummary
+  const { result, rewards, newlyOwnedCards, opponent } = lastMatchSummary
 
   return (
     <section className="panel">
@@ -41,7 +59,13 @@ export function ResultsPage() {
         <span>Gold Earned</span>
         <strong>
           +{rewards.goldAwarded}
-          {rewards.bonusGoldFromDuplicate > 0 ? ` (+${rewards.bonusGoldFromDuplicate} duplicate)` : ''}
+          {formatGoldBonusDetails(rewards)}
+        </strong>
+      </div>
+      <div className="stat-row">
+        <span>Opponent</span>
+        <strong>
+          CPU L{opponent.level} ({opponent.aiProfile})
         </strong>
       </div>
 

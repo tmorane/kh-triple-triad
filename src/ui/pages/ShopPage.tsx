@@ -8,29 +8,28 @@ import { TriadCard } from '../components/TriadCard'
 const packOrder: ShopPackId[] = ['common', 'uncommon', 'rare', 'legendary']
 
 interface PackVisual {
-  description: string
   tagline: string
   artSrc: string
 }
 
 const packVisuals: Record<ShopPackId, PackVisual> = {
   common: {
-    description: 'Common cards only',
     tagline: 'Reliable foundations for every deck.',
     artSrc: '/packs/common-pack.svg',
   },
   uncommon: {
-    description: 'Uncommon cards only',
     tagline: 'Specialized picks with sharper angles.',
     artSrc: '/packs/uncommon-pack.svg',
   },
   rare: {
-    description: 'Rare cards only',
     tagline: 'High-impact threats for decisive turns.',
     artSrc: '/packs/rare-pack.svg',
   },
+  epic: {
+    tagline: 'High-risk, high-reward momentum swings.',
+    artSrc: '/packs/epic-pack.svg',
+  },
   legendary: {
-    description: 'Legendary cards only',
     tagline: 'Endgame royalty with unmatched pressure.',
     artSrc: '/packs/legendary-pack.svg',
   },
@@ -45,9 +44,18 @@ export function ShopPage() {
   const [purchaseToast, setPurchaseToast] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [openPackId, setOpenPackId] = useState<ShopPackId | null>(null)
+  const ownedCardIdsSet = useMemo(() => new Set(profile.ownedCardIds), [profile.ownedCardIds])
   const modalCards = useMemo(
     () => (openPackId ? cardPool.filter((card) => card.rarity === openPackId) : []),
     [openPackId],
+  )
+  const ownedModalCards = useMemo(
+    () => modalCards.filter((card) => ownedCardIdsSet.has(card.id)),
+    [modalCards, ownedCardIdsSet],
+  )
+  const missingModalCards = useMemo(
+    () => modalCards.filter((card) => !ownedCardIdsSet.has(card.id)),
+    [modalCards, ownedCardIdsSet],
   )
   const openPackVisual = openPackId ? packVisuals[openPackId] : null
 
@@ -125,7 +133,6 @@ export function ShopPage() {
 
           return (
             <article className={`shop-pack-card shop-pack-card--${packId}`} key={packId} data-testid={`shop-pack-${packId}`}>
-              <h2 className="shop-pack-title">{formatPackLabel(packId)}</h2>
               <div className="shop-pack-art-wrap">
                 <img
                   className="shop-pack-art"
@@ -134,9 +141,13 @@ export function ShopPage() {
                   loading="lazy"
                   decoding="async"
                 />
+                <span className="shop-pack-stock" data-testid={`shop-pack-stock-${packId}`}>
+                  x{profile.packInventoryByRarity[packId]}
+                </span>
               </div>
-              <p className="small shop-pack-tagline">{packVisual.tagline}</p>
-              <p className="small">{packVisual.description}</p>
+              <p className="small shop-pack-progress">
+                Owned {ownedInRarity}/{cardsInRarity.length}
+              </p>
               <button
                 type="button"
                 className={`shop-price-buy shop-price-buy--${packId}`}
@@ -152,10 +163,6 @@ export function ShopPage() {
                 </span>
                 <span className="shop-price-buy__hint">{affordable ? 'Tap to buy this pack' : 'Not enough gold'}</span>
               </button>
-              <p className="small">
-                Owned in pool: {ownedInRarity}/{cardsInRarity.length}
-              </p>
-              <p className="small">In inventory: x{profile.packInventoryByRarity[packId]}</p>
               <button
                 type="button"
                 className={`button shop-view-button shop-view-button--${packId}`}
@@ -203,17 +210,52 @@ export function ShopPage() {
                 Close
               </button>
             </div>
-            <div className="shop-pack-modal-grid">
-              {modalCards.map((card) => (
-                <TriadCard
-                  key={card.id}
-                  card={card}
-                  context="collection-list"
-                  owned
-                  copies={profile.cardCopiesById[card.id] ?? 0}
-                  testId={`shop-pack-modal-card-${openPackId}-${card.id}`}
-                />
-              ))}
+            <div className="shop-pack-modal-sections">
+              {missingModalCards.length > 0 ? (
+                <section className="shop-pack-modal-section" aria-labelledby={`shop-pack-modal-missing-title-${openPackId}`}>
+                  <div className="shop-pack-modal-section-head">
+                    <h3 id={`shop-pack-modal-missing-title-${openPackId}`}>Not owned</h3>
+                    <p className="small">{missingModalCards.length}</p>
+                  </div>
+                  <div className="shop-pack-modal-grid">
+                    {missingModalCards.map((card) => (
+                      <TriadCard
+                        key={card.id}
+                        card={card}
+                        context="collection-list"
+                        owned={false}
+                        copies={0}
+                        testId={`shop-pack-modal-card-${openPackId}-${card.id}`}
+                      />
+                    ))}
+                  </div>
+                </section>
+              ) : null}
+
+              <section className="shop-pack-modal-section" aria-labelledby={`shop-pack-modal-owned-title-${openPackId}`}>
+                <div className="shop-pack-modal-section-head">
+                  <h3 id={`shop-pack-modal-owned-title-${openPackId}`}>Owned</h3>
+                  <p className="small">
+                    {ownedModalCards.length}/{modalCards.length}
+                  </p>
+                </div>
+                <div className="shop-pack-modal-grid">
+                  {ownedModalCards.length > 0 ? (
+                    ownedModalCards.map((card) => (
+                      <TriadCard
+                        key={card.id}
+                        card={card}
+                        context="collection-list"
+                        owned
+                        copies={profile.cardCopiesById[card.id] ?? 0}
+                        testId={`shop-pack-modal-card-${openPackId}-${card.id}`}
+                      />
+                    ))
+                  ) : (
+                    <p className="small shop-pack-modal-empty">No owned cards in this rarity yet.</p>
+                  )}
+                </div>
+              </section>
             </div>
           </section>
         </div>

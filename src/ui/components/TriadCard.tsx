@@ -82,7 +82,8 @@ export function TriadCard({
   const bottom = locked ? '?' : card.bottom
   const left = locked ? '?' : card.left
   const artSrc = !locked && !artUnavailable ? (artCandidates[artCandidateIndex] ?? null) : null
-  const showSigil = locked || !artSrc || !artLoaded
+  // Hide letter sigils for owned cards now that artwork is expected; keep fallback only for locked cards.
+  const showSigil = locked
 
   function handleArtLoad() {
     setArtLoaded(true)
