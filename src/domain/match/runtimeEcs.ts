@@ -26,7 +26,7 @@ export interface MatchRuntime {
 export function createMatchRuntime(state: MatchState): MatchRuntime {
   const world = new World<MatchEntity>()
 
-  for (let index = 0; index < 9; index += 1) {
+  for (let index = 0; index < state.board.length; index += 1) {
     world.add({ type: 'cell', index, cardId: null, owner: null })
   }
   world.add({ type: 'turn', actor: state.turn })

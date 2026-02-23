@@ -18,6 +18,47 @@ export function RulesPage() {
         </li>
       </ul>
 
+      <section className="rule-faq" data-testid="rules-faq">
+        <h2>FAQ - Synergies & Missions</h2>
+        <dl className="rule-faq-list">
+          <div>
+            <dt>What does primary synergy do?</dt>
+            <dd>
+              <strong>R1 Avant-garde (Sans coeur):</strong> On your first move only, your placed card gets <code>+1</code> on all 4
+              sides.
+            </dd>
+            <dd>
+              <strong>R2 Coin Expert (Simili):</strong> If you place in a corner, you get <code>+1</code> on the active sides of that
+              corner.
+            </dd>
+            <dd>
+              <strong>R7 Combo Bounty (Nescient):</strong> Each Same/Plus trigger gives <code>+3 gold</code> (cap <code>+12</code> per
+              match).
+            </dd>
+            <dd>
+              <strong>R8 Victoire Propre (other primary types):</strong> If you win by <code>2+</code> points, you gain <code>+10
+              gold</code>.
+            </dd>
+          </div>
+
+          <div>
+            <dt>What does secondary synergy do?</dt>
+            <dd>
+              No gameplay impact on flips/captures. It only affects progression/economy.
+            </dd>
+            <dd>
+              <strong>R10 Mission Link:</strong> On player victory with secondary active, missions gain <code>+1</code> bonus progress.
+            </dd>
+            <dd>
+              You also gain <code>+5 gold</code> once per winning match.
+            </dd>
+            <dd>
+              Secondary is only available for <code>Sans coeur</code>, <code>Simili</code>, and <code>Nescient</code>.
+            </dd>
+          </div>
+        </dl>
+      </section>
+
       <div className="actions">
         <Link className="button button-primary" to="/setup">
           Go to Match Setup

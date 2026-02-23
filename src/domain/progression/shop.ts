@@ -1,9 +1,15 @@
 import { cardPool } from '../cards/cardPool'
-import type { CardId, PlayerProfile, Rarity } from '../types'
+import type { CardCategoryId, CardId, PlayerProfile, Rarity } from '../types'
 import type { SeededRng } from '../random/seededRng'
 import { evaluateAchievements } from './achievements'
 
 export type ShopPackId = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary'
+export type SpecialPackId = 'sans_coeur_focus' | 'simili_focus' | 'legendary_focus'
+
+export interface SpecialPackPurchaseRequest {
+  packId: SpecialPackId
+  targetLegendaryCardId?: CardId
+}
 
 export interface ShopCardPull {
   cardId: CardId
@@ -30,12 +36,56 @@ export interface ShopPurchaseProgressionResult {
   receipt: ShopPurchaseReceipt
 }
 
+export interface ShopBulkPurchaseReceipt {
+  packId: ShopPackId
+  quantity: number
+  goldSpent: number
+  goldRemaining: number
+  packCountAfter: number
+}
+
+export interface ShopBulkPurchaseProgressionResult {
+  profile: PlayerProfile
+  receipt: ShopBulkPurchaseReceipt
+}
+
 export interface ShopOpenProgressionResult {
   profile: PlayerProfile
   opened: OpenedPackResult
 }
 
+export interface OpenedPackBatchResult {
+  packId: ShopPackId
+  openedCount: number
+  remainingPackCount: number
+  pulls: ShopCardPull[]
+}
+
+export interface ShopOpenBatchProgressionResult {
+  profile: PlayerProfile
+  opened: OpenedPackBatchResult
+}
+
+export interface SpecialPackReceipt {
+  packId: SpecialPackId
+  goldSpent: number
+  goldRemaining: number
+}
+
+export interface OpenedSpecialPackResult {
+  packId: SpecialPackId
+  targetLegendaryCardId: CardId | null
+  pulls: [ShopCardPull, ShopCardPull, ShopCardPull]
+}
+
+export interface SpecialPackProgressionResult {
+  profile: PlayerProfile
+  receipt: SpecialPackReceipt
+  opened: OpenedSpecialPackResult
+}
+
 const dropRarityOrder: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary']
+const legendaryFocusFillerCategories: CardCategoryId[] = ['boss_kh', 'heros']
 
 const PACK_PRICES: Record<ShopPackId, number> = {
   common: 60,
@@ -43,6 +93,12 @@ const PACK_PRICES: Record<ShopPackId, number> = {
   rare: 220,
   epic: 300,
   legendary: 360,
+}
+
+const SPECIAL_PACK_PRICES: Record<SpecialPackId, number> = {
+  sans_coeur_focus: 220,
+  simili_focus: 220,
+  legendary_focus: 900,
 }
 
 type PackDropRates = Readonly<Record<Rarity, number>>
@@ -55,30 +111,89 @@ const PACK_DROP_RATES: Readonly<Record<ShopPackId, PackDropRates>> = {
   legendary: { common: 5, uncommon: 10, rare: 20, epic: 55, legendary: 10 },
 }
 
+const SPECIAL_BASE_RATES: PackDropRates = {
+  common: 70,
+  uncommon: 22,
+  rare: 5,
+  epic: 2,
+  legendary: 1,
+}
+const LEGENDARY_FOCUS_BASE_DROP_CHANCE_PERCENT = 1
+const LEGENDARY_FOCUS_DROP_CHANCE_INCREMENT_PERCENT = 1
+const LEGENDARY_FOCUS_MAX_DROP_CHANCE_PERCENT = 100
+
 assertPackDropRates()
 
 export function getPackPrice(packId: ShopPackId): number {
   return PACK_PRICES[packId]
 }
 
+export function getSpecialPackPrice(packId: SpecialPackId): number {
+  return SPECIAL_PACK_PRICES[packId]
+}
+
 export function getPackDropRates(packId: ShopPackId): PackDropRates {
   return PACK_DROP_RATES[packId]
 }
 
+export function getLegendaryFocusDropChancePercent(profile: PlayerProfile): number {
+  const rawChance = profile.specialPackPity?.legendaryFocusChancePercent
+  if (typeof rawChance !== 'number' || !Number.isFinite(rawChance)) {
+    return LEGENDARY_FOCUS_BASE_DROP_CHANCE_PERCENT
+  }
+
+  const clamped = Math.max(
+    LEGENDARY_FOCUS_BASE_DROP_CHANCE_PERCENT,
+    Math.min(LEGENDARY_FOCUS_MAX_DROP_CHANCE_PERCENT, rawChance),
+  )
+  return Math.floor(clamped)
+}
+
 export function purchaseShopPack(profile: PlayerProfile, packId: ShopPackId): ShopPurchaseProgressionResult {
-  const goldSpent = getPackPrice(packId)
+  const progression = purchaseShopPacks(profile, packId, 1)
+  return {
+    profile: progression.profile,
+    receipt: {
+      packId,
+      goldSpent: progression.receipt.goldSpent,
+      goldRemaining: progression.receipt.goldRemaining,
+      packCountAfter: progression.receipt.packCountAfter,
+    },
+  }
+}
+
+export function openOwnedPack(profile: PlayerProfile, packId: ShopPackId, rng: SeededRng): ShopOpenProgressionResult {
+  const progression = openOwnedPacks(profile, packId, 1, rng)
+  return {
+    profile: progression.profile,
+    opened: {
+      packId,
+      remainingPackCount: progression.opened.remainingPackCount,
+      pulls: progression.opened.pulls as [ShopCardPull, ShopCardPull, ShopCardPull],
+    },
+  }
+}
+
+export function purchaseShopPacks(
+  profile: PlayerProfile,
+  packId: ShopPackId,
+  quantity: number,
+): ShopBulkPurchaseProgressionResult {
+  const normalizedQuantity = validatePackQuantity(quantity)
+  const goldSpent = getPackPrice(packId) * normalizedQuantity
   if (profile.gold < goldSpent) {
     throw new Error('Not enough gold for this pack.')
   }
 
   const updatedProfile = cloneProfile(profile)
   updatedProfile.gold -= goldSpent
-  updatedProfile.packInventoryByRarity[packId] += 1
+  updatedProfile.packInventoryByRarity[packId] += normalizedQuantity
 
   return {
     profile: updatedProfile,
     receipt: {
       packId,
+      quantity: normalizedQuantity,
       goldSpent,
       goldRemaining: updatedProfile.gold,
       packCountAfter: updatedProfile.packInventoryByRarity[packId],
@@ -86,34 +201,31 @@ export function purchaseShopPack(profile: PlayerProfile, packId: ShopPackId): Sh
   }
 }
 
-export function openOwnedPack(profile: PlayerProfile, packId: ShopPackId, rng: SeededRng): ShopOpenProgressionResult {
-  if (profile.packInventoryByRarity[packId] <= 0) {
+export function openOwnedPacks(
+  profile: PlayerProfile,
+  packId: ShopPackId,
+  quantity: number,
+  rng: SeededRng,
+): ShopOpenBatchProgressionResult {
+  const normalizedQuantity = validatePackQuantity(quantity)
+  const availablePackCount = profile.packInventoryByRarity[packId]
+  if (availablePackCount <= 0 && normalizedQuantity === 1) {
     throw new Error('No pack available to open.')
+  }
+  if (availablePackCount < normalizedQuantity) {
+    throw new Error('Not enough packs available to open.')
   }
 
   const updatedProfile = cloneProfile(profile)
-  updatedProfile.packInventoryByRarity[packId] -= 1
+  updatedProfile.packInventoryByRarity[packId] -= normalizedQuantity
 
   const pulls: ShopCardPull[] = []
-  for (let index = 0; index < 3; index += 1) {
-    const pulledRarity = chooseWeightedRarity(packId, rng)
-    const cardId = chooseWeightedCard(pulledRarity, updatedProfile.cardCopiesById, rng)
-    const existingCopies = updatedProfile.cardCopiesById[cardId] ?? 0
-    const copiesAfter = existingCopies + 1
-    const isNewOwnership = existingCopies === 0
-
-    updatedProfile.cardCopiesById[cardId] = copiesAfter
-
-    if (isNewOwnership && !updatedProfile.ownedCardIds.includes(cardId)) {
-      updatedProfile.ownedCardIds.push(cardId)
+  for (let packIndex = 0; packIndex < normalizedQuantity; packIndex += 1) {
+    for (let pullIndex = 0; pullIndex < 3; pullIndex += 1) {
+      const pulledRarity = chooseWeightedRarity(packId, rng)
+      const cardId = chooseWeightedCard(pulledRarity, updatedProfile.cardCopiesById, rng)
+      pulls.push(applyPull(updatedProfile, cardId, pulledRarity))
     }
-
-    pulls.push({
-      cardId,
-      rarity: pulledRarity,
-      isNewOwnership,
-      copiesAfter,
-    })
   }
 
   const unlocked = evaluateAchievements(updatedProfile)
@@ -125,7 +237,80 @@ export function openOwnedPack(profile: PlayerProfile, packId: ShopPackId, rng: S
     profile: updatedProfile,
     opened: {
       packId,
+      openedCount: normalizedQuantity,
       remainingPackCount: updatedProfile.packInventoryByRarity[packId],
+      pulls,
+    },
+  }
+}
+
+export function purchaseAndOpenSpecialPack(
+  profile: PlayerProfile,
+  request: SpecialPackPurchaseRequest,
+  rng: SeededRng,
+): SpecialPackProgressionResult {
+  const goldSpent = getSpecialPackPrice(request.packId)
+  if (profile.gold < goldSpent) {
+    throw new Error('Not enough gold for this special pack.')
+  }
+
+  const updatedProfile = cloneProfile(profile)
+  updatedProfile.gold -= goldSpent
+
+  const pulls: ShopCardPull[] = []
+  let targetLegendaryCardId: CardId | null = null
+
+  if (request.packId === 'sans_coeur_focus') {
+    pullFromFocusedCategory(updatedProfile, 'sans_coeur', rng, pulls)
+  } else if (request.packId === 'simili_focus') {
+    pullFromFocusedCategory(updatedProfile, 'simili', rng, pulls)
+  } else {
+    targetLegendaryCardId = validateLegendaryTarget(request.targetLegendaryCardId)
+
+    const fillerPool = legendaryFocusFillerCategories.flatMap((categoryId) => getCardsByCategory(categoryId))
+    if (fillerPool.length === 0) {
+      throw new Error('No cards are available for legendary focus fillers.')
+    }
+
+    const focusDropChancePercent = getLegendaryFocusDropChancePercent(updatedProfile)
+    const focusRoll = rng.nextInt(100)
+    const didDropFocusedLegendary = focusRoll < focusDropChancePercent
+
+    if (didDropFocusedLegendary) {
+      pulls.push(applyPull(updatedProfile, targetLegendaryCardId, 'legendary'))
+      updatedProfile.specialPackPity = {
+        legendaryFocusChancePercent: LEGENDARY_FOCUS_BASE_DROP_CHANCE_PERCENT,
+      }
+    } else {
+      const missPull = chooseLegendaryFocusMissPull(fillerPool, targetLegendaryCardId, updatedProfile.cardCopiesById, rng)
+      pulls.push(applyPull(updatedProfile, missPull.cardId, missPull.rarity))
+      updatedProfile.specialPackPity = {
+        legendaryFocusChancePercent: incrementLegendaryFocusDropChancePercent(focusDropChancePercent),
+      }
+    }
+
+    for (let index = 0; index < 2; index += 1) {
+      const rarity = chooseRemappedRarity(fillerPool, rng)
+      const cardId = chooseWeightedCardFromPool(fillerPool, rarity, updatedProfile.cardCopiesById, rng)
+      pulls.push(applyPull(updatedProfile, cardId, rarity))
+    }
+  }
+
+  const unlocked = evaluateAchievements(updatedProfile)
+  if (unlocked.length > 0) {
+    updatedProfile.achievements.push(...unlocked)
+  }
+
+  return {
+    profile: updatedProfile,
+    receipt: {
+      packId: request.packId,
+      goldSpent,
+      goldRemaining: updatedProfile.gold,
+    },
+    opened: {
+      packId: request.packId,
+      targetLegendaryCardId,
       pulls: pulls as [ShopCardPull, ShopCardPull, ShopCardPull],
     },
   }
@@ -140,10 +325,16 @@ function cloneProfile(profile: PlayerProfile): PlayerProfile {
     deckSlots: profile.deckSlots.map((slot) => ({
       ...slot,
       cards: [...slot.cards],
+      cards4x4: [...slot.cards4x4],
       rules: { ...slot.rules },
     })) as PlayerProfile['deckSlots'],
     stats: { ...profile.stats },
     achievements: [...profile.achievements],
+    missions: {
+      m1_type_specialist: { ...profile.missions.m1_type_specialist },
+      m2_combo_practitioner: { ...profile.missions.m2_combo_practitioner },
+      m3_corner_tactician: { ...profile.missions.m3_corner_tactician },
+    },
     ranked: {
       ...profile.ranked,
       resultStreak: { ...profile.ranked.resultStreak },
@@ -169,8 +360,27 @@ function chooseWeightedRarity(packId: ShopPackId, rng: SeededRng): Rarity {
 
 function chooseWeightedCard(rarity: Rarity, cardCopiesById: Record<CardId, number>, rng: SeededRng): CardId {
   const candidates = cardPool.filter((card) => card.rarity === rarity)
+  return chooseWeightedCardFromCandidates(candidates, cardCopiesById, rng, `No cards found for rarity: ${rarity}`)
+}
+
+function chooseWeightedCardFromPool(
+  pool: typeof cardPool,
+  rarity: Rarity,
+  cardCopiesById: Record<CardId, number>,
+  rng: SeededRng,
+): CardId {
+  const candidates = pool.filter((card) => card.rarity === rarity)
+  return chooseWeightedCardFromCandidates(candidates, cardCopiesById, rng, `No cards found for rarity: ${rarity}`)
+}
+
+function chooseWeightedCardFromCandidates(
+  candidates: Array<{ id: CardId }>,
+  cardCopiesById: Record<CardId, number>,
+  rng: SeededRng,
+  emptyError: string,
+): CardId {
   if (candidates.length === 0) {
-    throw new Error(`No cards found for rarity: ${rarity}`)
+    throw new Error(emptyError)
   }
 
   let totalWeight = 0
@@ -190,6 +400,106 @@ function chooseWeightedCard(rarity: Rarity, cardCopiesById: Record<CardId, numbe
   }
 
   return weightedCandidates[weightedCandidates.length - 1]!.cardId
+}
+
+function pullFromFocusedCategory(
+  profile: PlayerProfile,
+  categoryId: CardCategoryId,
+  rng: SeededRng,
+  pulls: ShopCardPull[],
+): void {
+  const categoryPool = getCardsByCategory(categoryId)
+  if (categoryPool.length === 0) {
+    throw new Error(`No cards found for category: ${categoryId}`)
+  }
+
+  for (let index = 0; index < 3; index += 1) {
+    const rarity = chooseRemappedRarity(categoryPool, rng)
+    const cardId = chooseWeightedCardFromPool(categoryPool, rarity, profile.cardCopiesById, rng)
+    pulls.push(applyPull(profile, cardId, rarity))
+  }
+}
+
+function getCardsByCategory(categoryId: CardCategoryId) {
+  return cardPool.filter((card) => card.categoryId === categoryId)
+}
+
+function chooseRemappedRarity(pool: typeof cardPool, rng: SeededRng): Rarity {
+  const availableRarities = dropRarityOrder.filter((rarity) => pool.some((card) => card.rarity === rarity))
+  if (availableRarities.length === 0) {
+    throw new Error('No rarity is available for this card pool.')
+  }
+
+  const totalWeight = availableRarities.reduce((sum, rarity) => sum + SPECIAL_BASE_RATES[rarity], 0)
+  let roll = rng.nextInt(totalWeight)
+
+  for (const rarity of availableRarities) {
+    roll -= SPECIAL_BASE_RATES[rarity]
+    if (roll < 0) {
+      return rarity
+    }
+  }
+
+  return availableRarities[availableRarities.length - 1]!
+}
+
+function applyPull(profile: PlayerProfile, cardId: CardId, rarity: Rarity): ShopCardPull {
+  const existingCopies = profile.cardCopiesById[cardId] ?? 0
+  const copiesAfter = existingCopies + 1
+  const isNewOwnership = existingCopies === 0
+
+  profile.cardCopiesById[cardId] = copiesAfter
+
+  if (isNewOwnership && !profile.ownedCardIds.includes(cardId)) {
+    profile.ownedCardIds.push(cardId)
+  }
+
+  return {
+    cardId,
+    rarity,
+    isNewOwnership,
+    copiesAfter,
+  }
+}
+
+function validateLegendaryTarget(targetLegendaryCardId: CardId | undefined): CardId {
+  if (!targetLegendaryCardId) {
+    throw new Error('Legendary focus pack requires a target legendary card.')
+  }
+
+  const target = cardPool.find((card) => card.id === targetLegendaryCardId)
+  if (!target || target.rarity !== 'legendary') {
+    throw new Error('Invalid legendary focus target.')
+  }
+
+  return targetLegendaryCardId
+}
+
+function chooseLegendaryFocusMissPull(
+  fillerPool: typeof cardPool,
+  targetLegendaryCardId: CardId,
+  cardCopiesById: Record<CardId, number>,
+  rng: SeededRng,
+): { cardId: CardId; rarity: Rarity } {
+  const missPool = fillerPool.filter((card) => card.id !== targetLegendaryCardId)
+  const effectivePool = missPool.length > 0 ? missPool : fillerPool
+  const rarity = chooseRemappedRarity(effectivePool, rng)
+  const cardId = chooseWeightedCardFromPool(effectivePool, rarity, cardCopiesById, rng)
+  return { cardId, rarity }
+}
+
+function incrementLegendaryFocusDropChancePercent(current: number): number {
+  return Math.min(
+    LEGENDARY_FOCUS_MAX_DROP_CHANCE_PERCENT,
+    current + LEGENDARY_FOCUS_DROP_CHANCE_INCREMENT_PERCENT,
+  )
+}
+
+function validatePackQuantity(quantity: number): number {
+  if (!Number.isInteger(quantity) || quantity <= 0) {
+    throw new Error('Pack quantity must be an integer greater than 0.')
+  }
+  return quantity
 }
 
 function assertPackDropRates(): void {

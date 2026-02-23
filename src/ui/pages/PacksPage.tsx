@@ -2,13 +2,15 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useGame } from '../../app/useGame'
 import { getCard } from '../../domain/cards/cardPool'
-import type { OpenedPackResult, ShopPackId } from '../../domain/progression/shop'
+import type { OpenedPackBatchResult, OpenedPackResult, ShopPackId } from '../../domain/progression/shop'
 import { playNewCardSound } from '../audio/newCardSound'
 import { TriadCard } from '../components/TriadCard'
 
 const packOrder: ShopPackId[] = ['common', 'uncommon', 'rare', 'epic', 'legendary']
 const revealStepDelaysMs = [0, 666, 1333] as const
 const revealTotalDurationMs = 2000
+const PACKS_MAX_OPEN_QUANTITY = 20
+type OpenedRevealResult = OpenedPackResult | OpenedPackBatchResult
 
 interface PackVisual {
   artSrc: string
@@ -36,12 +38,34 @@ function formatPackLabel(packId: ShopPackId): string {
   return `${packId.charAt(0).toUpperCase()}${packId.slice(1)} Pack`
 }
 
+function sanitizeOpenQuantity(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 1
+  }
+  return Math.max(1, Math.min(PACKS_MAX_OPEN_QUANTITY, Math.floor(value)))
+}
+
+function isOpenedPackBatch(result: OpenedRevealResult): result is OpenedPackBatchResult {
+  return 'openedCount' in result
+}
+
+function getOpenedPackCount(result: OpenedRevealResult): number {
+  return isOpenedPackBatch(result) ? result.openedCount : 1
+}
+
 export function PacksPage() {
-  const { profile, openOwnedPack } = useGame()
-  const [openResult, setOpenResult] = useState<OpenedPackResult | null>(null)
+  const { profile, openOwnedPack, openOwnedPacks } = useGame()
+  const [openResult, setOpenResult] = useState<OpenedRevealResult | null>(null)
   const [revealedCount, setRevealedCount] = useState(0)
   const [isRevealRunning, setIsRevealRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [openQuantityByPack, setOpenQuantityByPack] = useState<Record<ShopPackId, number>>({
+    common: 1,
+    uncommon: 1,
+    rare: 1,
+    epic: 1,
+    legendary: 1,
+  })
   const revealTimeoutIdsRef = useRef<number[]>([])
   const playedSoundByRevealKeyRef = useRef(new Set<string>())
 
@@ -85,8 +109,13 @@ export function PacksPage() {
     playedSoundByRevealKeyRef.current.clear()
 
     if (!openResult) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setRevealedCount(0)
+      setIsRevealRunning(false)
+      return
+    }
+
+    if (openResult.pulls.length > revealStepDelaysMs.length) {
+      setRevealedCount(openResult.pulls.length)
       setIsRevealRunning(false)
       return
     }
@@ -122,7 +151,7 @@ export function PacksPage() {
         continue
       }
 
-      const revealKey = `${openResult.packId}:${openResult.remainingPackCount}:${index}:${pull.cardId}`
+      const revealKey = `${openResult.packId}:${openResult.remainingPackCount}:${getOpenedPackCount(openResult)}:${index}:${pull.cardId}`
       if (playedSoundByRevealKeyRef.current.has(revealKey)) {
         continue
       }
@@ -132,9 +161,13 @@ export function PacksPage() {
     }
   }, [openResult, revealedCount])
 
-  const handleOpenPack = (packId: ShopPackId) => {
+  const handleOpenPack = (packId: ShopPackId, quantity = 1) => {
+    const normalizedQuantity = sanitizeOpenQuantity(quantity)
     try {
-      const result = openOwnedPack(packId)
+      const result = normalizedQuantity > 1 ? openOwnedPacks?.(packId, normalizedQuantity) : openOwnedPack(packId)
+      if (!result) {
+        throw new Error('Bulk open is unavailable in this context.')
+      }
       setOpenResult(result)
       setError(null)
     } catch (err) {
@@ -147,7 +180,8 @@ export function PacksPage() {
     if (!openResult || openResult.remainingPackCount <= 0) {
       return
     }
-    handleOpenPack(openResult.packId)
+    const reopenQuantity = Math.min(getOpenedPackCount(openResult), openResult.remainingPackCount)
+    handleOpenPack(openResult.packId, reopenQuantity)
   }
 
   return (
@@ -160,6 +194,8 @@ export function PacksPage() {
       <div className="packs-grid">
         {packOrder.map((packId) => {
           const count = profile.packInventoryByRarity[packId]
+          const maxOpenQuantity = Math.max(1, Math.min(PACKS_MAX_OPEN_QUANTITY, count))
+          const selectedOpenQuantity = Math.min(sanitizeOpenQuantity(openQuantityByPack[packId] ?? 1), maxOpenQuantity)
           const packVisual = packVisuals[packId]
 
           return (
@@ -168,9 +204,9 @@ export function PacksPage() {
                 type="button"
                 className="packs-entry-open"
                 disabled={count <= 0}
-                onClick={() => handleOpenPack(packId)}
+                onClick={() => handleOpenPack(packId, selectedOpenQuantity)}
                 data-testid={`open-pack-${packId}`}
-                aria-label={count > 0 ? `Open ${formatPackLabel(packId)}` : `${formatPackLabel(packId)} unavailable`}
+                aria-label={count > 0 ? `Open ${formatPackLabel(packId)} x${selectedOpenQuantity}` : `${formatPackLabel(packId)} unavailable`}
               >
                 <img
                   className="packs-entry-art"
@@ -183,6 +219,53 @@ export function PacksPage() {
               <p className="small packs-entry-count" data-testid={`packs-count-${packId}`}>
                 x{count}
               </p>
+              <div className="packs-entry-quantity" data-testid={`packs-open-quantity-${packId}`}>
+                <span className="packs-entry-quantity__label">Qty</span>
+                <div className="packs-entry-quantity__controls">
+                  <button
+                    type="button"
+                    className="packs-entry-quantity__step"
+                    onClick={() =>
+                      setOpenQuantityByPack((current) => ({
+                        ...current,
+                        [packId]: sanitizeOpenQuantity((current[packId] ?? 1) - 1),
+                      }))
+                    }
+                    disabled={selectedOpenQuantity <= 1}
+                    aria-label={`Decrease ${formatPackLabel(packId)} open quantity`}
+                    data-testid={`packs-open-quantity-decrement-${packId}`}
+                  >
+                    -
+                  </button>
+                  <span className="packs-entry-quantity__value" data-testid={`packs-open-quantity-value-${packId}`}>
+                    {selectedOpenQuantity}
+                  </span>
+                  <button
+                    type="button"
+                    className="packs-entry-quantity__step"
+                    onClick={() =>
+                      setOpenQuantityByPack((current) => ({
+                        ...current,
+                        [packId]: sanitizeOpenQuantity((current[packId] ?? 1) + 1),
+                      }))
+                    }
+                    disabled={selectedOpenQuantity >= maxOpenQuantity}
+                    aria-label={`Increase ${formatPackLabel(packId)} open quantity`}
+                    data-testid={`packs-open-quantity-increment-${packId}`}
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="button packs-entry-open-batch"
+                disabled={count <= 0}
+                onClick={() => handleOpenPack(packId, selectedOpenQuantity)}
+                data-testid={`open-pack-quantity-${packId}`}
+              >
+                Open x{selectedOpenQuantity}
+              </button>
             </article>
           )
         })}
@@ -203,7 +286,9 @@ export function PacksPage() {
                 <img className="packs-reveal-art" src={revealVisual?.artSrc} alt="" aria-hidden="true" />
                 <div>
                   <h2 id="packs-reveal-title">{formatPackLabel(openResult.packId)} Opened</h2>
-                  <p className="small">Remaining: x{openResult.remainingPackCount}</p>
+                  <p className="small">
+                    Opened x{getOpenedPackCount(openResult)} | Remaining: x{openResult.remainingPackCount}
+                  </p>
                 </div>
               </div>
               <div className="packs-reveal-actions">
@@ -214,7 +299,7 @@ export function PacksPage() {
                     onClick={handleOpenAnotherPack}
                     data-testid="packs-reveal-open-another"
                   >
-                    Open another
+                    Open x{Math.min(getOpenedPackCount(openResult), openResult.remainingPackCount)} again
                   </button>
                 ) : null}
                 <button

@@ -1,12 +1,12 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, test } from 'vitest'
+import { beforeEach, describe, expect, test, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import App from '../App'
 import { cardPool } from '../domain/cards/cardPool'
 import { getSelectedDeckSlot, starterOwnedCardIds } from '../domain/cards/decks'
 import { applyMove, listLegalMoves } from '../domain/match/engine'
-import { PROFILE_STORAGE_KEY } from '../domain/progression/profile'
+import { createDefaultProfile, PROFILE_STORAGE_KEY } from '../domain/progression/profile'
 import { GameProvider } from './GameContext'
 import { useGame } from './useGame'
 
@@ -30,6 +30,15 @@ async function waitForStarterAnimation() {
   )
 }
 
+type PlayPresetTestId = 'setup-mode-3x3' | 'setup-mode-4x4' | 'setup-mode-3x3-ranked' | 'setup-mode-4x4-ranked'
+
+async function selectPlayPreset(
+  user: ReturnType<typeof userEvent.setup>,
+  preset: PlayPresetTestId = 'setup-mode-4x4',
+) {
+  await user.click(screen.getByTestId(preset))
+}
+
 function RewardsHarness() {
   const {
     profile,
@@ -46,7 +55,7 @@ function RewardsHarness() {
       <button
         type="button"
         data-testid="harness-start"
-        onClick={() => startMatch('normal', selectedSlot.cards, { open: true, ...selectedSlot.rules })}
+        onClick={() => startMatch('normal', '4x4', selectedSlot.cards4x4, { open: true, ...selectedSlot.rules })}
       >
         start
       </button>
@@ -74,6 +83,47 @@ function RewardsHarness() {
       </button>
       <button
         type="button"
+        data-testid="harness-force-win"
+        onClick={() => {
+          if (!currentMatch) {
+            return
+          }
+
+          const playerDeck = currentMatch.state.config.playerDeck
+          const fallbackCardId = playerDeck[0] ?? currentMatch.state.config.cpuDeck[0]
+          const cellCount = currentMatch.state.board.length
+          const forcedBoard = Array.from({ length: cellCount }, (_, index) => ({
+            owner: 'player' as const,
+            cardId: playerDeck[index % playerDeck.length] ?? fallbackCardId,
+          }))
+
+          updateCurrentMatch({
+            ...currentMatch.state,
+            board: forcedBoard,
+            hands: { player: [], cpu: [] },
+            turns: cellCount,
+            status: 'finished',
+            turn: 'player',
+            lastMove: null,
+            metrics: {
+              playsByActor: { player: Math.ceil(cellCount / 2), cpu: Math.floor(cellCount / 2) },
+              samePlusTriggersByActor: { player: 2, cpu: 0 },
+              cornerPlaysByActor: { player: 4, cpu: 0 },
+            },
+            typeSynergy: {
+              player: {
+                primaryTypeId: currentMatch.state.typeSynergy.player.primaryTypeId ?? 'humain',
+                secondaryTypeId: currentMatch.state.typeSynergy.player.secondaryTypeId,
+              },
+              cpu: { ...currentMatch.state.typeSynergy.cpu },
+            },
+          })
+        }}
+      >
+        force-win
+      </button>
+      <button
+        type="button"
         data-testid="harness-finalize"
         onClick={() => {
           if (currentMatch) {
@@ -91,6 +141,7 @@ function RewardsHarness() {
       <span data-testid="current-opponent-level">{currentMatch?.opponent?.level ?? '-'}</span>
       <span data-testid="last-opponent-level">{lastMatchSummary?.opponent?.level ?? '-'}</span>
       <span data-testid="last-ranked-delta">{lastMatchSummary?.rankedUpdate?.deltaLp ?? 0}</span>
+      <span data-testid="mission-m1-progress">{profile.missions.m1_type_specialist.progress}</span>
     </section>
   )
 }
@@ -104,7 +155,7 @@ function MatchReplayHarness() {
       <button
         type="button"
         data-testid="replay-harness-start"
-        onClick={() => startMatch('normal', selectedSlot.cards, { open: true, ...selectedSlot.rules })}
+        onClick={() => startMatch('normal', '4x4', selectedSlot.cards4x4, { open: true, ...selectedSlot.rules })}
       >
         start-match
       </button>
@@ -131,6 +182,7 @@ function MatchReplayHarness() {
         simulate-finish
       </button>
       <span data-testid="replay-harness-current-deck">{currentMatch ? currentMatch.state.config.playerDeck.join(',') : '-'}</span>
+      <span data-testid="replay-harness-current-mode">{currentMatch ? currentMatch.state.config.mode : '-'}</span>
       <span data-testid="replay-harness-played">{profile.stats.played}</span>
     </section>
   )
@@ -151,7 +203,8 @@ function ForcedPlayerVictoryHarness() {
 
           const playerDeck = currentMatch.state.config.playerDeck
           const fallbackCardId = playerDeck[0] ?? currentMatch.state.config.cpuDeck[0]
-          const forcedBoard = Array.from({ length: 9 }, (_, index) => ({
+          const cellCount = currentMatch.state.board.length
+          const forcedBoard = Array.from({ length: cellCount }, (_, index) => ({
             owner: 'player' as const,
             cardId: playerDeck[index % playerDeck.length] ?? fallbackCardId,
           }))
@@ -160,7 +213,7 @@ function ForcedPlayerVictoryHarness() {
             ...currentMatch.state,
             board: forcedBoard,
             hands: { player: [], cpu: [] },
-            turns: 9,
+            turns: cellCount,
             status: 'finished' as const,
             turn: 'player' as const,
             lastMove: null,
@@ -180,19 +233,15 @@ describe('app integration', () => {
     localStorage.clear()
   })
 
-  test('home -> setup -> match happy path and active rule badges', async () => {
+  test('home -> setup -> match happy path from preset selection', async () => {
     const user = userEvent.setup()
     renderApp('/')
 
     expect(screen.getByTestId('topbar-cta-link')).toHaveTextContent('Play')
     await user.click(screen.getByTestId('topbar-cta-link'))
-    expect(screen.getByRole('heading', { name: 'Match Setup' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Play' })).toBeInTheDocument()
 
-    const sameToggle = screen.getByLabelText('Enable Same')
-    const plusToggle = screen.getByLabelText('Enable Plus')
-    await user.click(sameToggle)
-    await user.click(plusToggle)
-
+    await selectPlayPreset(user, 'setup-mode-4x4')
     await user.click(screen.getByTestId('start-match-button'))
     await waitForStarterAnimation()
 
@@ -206,16 +255,15 @@ describe('app integration', () => {
     expect(cpuLane.compareDocumentPosition(boardStage) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
     expect(boardStage.compareDocumentPosition(playerLane) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
 
-    expect(screen.getByLabelText('CPU hand').children).toHaveLength(5)
-    expect(screen.getByLabelText('Player hand').children).toHaveLength(5)
-    expect(screen.getByText('Same')).toHaveClass('active')
-    expect(screen.getByText('Plus')).toHaveClass('active')
+    expect(screen.getByLabelText('CPU hand').children).toHaveLength(8)
+    expect(screen.getByLabelText('Player hand').children).toHaveLength(8)
   })
 
   test('match shows starter roll animation before first turn is active', async () => {
     const user = userEvent.setup()
     renderApp('/setup')
 
+    await selectPlayPreset(user, 'setup-mode-4x4')
     await user.click(screen.getByTestId('start-match-button'))
 
     const overlay = await screen.findByTestId('match-starter-overlay')
@@ -238,6 +286,7 @@ describe('app integration', () => {
     expect(screen.getByTestId('topbar-cta-link')).toHaveTextContent('Play')
     expect(screen.getByTestId('topbar-cta-link')).toHaveAttribute('href', '/setup')
 
+    await selectPlayPreset(user, 'setup-mode-4x4')
     await user.click(screen.getByTestId('start-match-button'))
 
     expect(screen.getByTestId('topbar-cta-link')).toHaveTextContent('Continue')
@@ -282,39 +331,36 @@ describe('app integration', () => {
     expect(screen.getByTestId('home-quick-action-play')).toBeInTheDocument()
   })
 
-  test('setup blocks invalid deck sizes', async () => {
+  test('decks blocks adding cards from the right grid when deck is already full', async () => {
     const user = userEvent.setup()
-    renderApp('/setup')
-
-    expect(screen.getByTestId('start-match-button')).toBeEnabled()
+    renderApp('/decks')
 
     const firstCard = within(screen.getByLabelText('Deck selection')).getAllByRole('button')[0]
     await user.click(firstCard)
 
-    expect(screen.getByTestId('start-match-button')).toBeDisabled()
+    expect(screen.getByText('Deck already has 8 cards. Remove one first.')).toBeInTheDocument()
+    expect(screen.getByText('Deck: 8/8 selected')).toBeInTheDocument()
   })
 
-  test('setup disables start on empty slot and enables after selecting five cards', async () => {
+  test('setup follows slot mode deck completeness', async () => {
     const user = userEvent.setup()
     renderApp('/setup')
 
-    await user.click(screen.getByTestId('deck-slot-slot-2'))
+    await user.click(screen.getByTestId('setup-mode-3x3'))
+    await user.click(screen.getByTestId('deck-slot-slot-3'))
     expect(screen.getByTestId('start-match-button')).toBeDisabled()
 
-    const deckSelection = screen.getByLabelText('Deck selection')
-    const cards = within(deckSelection).getAllByRole('button')
-    for (const card of cards.slice(0, 5)) {
-      await user.click(card)
-    }
+    await user.click(screen.getByTestId('deck-slot-slot-1'))
 
     expect(screen.getByTestId('start-match-button')).toBeEnabled()
   })
 
-  test('setup can start with auto deck mode from an empty slot', async () => {
+  test('setup can start with auto deck mode from an empty 3x3 slot', async () => {
     const user = userEvent.setup()
     renderApp('/setup')
 
-    await user.click(screen.getByTestId('deck-slot-slot-2'))
+    await user.click(screen.getByTestId('setup-mode-3x3'))
+    await user.click(screen.getByTestId('deck-slot-slot-3'))
     expect(screen.getByTestId('start-match-button')).toBeDisabled()
 
     await user.click(screen.getByTestId('setup-deck-mode-auto'))
@@ -326,42 +372,112 @@ describe('app integration', () => {
     expect(screen.getByLabelText('Player hand').children).toHaveLength(5)
   })
 
-  test('setup queue tabs toggle the start button mode', async () => {
+  test('auto deck only uses owned cards in 4x4 match', async () => {
     const user = userEvent.setup()
-    renderApp('/setup')
+    const profile = createDefaultProfile()
+    const ownedCardIds = cardPool
+      .filter((card) => card.rarity === 'legendary')
+      .slice(0, 8)
+      .map((card) => card.id)
 
-    const startButton = screen.getByTestId('start-match-button')
-    expect(startButton).toHaveTextContent('Start Normal')
-    expect(screen.getByTestId('setup-queue-tab-normal')).toHaveAttribute('aria-selected', 'true')
+    expect(ownedCardIds).toHaveLength(8)
+    profile.ownedCardIds = [...ownedCardIds]
+    profile.cardCopiesById = Object.fromEntries(ownedCardIds.map((cardId) => [cardId, 1]))
+    profile.deckSlots[0].mode = '4x4'
+    profile.deckSlots[0].cards = ownedCardIds.slice(0, 5)
+    profile.deckSlots[0].cards4x4 = [...ownedCardIds]
+    profile.selectedDeckSlotId = 'slot-1'
+    localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile))
 
-    await user.click(screen.getByTestId('setup-queue-tab-ranked'))
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(20260223)
+    try {
+      renderApp('/setup')
 
-    expect(screen.getByTestId('setup-queue-tab-ranked')).toHaveAttribute('aria-selected', 'true')
-    expect(startButton).toHaveTextContent('Start Ranked')
+      await selectPlayPreset(user, 'setup-mode-4x4')
+      await user.click(screen.getByTestId('setup-deck-mode-auto'))
+      await user.click(screen.getByTestId('start-match-button'))
+      await waitForStarterAnimation()
+
+      const playerHand = screen.getByLabelText('Player hand')
+      const dealtCardIds = Array.from(playerHand.querySelectorAll<HTMLElement>('[data-testid^="player-card-"]')).map((cardNode) =>
+        (cardNode.dataset.testid ?? '').replace('player-card-', ''),
+      )
+
+      expect(dealtCardIds).toHaveLength(8)
+      expect(dealtCardIds.every((cardId) => ownedCardIds.includes(cardId))).toBe(true)
+    } finally {
+      nowSpy.mockRestore()
+    }
   })
 
-  test('setup keeps per-slot rule presets when switching slots', async () => {
+  test('setup normal queue uses the selected opponent level in match', async () => {
+    const user = userEvent.setup()
+    const profile = createDefaultProfile()
+    profile.ranked.tier = 'gold'
+    profile.ranked.division = 'IV'
+    localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile))
+
+    renderApp('/setup')
+
+    await selectPlayPreset(user, 'setup-mode-4x4')
+    await user.click(screen.getByTestId('setup-opponent-level-option-2'))
+    await user.click(screen.getByTestId('start-match-button'))
+    await waitForStarterAnimation()
+
+    expect(screen.getByTestId('match-opponent-badge')).toHaveTextContent('CPU L2')
+  })
+
+  test('setup ranked preset ignores normal-level selection and uses ranked-level opponent', async () => {
+    const user = userEvent.setup()
+    const profile = createDefaultProfile()
+    profile.ranked.tier = 'gold'
+    profile.ranked.division = 'IV'
+    localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile))
+
+    renderApp('/setup')
+
+    await selectPlayPreset(user, 'setup-mode-4x4')
+    await user.click(screen.getByTestId('setup-opponent-level-option-1'))
+    expect(screen.getByTestId('setup-opponent-level')).toHaveTextContent('CPU L1')
+
+    await user.click(screen.getByTestId('setup-change-mode'))
+    await selectPlayPreset(user, 'setup-mode-4x4-ranked')
+    expect(screen.getByTestId('setup-opponent-ranked-lock')).toBeInTheDocument()
+
+    await user.click(screen.getByTestId('start-match-button'))
+    await waitForStarterAnimation()
+
+    expect(screen.getByTestId('match-opponent-badge')).toHaveTextContent('CPU L4')
+  })
+
+  test('setup preset selection controls start button mode label', async () => {
     const user = userEvent.setup()
     renderApp('/setup')
 
-    await user.click(screen.getByLabelText('Enable Same'))
-    expect(screen.getByLabelText('Enable Same')).toBeChecked()
-    expect(screen.getByLabelText('Enable Plus')).not.toBeChecked()
+    await selectPlayPreset(user, 'setup-mode-4x4')
+    const startButton = screen.getByTestId('start-match-button')
+    expect(startButton).toHaveTextContent('Start 4x4 Normal')
 
+    await user.click(screen.getByTestId('setup-change-mode'))
+    await selectPlayPreset(user, 'setup-mode-3x3-ranked')
+
+    expect(screen.getByTestId('start-match-button')).toHaveTextContent('Start 3x3 Ranked')
+  })
+
+  test('setup keeps selected slot context when switching presets', async () => {
+    const user = userEvent.setup()
+    renderApp('/setup')
+
+    await selectPlayPreset(user, 'setup-mode-4x4')
     await user.click(screen.getByTestId('deck-slot-slot-2'))
-    expect(screen.getByLabelText('Enable Same')).not.toBeChecked()
-    expect(screen.getByLabelText('Enable Plus')).not.toBeChecked()
+    expect(screen.getByTestId('start-match-button')).toBeEnabled()
+    expect(screen.getByText('Deck: 8/8 selected (4x4)')).toBeInTheDocument()
 
-    await user.click(screen.getByLabelText('Enable Plus'))
-    expect(screen.getByLabelText('Enable Plus')).toBeChecked()
+    await user.click(screen.getByTestId('setup-change-mode'))
+    await selectPlayPreset(user, 'setup-mode-3x3')
 
-    await user.click(screen.getByTestId('deck-slot-slot-1'))
-    expect(screen.getByLabelText('Enable Same')).toBeChecked()
-    expect(screen.getByLabelText('Enable Plus')).not.toBeChecked()
-
-    await user.click(screen.getByTestId('deck-slot-slot-2'))
-    expect(screen.getByLabelText('Enable Same')).not.toBeChecked()
-    expect(screen.getByLabelText('Enable Plus')).toBeChecked()
+    expect(screen.getByTestId('start-match-button')).toBeDisabled()
+    expect(screen.getByText('Deck: 0/5 selected (3x3)')).toBeInTheDocument()
   })
 
   test('setup no longer renders deck name input', () => {
@@ -370,9 +486,9 @@ describe('app integration', () => {
     expect(screen.queryByTestId('deck-name-input')).not.toBeInTheDocument()
   })
 
-  test('setup filters keep start flow intact', async () => {
+  test('decks filters keep start flow intact', async () => {
     const user = userEvent.setup()
-    renderApp('/setup')
+    renderApp('/decks')
 
     const firstVisibleCard = screen.getAllByTestId(/^setup-card-/)[0]
     const firstVisibleCardTestId = firstVisibleCard.getAttribute('data-testid') ?? ''
@@ -382,12 +498,12 @@ describe('app integration', () => {
     await user.type(screen.getByTestId('setup-filter-search'), firstVisibleCardId)
 
     expect(screen.getByTestId('setup-result-count')).toHaveTextContent('cards shown')
-    expect(screen.getByTestId('start-match-button')).toBeEnabled()
 
     await user.click(screen.getByTestId('setup-filter-reset'))
     expect(screen.getByTestId('setup-filter-search')).toHaveValue('')
-    expect(screen.getByTestId('start-match-button')).toBeEnabled()
 
+    await user.click(screen.getByTestId('topbar-cta-link'))
+    await selectPlayPreset(user, 'setup-mode-4x4')
     await user.click(screen.getByTestId('start-match-button'))
     await waitForStarterAnimation()
 
@@ -416,6 +532,7 @@ describe('app integration', () => {
     const deckBeforeRematch = screen.getByTestId('replay-harness-current-deck').textContent
     expect(deckBeforeRematch).toBeTruthy()
     expect(deckBeforeRematch).not.toBe('-')
+    expect(screen.getByTestId('replay-harness-current-mode')).toHaveTextContent('4x4')
 
     await user.click(screen.getByTestId('topbar-cta-link'))
     await waitForStarterAnimation()
@@ -435,6 +552,7 @@ describe('app integration', () => {
     expect(screen.getByTestId('match-turn-indicator')).toHaveTextContent(/Turn [1-2]: (Player|CPU)/)
 
     expect(screen.getByTestId('replay-harness-current-deck')).toHaveTextContent(deckBeforeRematch ?? '')
+    expect(screen.getByTestId('replay-harness-current-mode')).toHaveTextContent('4x4')
     expect(screen.getByTestId('replay-harness-played')).toHaveTextContent('1')
   })
 
@@ -449,6 +567,7 @@ describe('app integration', () => {
       </MemoryRouter>,
     )
 
+    await selectPlayPreset(user, 'setup-mode-4x4')
     await user.click(screen.getByTestId('start-match-button'))
     await waitForStarterAnimation()
 
@@ -461,7 +580,7 @@ describe('app integration', () => {
     expect(continueButton).toBeDisabled()
 
     const claimCards = within(finishModal).getAllByTestId(/^match-claim-card-/)
-    expect(claimCards).toHaveLength(5)
+    expect(claimCards).toHaveLength(8)
 
     const firstClaimCardId = (claimCards[0].getAttribute('data-testid') ?? '').replace('match-claim-card-', '')
     expect(firstClaimCardId).not.toBe('')
@@ -512,6 +631,30 @@ describe('app integration', () => {
 
     const totalCopies = Object.values(parsed.cardCopiesById).reduce((sum, copies) => sum + copies, 0)
     expect(totalCopies).toBe(10)
+  })
+
+  test('shop can buy multiple packs at once with quantity selector', async () => {
+    const user = userEvent.setup()
+    renderApp('/shop')
+
+    await user.click(screen.getByTestId('shop-add-test-gold'))
+    expect(screen.getByTestId('shop-gold-value')).toHaveTextContent('Gold: 1100')
+
+    await user.click(screen.getByTestId('buy-pack-quantity-increment-common'))
+    await user.click(screen.getByTestId('buy-pack-quantity-increment-common'))
+    expect(screen.getByTestId('buy-pack-quantity-value-common')).toHaveTextContent('3')
+
+    await user.click(screen.getByTestId('buy-pack-common'))
+
+    expect(screen.getByTestId('shop-gold-value')).toHaveTextContent('Gold: 920')
+    expect(screen.getByTestId('shop-pack-stock-common')).toHaveTextContent('x3')
+    expect(screen.getByTestId('shop-purchase-toast')).toHaveTextContent('Common Pack added to inventory (+3).')
+
+    const saved = localStorage.getItem(PROFILE_STORAGE_KEY)
+    expect(saved).toBeTruthy()
+    const parsed = JSON.parse(saved!) as { gold: number; packInventoryByRarity: Record<string, number> }
+    expect(parsed.gold).toBe(920)
+    expect(parsed.packInventoryByRarity.common).toBe(3)
   })
 
   test('shop test button grants 1000 gold and persists profile', async () => {
@@ -666,11 +809,30 @@ describe('app integration', () => {
     await user.click(screen.getByTestId('toggle-pack-cards-common'))
     const dialog = screen.getByTestId('shop-pack-modal-common')
     expect(dialog).toBeInTheDocument()
-    const sectionHeadings = within(dialog).getAllByRole('heading', { level: 3 }).map((node) => node.textContent?.trim())
-    expect(sectionHeadings).toEqual(['Common', 'Uncommon', 'Rare', 'Epic', 'Legendary'])
-    const commonIds = cardPool.filter((card) => card.rarity === 'common').slice(0, 2).map((card) => card.id)
+
+    expect(within(dialog).getByTestId('shop-pack-modal-rarity-tab-common')).toBeInTheDocument()
+    expect(within(dialog).getByTestId('shop-pack-modal-rarity-tab-uncommon')).toBeInTheDocument()
+    expect(within(dialog).getByTestId('shop-pack-modal-rarity-tab-rare')).toBeInTheDocument()
+    expect(within(dialog).getByTestId('shop-pack-modal-rarity-tab-epic')).toBeInTheDocument()
+    expect(within(dialog).getByTestId('shop-pack-modal-rarity-tab-legendary')).toBeInTheDocument()
+
+    const commonIds = cardPool
+      .filter((card) => card.rarity === 'common')
+      .slice(0, 6)
+      .map((card) => card.id)
+    expect(within(dialog).getByRole('heading', { level: 3, name: 'Common' })).toBeInTheDocument()
     expect(within(dialog).getByTestId(`shop-pack-modal-card-common-${commonIds[0]}`)).toBeInTheDocument()
-    expect(within(dialog).getByTestId(`shop-pack-modal-card-common-${commonIds[1]}`)).toBeInTheDocument()
+    expect(within(dialog).queryByTestId(`shop-pack-modal-card-common-${commonIds[5]}`)).not.toBeInTheDocument()
+    expect(within(dialog).getByTestId('shop-pack-modal-page-indicator')).toHaveTextContent('Page 1 /')
+
+    await user.click(within(dialog).getByTestId('shop-pack-modal-page-next'))
+    expect(within(dialog).getByTestId('shop-pack-modal-page-indicator')).toHaveTextContent('Page 2 /')
+    expect(within(dialog).queryByTestId(`shop-pack-modal-card-common-${commonIds[0]}`)).not.toBeInTheDocument()
+    expect(within(dialog).getByTestId(`shop-pack-modal-card-common-${commonIds[5]}`)).toBeInTheDocument()
+
+    await user.click(within(dialog).getByTestId('shop-pack-modal-rarity-tab-rare'))
+    expect(within(dialog).getByRole('heading', { level: 3, name: 'Rare' })).toBeInTheDocument()
+    expect(within(dialog).getByTestId('shop-pack-modal-page-indicator')).toHaveTextContent('Page 1 /')
 
     await user.click(screen.getByTestId('shop-pack-modal-close'))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
@@ -737,6 +899,143 @@ describe('app integration', () => {
     expect(parsed.packInventoryByRarity.rare).toBe(0)
   })
 
+  test('packs page can open multiple packs in one action', async () => {
+    const user = userEvent.setup()
+    renderApp('/shop')
+
+    await user.click(screen.getByTestId('shop-add-test-gold'))
+    await user.click(screen.getByTestId('buy-pack-quantity-increment-rare'))
+    await user.click(screen.getByTestId('buy-pack-rare'))
+    await user.click(screen.getByTestId('buy-pack-quantity-decrement-rare'))
+    await user.click(screen.getByTestId('buy-pack-rare'))
+
+    await user.click(screen.getAllByRole('link', { name: 'Packs' })[0])
+
+    expect(screen.getByTestId('packs-count-rare')).toHaveTextContent('x3')
+    await user.click(screen.getByTestId('packs-open-quantity-increment-rare'))
+    expect(screen.getByTestId('packs-open-quantity-value-rare')).toHaveTextContent('2')
+
+    await user.click(screen.getByTestId('open-pack-quantity-rare'))
+    const reveal = screen.getByTestId('packs-reveal-modal')
+    expect(within(reveal).getAllByTestId(/^packs-reveal-triad-/)).toHaveLength(6)
+    expect(within(reveal).getByText('Opened x2 | Remaining: x1')).toBeInTheDocument()
+    expect(screen.getByTestId('packs-count-rare')).toHaveTextContent('x1')
+
+    await user.click(within(reveal).getByTestId('packs-reveal-open-another'))
+    await waitFor(() => {
+      expect(screen.getByTestId('packs-count-rare')).toHaveTextContent('x0')
+    })
+
+    const saved = localStorage.getItem(PROFILE_STORAGE_KEY)
+    expect(saved).toBeTruthy()
+    const parsed = JSON.parse(saved!) as { packInventoryByRarity: { rare: number } }
+    expect(parsed.packInventoryByRarity.rare).toBe(0)
+  })
+
+  test('shop renders special packs section with all three offers', () => {
+    renderApp('/shop')
+
+    expect(screen.getByRole('heading', { name: 'Special Packs' })).toBeInTheDocument()
+    expect(screen.getByTestId('shop-special-pack-sans_coeur_focus')).toBeInTheDocument()
+    expect(screen.getByTestId('shop-special-pack-simili_focus')).toBeInTheDocument()
+    expect(screen.getByTestId('shop-special-pack-legendary_focus')).toBeInTheDocument()
+    expect(screen.getByTestId('shop-special-pack-legendary-target')).toBeInTheDocument()
+  })
+
+  test('shop can buy and open Sans-cœur focus special pack', async () => {
+    const user = userEvent.setup()
+    renderApp('/shop')
+
+    await user.click(screen.getByTestId('shop-add-test-gold'))
+    expect(screen.getByTestId('shop-gold-value')).toHaveTextContent('Gold: 1100')
+    const beforeRaw = localStorage.getItem(PROFILE_STORAGE_KEY)
+    expect(beforeRaw).toBeTruthy()
+    const beforeProfile = JSON.parse(beforeRaw!) as { cardCopiesById: Record<string, number> }
+
+    await user.click(screen.getByTestId('buy-open-special-pack-sans_coeur_focus'))
+    const reveal = screen.getByTestId('shop-opened-reveal-modal')
+    expect(reveal).toBeInTheDocument()
+    expect(within(reveal).getAllByTestId(/^shop-opened-reveal-triad-/)).toHaveLength(3)
+    expect(screen.getByTestId('shop-gold-value')).toHaveTextContent('Gold: 880')
+
+    const afterRaw = localStorage.getItem(PROFILE_STORAGE_KEY)
+    expect(afterRaw).toBeTruthy()
+    const afterProfile = JSON.parse(afterRaw!) as { cardCopiesById: Record<string, number> }
+    const upgradedCardIds = Object.keys(afterProfile.cardCopiesById).filter(
+      (cardId) => (afterProfile.cardCopiesById[cardId] ?? 0) > (beforeProfile.cardCopiesById[cardId] ?? 0),
+    )
+    expect(upgradedCardIds.length).toBeGreaterThan(0)
+    for (const cardId of upgradedCardIds) {
+      const card = cardPool.find((entry) => entry.id === cardId)
+      expect(card?.categoryId).toBe('sans_coeur')
+    }
+  })
+
+  test('shop can buy and open Simili focus special pack', async () => {
+    const user = userEvent.setup()
+    renderApp('/shop')
+
+    await user.click(screen.getByTestId('shop-add-test-gold'))
+    expect(screen.getByTestId('shop-gold-value')).toHaveTextContent('Gold: 1100')
+    const beforeRaw = localStorage.getItem(PROFILE_STORAGE_KEY)
+    expect(beforeRaw).toBeTruthy()
+    const beforeProfile = JSON.parse(beforeRaw!) as { cardCopiesById: Record<string, number> }
+
+    await user.click(screen.getByTestId('buy-open-special-pack-simili_focus'))
+    const reveal = screen.getByTestId('shop-opened-reveal-modal')
+    expect(reveal).toBeInTheDocument()
+    expect(within(reveal).getAllByTestId(/^shop-opened-reveal-triad-/)).toHaveLength(3)
+    expect(screen.getByTestId('shop-gold-value')).toHaveTextContent('Gold: 880')
+
+    const afterRaw = localStorage.getItem(PROFILE_STORAGE_KEY)
+    expect(afterRaw).toBeTruthy()
+    const afterProfile = JSON.parse(afterRaw!) as { cardCopiesById: Record<string, number> }
+    const upgradedCardIds = Object.keys(afterProfile.cardCopiesById).filter(
+      (cardId) => (afterProfile.cardCopiesById[cardId] ?? 0) > (beforeProfile.cardCopiesById[cardId] ?? 0),
+    )
+    expect(upgradedCardIds.length).toBeGreaterThan(0)
+    for (const cardId of upgradedCardIds) {
+      const card = cardPool.find((entry) => entry.id === cardId)
+      expect(card?.categoryId).toBe('simili')
+    }
+  })
+
+  test('legendary focus hit resets pity chance to 1% and grants the selected target', async () => {
+    const user = userEvent.setup()
+    const profile = createDefaultProfile()
+    const targetLegendary = cardPool.find((card) => card.name === 'Séphiroth')
+    expect(targetLegendary).toBeTruthy()
+    profile.gold = 2000
+    profile.specialPackPity = { legendaryFocusChancePercent: 100 }
+    localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile))
+
+    renderApp('/shop')
+
+    await user.click(screen.getByTestId(`shop-special-pack-legendary-option-${targetLegendary!.id}`))
+    const beforeRaw = localStorage.getItem(PROFILE_STORAGE_KEY)
+    expect(beforeRaw).toBeTruthy()
+    const beforeProfile = JSON.parse(beforeRaw!) as {
+      cardCopiesById: Record<string, number>
+      specialPackPity?: { legendaryFocusChancePercent?: number }
+    }
+    const beforeTargetCopies = beforeProfile.cardCopiesById[targetLegendary!.id] ?? 0
+
+    await user.click(screen.getByTestId('buy-open-special-pack-legendary_focus'))
+    const reveal = screen.getByTestId('shop-opened-reveal-modal')
+    expect(reveal).toBeInTheDocument()
+    expect(within(reveal).getAllByTestId(/^shop-opened-reveal-triad-/)).toHaveLength(3)
+    expect(screen.getByTestId('shop-gold-value')).toHaveTextContent('Gold: 1100')
+
+    const afterRaw = localStorage.getItem(PROFILE_STORAGE_KEY)
+    expect(afterRaw).toBeTruthy()
+    const afterProfile = JSON.parse(afterRaw!) as {
+      cardCopiesById: Record<string, number>
+      specialPackPity?: { legendaryFocusChancePercent?: number }
+    }
+    expect(afterProfile.cardCopiesById[targetLegendary!.id] ?? 0).toBe(beforeTargetCopies + 1)
+    expect(afterProfile.specialPackPity?.legendaryFocusChancePercent).toBe(1)
+  })
+
   test('achievements page is reachable and displays unlocked progress', async () => {
     const user = userEvent.setup()
     renderApp('/')
@@ -764,15 +1063,28 @@ describe('app integration', () => {
     expect(screen.getAllByTestId(/^ranks-tier-/)).toHaveLength(10)
   })
 
-  test('more menu keeps only secondary links and mobile nav includes packs', async () => {
+  test('missions page is reachable from more menu', async () => {
     const user = userEvent.setup()
     renderApp('/')
 
+    await user.click(screen.getByTestId('topbar-more-toggle'))
+    await user.click(screen.getByTestId('topbar-more-link-missions'))
+
+    expect(screen.getByRole('heading', { name: 'Missions' })).toBeInTheDocument()
+    expect(screen.getByTestId('missions-summary')).toHaveTextContent('0/3 completed')
+  })
+
+  test('more menu keeps only secondary links and mobile nav includes decks and packs', async () => {
+    const user = userEvent.setup()
+    renderApp('/')
+
+    expect(screen.getByTestId('topbar-link-decks')).toHaveAttribute('href', '/decks')
     expect(screen.getByTestId('topbar-link-packs')).toHaveAttribute('href', '/packs')
 
     await user.click(screen.getByTestId('topbar-more-toggle'))
     expect(screen.getByTestId('topbar-more-menu')).toBeInTheDocument()
     expect(screen.getByTestId('topbar-more-link-achievements')).toHaveAttribute('href', '/achievements')
+    expect(screen.getByTestId('topbar-more-link-missions')).toHaveAttribute('href', '/missions')
     expect(screen.getByTestId('topbar-more-link-rules')).toHaveAttribute('href', '/rules')
     expect(screen.getByTestId('topbar-more-link-ranks')).toHaveAttribute('href', '/ranks')
     expect(screen.queryByTestId('topbar-more-link-packs')).not.toBeInTheDocument()
@@ -783,6 +1095,7 @@ describe('app integration', () => {
 
     const mobileNav = screen.getByTestId('mobile-main-nav')
     expect(within(mobileNav).getByText('Play')).toHaveAttribute('href', '/setup')
+    expect(within(mobileNav).getByText('Decks')).toHaveAttribute('href', '/decks')
     expect(within(mobileNav).getByText('Collection')).toHaveAttribute('href', '/collection')
     expect(within(mobileNav).getByText('Shop')).toHaveAttribute('href', '/shop')
     expect(within(mobileNav).getByText('Packs')).toHaveAttribute('href', '/packs')
@@ -894,5 +1207,27 @@ describe('app integration', () => {
     const parsed = JSON.parse(saved!) as { stats: { played: number }; ranked: { matchesPlayed: number } }
     expect(parsed.stats.played).toBe(1)
     expect(parsed.ranked.matchesPlayed).toBe(0)
+  })
+
+  test('forced player victory updates mission progression', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <GameProvider>
+        <RewardsHarness />
+      </GameProvider>,
+    )
+
+    expect(screen.getByTestId('mission-m1-progress')).toHaveTextContent('0')
+
+    await user.click(screen.getByTestId('harness-start'))
+    await waitFor(() => {
+      expect(screen.getByTestId('has-match')).toHaveTextContent('yes')
+    })
+
+    await user.click(screen.getByTestId('harness-force-win'))
+    await user.click(screen.getByTestId('harness-finalize'))
+
+    expect(Number(screen.getByTestId('mission-m1-progress').textContent)).toBeGreaterThan(0)
   })
 })

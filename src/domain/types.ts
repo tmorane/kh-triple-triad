@@ -45,6 +45,8 @@ export type CardElementId =
   | 'aube'
   | 'neutre'
 
+export type CardTypeId = 'sans_coeur' | 'simili' | 'nescient' | 'humain' | 'disney' | 'boss'
+
 export type DeckSlotId = 'slot-1' | 'slot-2' | 'slot-3'
 
 export interface CardDef {
@@ -66,13 +68,16 @@ export interface RuleSet {
 }
 
 export type MatchQueue = 'normal' | 'ranked'
+export type MatchMode = '3x3' | '4x4'
 
 export interface MatchConfig {
   playerDeck: CardId[]
   cpuDeck: CardId[]
+  mode: MatchMode
   rules: RuleSet
   seed: number
   startingTurn?: Actor
+  typeSynergy?: MatchTypeSynergyState
 }
 
 export type Actor = 'player' | 'cpu'
@@ -80,15 +85,34 @@ export type Actor = 'player' | 'cpu'
 export interface Move {
   actor: Actor
   cardId: CardId
-  cell: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8
+  cell: number
 }
 
 export interface MatchResult {
+  mode: MatchMode
   winner: Actor | 'draw'
   playerCount: number
   cpuCount: number
   turns: number
   rules: RuleSet
+  typeSynergy?: MatchTypeSynergyState
+  metrics?: MatchMetrics
+}
+
+export interface ActorTypeSynergyState {
+  primaryTypeId: CardTypeId | null
+  secondaryTypeId: CardTypeId | null
+}
+
+export interface MatchTypeSynergyState {
+  player: ActorTypeSynergyState
+  cpu: ActorTypeSynergyState
+}
+
+export interface MatchMetrics {
+  playsByActor: Record<Actor, number>
+  samePlusTriggersByActor: Record<Actor, number>
+  cornerPlaysByActor: Record<Actor, number>
 }
 
 export type AchievementId =
@@ -138,10 +162,27 @@ export interface AchievementUnlock {
   unlockedAt: string
 }
 
+export type MissionId = 'm1_type_specialist' | 'm2_combo_practitioner' | 'm3_corner_tactician'
+
+export type MissionReward =
+  | { kind: 'gold'; amount: number }
+  | { kind: 'pack'; packId: Rarity; amount: number }
+  | { kind: 'card'; strategy: 'prefer_non_owned' }
+
+export interface MissionProgress {
+  id: MissionId
+  progress: number
+  target: number
+  completed: boolean
+  claimed: boolean
+}
+
 export interface DeckSlot {
   id: DeckSlotId
   name: string
+  mode: MatchMode
   cards: CardId[]
+  cards4x4: CardId[]
   rules: { same: boolean; plus: boolean }
 }
 
@@ -174,8 +215,12 @@ export interface RankedState {
   demotionShieldLosses: number
 }
 
+export interface SpecialPackPityState {
+  legendaryFocusChancePercent: number
+}
+
 export interface PlayerProfile {
-  version: 6
+  version: 7
   playerName: string
   gold: number
   ownedCardIds: CardId[]
@@ -185,8 +230,10 @@ export interface PlayerProfile {
   selectedDeckSlotId: DeckSlotId
   stats: { played: number; won: number; streak: number; bestStreak: number }
   achievements: AchievementUnlock[]
+  missions: Record<MissionId, MissionProgress>
+  specialPackPity?: SpecialPackPityState
   ranked: RankedState
   settings: { audioEnabled: false }
 }
 
-export type PlayerProfileV6 = PlayerProfile
+export type PlayerProfileV7 = PlayerProfile

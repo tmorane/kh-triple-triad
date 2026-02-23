@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, test } from 'vitest'
 import { GameContext } from '../../app/GameContext'
 import { cardPool } from '../../domain/cards/cardPool'
+import { getTypeIdByCategory } from '../../domain/cards/taxonomy'
 import { createDefaultProfile } from '../../domain/progression/profile'
 import { CollectionPage } from './CollectionPage'
 
@@ -17,12 +18,26 @@ function renderCollection(valueOverrides: Partial<GameContextValue> = {}) {
     profile.cardCopiesById.c11 = 2
   }
 
-  const contextValue: GameContextValue = {
+  const baseContextValue: GameContextValue = {
     profile,
+    storedProfiles: {
+      activeProfileId: 'profile-1',
+      profiles: [
+        {
+          id: 'profile-1',
+          playerName: profile.playerName,
+          gold: profile.gold,
+          played: profile.stats.played,
+          wins: profile.stats.won,
+          isActive: true,
+        },
+      ],
+    },
     currentMatch: null,
     lastMatchSummary: {
       queue: 'normal',
       result: {
+        mode: '3x3',
         winner: 'player',
         playerCount: 6,
         cpuCount: 3,
@@ -35,6 +50,9 @@ function renderCollection(valueOverrides: Partial<GameContextValue> = {}) {
         duplicateConverted: false,
         bonusGoldFromDuplicate: 0,
         bonusGoldFromDifficulty: 0,
+        bonusGoldFromComboBounty: 0,
+        bonusGoldFromCleanVictory: 0,
+        bonusGoldFromSecondarySynergy: 0,
         bonusGoldFromCriticalVictory: 0,
         bonusGoldFromAutoDeck: 0,
         criticalVictory: false,
@@ -65,6 +83,9 @@ function renderCollection(valueOverrides: Partial<GameContextValue> = {}) {
     toggleDeckSlotCard: () => {
       throw new Error('Not implemented in test.')
     },
+    setDeckSlotMode: () => {
+      throw new Error('Not implemented in test.')
+    },
     setDeckSlotRules: () => {
       throw new Error('Not implemented in test.')
     },
@@ -83,13 +104,30 @@ function renderCollection(valueOverrides: Partial<GameContextValue> = {}) {
     openOwnedPack: () => {
       throw new Error('Not implemented in test.')
     },
+    buySpecialPack: () => {
+      throw new Error('Not implemented in test.')
+    },
     addTestGold: () => {
+      throw new Error('Not implemented in test.')
+    },
+    createStoredProfile: () => {
+      throw new Error('Not implemented in test.')
+    },
+    switchStoredProfile: () => {
+      throw new Error('Not implemented in test.')
+    },
+    deleteStoredProfile: () => {
       throw new Error('Not implemented in test.')
     },
     resetProfile: () => {
       throw new Error('Not implemented in test.')
     },
+  }
+
+  const contextValue: GameContextValue = {
+    ...baseContextValue,
     ...valueOverrides,
+    storedProfiles: valueOverrides.storedProfiles ?? baseContextValue.storedProfiles,
   }
 
   return render(
@@ -118,11 +156,82 @@ describe('CollectionPage', () => {
     localStorage.clear()
   })
 
+  test('renders four compact synergy logos in inspect panel', () => {
+    renderCollection()
+
+    const legend = screen.getByTestId('collection-synergy-legend')
+    expect(legend).toBeInTheDocument()
+    expect(screen.getByTestId('synergy-legend-logo-sans_coeur')).toBeInTheDocument()
+    expect(screen.getByTestId('synergy-legend-logo-simili')).toBeInTheDocument()
+    expect(screen.getByTestId('synergy-legend-logo-nescient')).toBeInTheDocument()
+    expect(screen.getByTestId('synergy-legend-logo-r8')).toBeInTheDocument()
+    expect(screen.getByTestId('synergy-legend-description')).toBeInTheDocument()
+    expect(screen.getByTestId('synergy-legend-description')).toHaveTextContent('')
+  })
+
+  test('shows synergy description only on hover', async () => {
+    const user = userEvent.setup()
+    renderCollection()
+
+    const sansCoeurLogo = screen.getByTestId('synergy-legend-logo-sans_coeur')
+    await user.hover(sansCoeurLogo)
+    expect(screen.getByTestId('synergy-legend-description')).toHaveTextContent(
+      'Sans-coeur (3+) : +1 on all 4 sides on first move.',
+    )
+
+    await user.unhover(sansCoeurLogo)
+    expect(screen.getByTestId('synergy-legend-description')).toHaveTextContent('')
+  })
+
+  test('highlights R2 row when inspecting an owned simili card', async () => {
+    const user = userEvent.setup()
+    const profile = createDefaultProfile()
+    if (!profile.ownedCardIds.includes('c84')) {
+      profile.ownedCardIds.push('c84')
+    }
+    profile.cardCopiesById.c84 = 1
+    renderCollection({ profile })
+
+    await user.click(screen.getByTestId('collection-card-c84'))
+
+    expect(screen.getByTestId('synergy-legend-logo-simili')).toHaveClass('is-active')
+    expect(screen.getByTestId('synergy-legend-logo-r8')).not.toHaveClass('is-active')
+  })
+
+  test('does not highlight legend rows when inspecting a locked card', async () => {
+    const user = userEvent.setup()
+    renderCollection()
+
+    await user.click(screen.getByTestId('collection-card-c84'))
+
+    expect(screen.getByTestId('collection-selected-type')).toHaveTextContent('Inconnu')
+    expect(screen.getByTestId('synergy-legend-logo-sans_coeur')).not.toHaveClass('is-active')
+    expect(screen.getByTestId('synergy-legend-logo-simili')).not.toHaveClass('is-active')
+    expect(screen.getByTestId('synergy-legend-logo-nescient')).not.toHaveClass('is-active')
+    expect(screen.getByTestId('synergy-legend-logo-r8')).not.toHaveClass('is-active')
+  })
+
   test('shows NEW badge for recently obtained card', () => {
     renderCollection()
 
     const card = screen.getByTestId('collection-card-c11')
     expect(within(card).getByText('NEW')).toBeInTheDocument()
+  })
+
+  test('shows type logo badge on owned cards in the collection grid', () => {
+    renderCollection()
+
+    const card = screen.getByTestId('collection-card-c11')
+    expect(within(card).getByTestId('triad-card-type-badge')).toBeInTheDocument()
+    expect(within(card).getByTestId('triad-card-type-logo')).toHaveAttribute('src', '/logos-types/humain.png')
+  })
+
+  test('does not show type logo badge on locked cards in the collection grid', () => {
+    renderCollection()
+
+    const card = screen.getByTestId('collection-card-c84')
+    expect(within(card).queryByTestId('triad-card-type-badge')).not.toBeInTheDocument()
+    expect(within(card).queryByTestId('triad-card-type-logo')).not.toBeInTheDocument()
   })
 
   test('shows all cards by default with full result count', () => {
@@ -163,6 +272,22 @@ describe('CollectionPage', () => {
     expect(getVisibleCollectionCards()).toHaveLength(legendaryCount)
     expect(screen.getByTestId('collection-filter-result-count')).toHaveTextContent(
       `${legendaryCount} cards shown / ${cardPool.length} total`,
+    )
+  })
+
+  test('filters by type with multi-select chips', async () => {
+    const user = userEvent.setup()
+    renderCollection()
+
+    const typeToKeep = 'simili'
+    for (const typeId of ['sans_coeur', 'nescient', 'humain', 'disney', 'boss'] as const) {
+      await user.click(screen.getByTestId(`collection-filter-type-${typeId}`))
+    }
+
+    const expectedCount = cardPool.filter((card) => getTypeIdByCategory(card.categoryId) === typeToKeep).length
+    expect(getVisibleCollectionCards()).toHaveLength(expectedCount)
+    expect(screen.getByTestId('collection-filter-result-count')).toHaveTextContent(
+      `${expectedCount} cards shown / ${cardPool.length} total`,
     )
   })
 
@@ -230,12 +355,15 @@ describe('CollectionPage', () => {
 
     await user.click(screen.getByTestId('collection-filter-discovery-owned'))
     await user.click(screen.getByTestId('collection-filter-rarity-common'))
+    await user.click(screen.getByTestId('collection-filter-type-humain'))
 
     await user.click(screen.getByTestId('collection-filter-reset'))
 
     expect(screen.getByTestId('collection-filter-discovery-all')).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByTestId('collection-filter-rarity-common')).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByTestId('collection-filter-rarity-legendary')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTestId('collection-filter-type-humain')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTestId('collection-filter-type-simili')).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByTestId('collection-filter-result-count')).toHaveTextContent(
       `${cardPool.length} cards shown / ${cardPool.length} total`,
     )
@@ -282,6 +410,7 @@ describe('CollectionPage', () => {
     expect(screen.getByText('Total copies: 12')).toBeInTheDocument()
     expect(screen.getByTestId('collection-selected-category')).not.toHaveTextContent('Inconnu')
     expect(screen.getByTestId('collection-selected-element')).not.toHaveTextContent('Inconnu')
+    expect(screen.getByTestId('collection-selected-type')).not.toHaveTextContent('Inconnu')
 
     expect(within(selectedCard).getByText('x2')).toBeInTheDocument()
   })

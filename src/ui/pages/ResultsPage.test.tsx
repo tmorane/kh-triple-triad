@@ -23,10 +23,24 @@ function buildContext(queue: 'normal' | 'ranked'): GameContextValue {
 
   return {
     profile,
+    storedProfiles: {
+      activeProfileId: 'profile-1',
+      profiles: [
+        {
+          id: 'profile-1',
+          playerName: profile.playerName,
+          gold: profile.gold,
+          played: profile.stats.played,
+          wins: profile.stats.won,
+          isActive: true,
+        },
+      ],
+    },
     currentMatch: null,
     lastMatchSummary: {
       queue,
       result: {
+        mode: '3x3',
         winner: 'player',
         playerCount: 6,
         cpuCount: 3,
@@ -37,6 +51,9 @@ function buildContext(queue: 'normal' | 'ranked'): GameContextValue {
         goldAwarded: 60,
         bonusGoldFromDuplicate: 0,
         bonusGoldFromDifficulty: 28,
+        bonusGoldFromComboBounty: 0,
+        bonusGoldFromCleanVictory: 0,
+        bonusGoldFromSecondarySynergy: 0,
         bonusGoldFromCriticalVictory: 0,
         bonusGoldFromAutoDeck: 0,
         criticalVictory: false,
@@ -88,6 +105,9 @@ function buildContext(queue: 'normal' | 'ranked'): GameContextValue {
     toggleDeckSlotCard: () => {
       throw new Error('Not implemented in test.')
     },
+    setDeckSlotMode: () => {
+      throw new Error('Not implemented in test.')
+    },
     setDeckSlotRules: () => {
       throw new Error('Not implemented in test.')
     },
@@ -106,7 +126,19 @@ function buildContext(queue: 'normal' | 'ranked'): GameContextValue {
     openOwnedPack: () => {
       throw new Error('Not implemented in test.')
     },
+    buySpecialPack: () => {
+      throw new Error('Not implemented in test.')
+    },
     addTestGold: () => {
+      throw new Error('Not implemented in test.')
+    },
+    createStoredProfile: () => {
+      throw new Error('Not implemented in test.')
+    },
+    switchStoredProfile: () => {
+      throw new Error('Not implemented in test.')
+    },
+    deleteStoredProfile: () => {
       throw new Error('Not implemented in test.')
     },
     resetProfile: () => {
@@ -217,18 +249,21 @@ describe('ResultsPage finish header', () => {
 })
 
 describe('ResultsPage ranked section', () => {
-  test('shows ranked LP block for ranked queue', () => {
+  test('shows ranked LP recap with emblem, delta, and progress for ranked queue', () => {
     renderResults(buildContext('ranked'))
 
     expect(screen.getByText('Queue: Ranked')).toBeInTheDocument()
-    expect(screen.getByText(/\+20 LP/)).toBeInTheDocument()
+    expect(screen.getByTestId('results-ranked-recap')).toBeInTheDocument()
+    expect(screen.getByTestId('results-ranked-emblem')).toHaveAttribute('src', '/ranks/iron.svg')
+    expect(screen.getByTestId('results-ranked-delta')).toHaveTextContent('+20 LP')
+    expect(screen.getByTestId('results-ranked-progress')).toHaveAttribute('role', 'progressbar')
   })
 
-  test('hides ranked LP block for normal queue', () => {
+  test('hides ranked LP recap for normal queue', () => {
     renderResults(buildContext('normal'))
 
     expect(screen.getByText('Queue: Normal')).toBeInTheDocument()
-    expect(screen.queryByText('Ranked LP')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('results-ranked-recap')).not.toBeInTheDocument()
   })
 })
 

@@ -179,6 +179,7 @@ function makeConfig(overrides?: Partial<MatchConfig>): MatchConfig {
   return {
     playerDeck: ['c01', 'c02', 'c03', 'c09', 'c16'],
     cpuDeck: ['c06', 'c07', 'c08', 'c10', 'c11'],
+    mode: '3x3',
     rules: { open: true, same: false, plus: false },
     seed: 7,
     ...overrides,
@@ -384,5 +385,179 @@ describe('match engine', () => {
     const result = resolveMatchResult(resultState)
     expect(result.playerCount + result.cpuCount).toBe(9)
     expect(['player', 'cpu', 'draw']).toContain(result.winner)
+  })
+
+  test('creates a 4x4 board and hand sizes from mode config', () => {
+    const state = createMatch(
+      makeConfig({
+        mode: '4x4',
+        playerDeck: ['c01', 'c02', 'c03', 'c04', 'c05', 'c09', 'c16', 'c18'],
+        cpuDeck: ['c06', 'c07', 'c08', 'c10', 'c11', 'c01', 'c02', 'c03'],
+      }),
+    )
+
+    expect(state.board).toHaveLength(16)
+    expect(state.hands.player).toHaveLength(8)
+    expect(state.hands.cpu).toHaveLength(8)
+  })
+
+  test('rejects non-8-card decks in 4x4 mode', () => {
+    expect(() =>
+      createMatch(
+        makeConfig({
+          mode: '4x4',
+          playerDeck: ['c01', 'c02', 'c03', 'c04', 'c05'],
+          cpuDeck: ['c06', 'c07', 'c08', 'c09', 'c10'],
+        }),
+      ),
+    ).toThrow('Player deck must contain exactly 8 unique cards.')
+  })
+
+  test('marks the match finished after sixteen turns in 4x4 mode', () => {
+    const state = createMatch(
+      makeConfig({
+        mode: '4x4',
+        playerDeck: ['c01', 'c02', 'c03', 'c04', 'c05', 'c09', 'c16', 'c18'],
+        cpuDeck: ['c06', 'c07', 'c08', 'c10', 'c11', 'c01', 'c02', 'c03'],
+      }),
+    )
+
+    const resultState = play(state, [
+      { actor: 'player', cardId: 'c01', cell: 0 },
+      { actor: 'cpu', cardId: 'c06', cell: 1 },
+      { actor: 'player', cardId: 'c02', cell: 2 },
+      { actor: 'cpu', cardId: 'c07', cell: 3 },
+      { actor: 'player', cardId: 'c03', cell: 4 },
+      { actor: 'cpu', cardId: 'c08', cell: 5 },
+      { actor: 'player', cardId: 'c04', cell: 6 },
+      { actor: 'cpu', cardId: 'c10', cell: 7 },
+      { actor: 'player', cardId: 'c05', cell: 8 },
+      { actor: 'cpu', cardId: 'c11', cell: 9 },
+      { actor: 'player', cardId: 'c09', cell: 10 },
+      { actor: 'cpu', cardId: 'c01', cell: 11 },
+      { actor: 'player', cardId: 'c16', cell: 12 },
+      { actor: 'cpu', cardId: 'c02', cell: 13 },
+      { actor: 'player', cardId: 'c18', cell: 14 },
+      { actor: 'cpu', cardId: 'c03', cell: 15 },
+    ])
+
+    expect(resultState.status).toBe('finished')
+    expect(resultState.turns).toBe(16)
+    const result = resolveMatchResult(resultState)
+    expect(result.playerCount + result.cpuCount).toBe(16)
+  })
+
+  test('throws on out-of-bounds move cell for current mode', () => {
+    const state = createMatch(
+      makeConfig({
+        mode: '4x4',
+        playerDeck: ['c01', 'c02', 'c03', 'c04', 'c05', 'c09', 'c16', 'c18'],
+        cpuDeck: ['c06', 'c07', 'c08', 'c10', 'c11', 'c01', 'c02', 'c03'],
+      }),
+    )
+
+    expect(() =>
+      applyMove(state, {
+        actor: 'player',
+        cardId: 'c01',
+        cell: 16,
+      }),
+    ).toThrow('Cell 16 is out of bounds for 4x4.')
+  })
+
+  test('primary synergy R1 grants +1 on first move sides', () => {
+    const withPrimary = play(
+      createMatch(
+        makeConfig({
+          startingTurn: 'cpu',
+          typeSynergy: {
+            player: { primaryTypeId: 'sans_coeur', secondaryTypeId: null },
+            cpu: { primaryTypeId: null, secondaryTypeId: null },
+          },
+        }),
+      ),
+      [
+        { actor: 'cpu', cardId: 'c06', cell: 0 },
+        { actor: 'player', cardId: 'c02', cell: 1 },
+      ],
+    )
+
+    const withoutPrimary = play(
+      createMatch(
+        makeConfig({
+          startingTurn: 'cpu',
+          typeSynergy: {
+            player: { primaryTypeId: null, secondaryTypeId: null },
+            cpu: { primaryTypeId: null, secondaryTypeId: null },
+          },
+        }),
+      ),
+      [
+        { actor: 'cpu', cardId: 'c06', cell: 0 },
+        { actor: 'player', cardId: 'c02', cell: 1 },
+      ],
+    )
+
+    expect(withPrimary.board[0]?.owner).toBe('player')
+    expect(withoutPrimary.board[0]?.owner).toBe('cpu')
+  })
+
+  test('primary synergy R2 grants +1 on active corner sides', () => {
+    const withPrimary = play(
+      createMatch(
+        makeConfig({
+          playerDeck: ['c01', 'c03', 'c04', 'c05', 'c16'],
+          typeSynergy: {
+            player: { primaryTypeId: 'simili', secondaryTypeId: null },
+            cpu: { primaryTypeId: null, secondaryTypeId: null },
+          },
+        }),
+      ),
+      [
+        { actor: 'player', cardId: 'c01', cell: 8 },
+        { actor: 'cpu', cardId: 'c11', cell: 1 },
+        { actor: 'player', cardId: 'c05', cell: 0 },
+      ],
+    )
+
+    const withoutPrimary = play(
+      createMatch(
+        makeConfig({
+          playerDeck: ['c01', 'c03', 'c04', 'c05', 'c16'],
+          typeSynergy: {
+            player: { primaryTypeId: null, secondaryTypeId: null },
+            cpu: { primaryTypeId: null, secondaryTypeId: null },
+          },
+        }),
+      ),
+      [
+        { actor: 'player', cardId: 'c01', cell: 8 },
+        { actor: 'cpu', cardId: 'c11', cell: 1 },
+        { actor: 'player', cardId: 'c05', cell: 0 },
+      ],
+    )
+
+    expect(withPrimary.board[1]?.owner).toBe('player')
+    expect(withoutPrimary.board[1]?.owner).toBe('cpu')
+  })
+
+  test('secondary synergy does not alter capture resolution', () => {
+    const withSecondaryOnly = play(
+      createMatch(
+        makeConfig({
+          startingTurn: 'cpu',
+          typeSynergy: {
+            player: { primaryTypeId: null, secondaryTypeId: 'simili' },
+            cpu: { primaryTypeId: null, secondaryTypeId: null },
+          },
+        }),
+      ),
+      [
+        { actor: 'cpu', cardId: 'c06', cell: 0 },
+        { actor: 'player', cardId: 'c02', cell: 1 },
+      ],
+    )
+
+    expect(withSecondaryOnly.board[0]?.owner).toBe('cpu')
   })
 })

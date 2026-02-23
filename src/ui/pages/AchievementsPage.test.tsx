@@ -12,8 +12,21 @@ type GameContextValue = NonNullable<ComponentProps<typeof GameContext.Provider>[
 function renderAchievements(valueOverrides: Partial<GameContextValue> = {}) {
   const profile = createDefaultProfile()
 
-  const contextValue: GameContextValue = {
+  const baseContextValue: GameContextValue = {
     profile,
+    storedProfiles: {
+      activeProfileId: 'profile-1',
+      profiles: [
+        {
+          id: 'profile-1',
+          playerName: profile.playerName,
+          gold: profile.gold,
+          played: profile.stats.played,
+          wins: profile.stats.won,
+          isActive: true,
+        },
+      ],
+    },
     currentMatch: null,
     lastMatchSummary: null,
     startMatch: () => {
@@ -29,6 +42,9 @@ function renderAchievements(valueOverrides: Partial<GameContextValue> = {}) {
       throw new Error('Not implemented in test.')
     },
     toggleDeckSlotCard: () => {
+      throw new Error('Not implemented in test.')
+    },
+    setDeckSlotMode: () => {
       throw new Error('Not implemented in test.')
     },
     setDeckSlotRules: () => {
@@ -49,13 +65,30 @@ function renderAchievements(valueOverrides: Partial<GameContextValue> = {}) {
     openOwnedPack: () => {
       throw new Error('Not implemented in test.')
     },
+    buySpecialPack: () => {
+      throw new Error('Not implemented in test.')
+    },
     addTestGold: () => {
+      throw new Error('Not implemented in test.')
+    },
+    createStoredProfile: () => {
+      throw new Error('Not implemented in test.')
+    },
+    switchStoredProfile: () => {
+      throw new Error('Not implemented in test.')
+    },
+    deleteStoredProfile: () => {
       throw new Error('Not implemented in test.')
     },
     resetProfile: () => {
       throw new Error('Not implemented in test.')
     },
+  }
+
+  const contextValue: GameContextValue = {
+    ...baseContextValue,
     ...valueOverrides,
+    storedProfiles: valueOverrides.storedProfiles ?? baseContextValue.storedProfiles,
   }
 
   return render(

@@ -3,7 +3,16 @@ import { cardPool } from '../cards/cardPool'
 import { createSeededRng, type SeededRng } from '../random/seededRng'
 import type { PlayerProfile } from '../types'
 import { createDefaultProfile } from './profile'
-import { getPackDropRates, getPackPrice, openOwnedPack, purchaseShopPack } from './shop'
+import {
+  getPackDropRates,
+  getPackPrice,
+  getSpecialPackPrice,
+  openOwnedPacks,
+  openOwnedPack,
+  purchaseAndOpenSpecialPack,
+  purchaseShopPacks,
+  purchaseShopPack,
+} from './shop'
 
 function cloneProfile(profile: PlayerProfile): PlayerProfile {
   return {
@@ -14,6 +23,7 @@ function cloneProfile(profile: PlayerProfile): PlayerProfile {
     deckSlots: profile.deckSlots.map((slot) => ({
       ...slot,
       cards: [...slot.cards],
+      cards4x4: [...slot.cards4x4],
       rules: { ...slot.rules },
     })) as PlayerProfile['deckSlots'],
     stats: { ...profile.stats },
@@ -45,6 +55,7 @@ function createFixedIntRng(values: number[]): SeededRng {
 describe('shop progression', () => {
   const rarePool = cardPool.filter((card) => card.rarity === 'rare').map((card) => card.id)
   const commonPool = cardPool.filter((card) => card.rarity === 'common').map((card) => card.id)
+  const legendaryPool = cardPool.filter((card) => card.rarity === 'legendary').map((card) => card.id)
 
   test('purchaseShopPack rejects purchases when gold is below pack price', () => {
     const profile = createDefaultProfile()
@@ -67,6 +78,27 @@ describe('shop progression', () => {
     expect(result.profile.packInventoryByRarity.common).toBe(1)
     expect(result.profile.ownedCardIds).toEqual(initialOwned)
     expect(result.profile.cardCopiesById).toEqual(initialCopies)
+  })
+
+  test('purchaseShopPacks rejects invalid quantities', () => {
+    const profile = createDefaultProfile()
+
+    expect(() => purchaseShopPacks(profile, 'common', 0)).toThrow('Pack quantity must be an integer greater than 0.')
+    expect(() => purchaseShopPacks(profile, 'common', -1)).toThrow('Pack quantity must be an integer greater than 0.')
+    expect(() => purchaseShopPacks(profile, 'common', 1.5)).toThrow('Pack quantity must be an integer greater than 0.')
+  })
+
+  test('purchaseShopPacks multiplies cost and increments inventory by quantity', () => {
+    const profile = createDefaultProfile()
+    profile.gold = 180
+
+    const result = purchaseShopPacks(profile, 'common', 3)
+
+    expect(result.receipt.goldSpent).toBe(180)
+    expect(result.receipt.goldRemaining).toBe(0)
+    expect(result.receipt.packCountAfter).toBe(3)
+    expect(result.profile.gold).toBe(0)
+    expect(result.profile.packInventoryByRarity.common).toBe(3)
   })
 
   test('uses configured pack prices', () => {
@@ -114,6 +146,25 @@ describe('shop progression', () => {
     const result = openOwnedPack(profile, 'common', createSeededRng(11))
 
     expect(result.opened.pulls).toHaveLength(3)
+    expect(result.opened.remainingPackCount).toBe(1)
+    expect(result.profile.packInventoryByRarity.common).toBe(1)
+  })
+
+  test('openOwnedPacks rejects opening more packs than available', () => {
+    const profile = createDefaultProfile()
+    profile.packInventoryByRarity.rare = 1
+
+    expect(() => openOwnedPacks(profile, 'rare', 2, createSeededRng(7))).toThrow('Not enough packs available to open.')
+  })
+
+  test('openOwnedPacks opens quantity and returns 3 pulls per opened pack', () => {
+    const profile = createDefaultProfile()
+    profile.packInventoryByRarity.common = 4
+
+    const result = openOwnedPacks(profile, 'common', 3, createSeededRng(17))
+
+    expect(result.opened.openedCount).toBe(3)
+    expect(result.opened.pulls).toHaveLength(9)
     expect(result.opened.remainingPackCount).toBe(1)
     expect(result.profile.packInventoryByRarity.common).toBe(1)
   })
@@ -193,5 +244,151 @@ describe('shop progression', () => {
     expect(result.opened.pulls[0].cardId).toBe(weightedTarget)
     expect(result.opened.pulls[0].rarity).toBe('rare')
     expect(result.opened.pulls[0].isNewOwnership).toBe(true)
+  })
+
+  test('uses configured special pack prices', () => {
+    expect(getSpecialPackPrice('sans_coeur_focus')).toBe(220)
+    expect(getSpecialPackPrice('simili_focus')).toBe(220)
+    expect(getSpecialPackPrice('legendary_focus')).toBe(900)
+  })
+
+  test('purchaseAndOpenSpecialPack rejects purchases when gold is below special pack price', () => {
+    const profile = createDefaultProfile()
+    profile.gold = getSpecialPackPrice('sans_coeur_focus') - 1
+
+    expect(() =>
+      purchaseAndOpenSpecialPack(profile, { packId: 'sans_coeur_focus' }, createSeededRng(17)),
+    ).toThrow('Not enough gold for this special pack.')
+  })
+
+  test('sans_coeur_focus pulls only Sans-cœur cards', () => {
+    const profile = createDefaultProfile()
+    profile.gold = 2000
+
+    const result = purchaseAndOpenSpecialPack(profile, { packId: 'sans_coeur_focus' }, createSeededRng(21))
+
+    expect(result.profile.gold).toBe(1780)
+    expect(result.opened.pulls).toHaveLength(3)
+    for (const pull of result.opened.pulls) {
+      const card = cardPool.find((entry) => entry.id === pull.cardId)
+      expect(card?.categoryId).toBe('sans_coeur')
+    }
+  })
+
+  test('simili_focus pulls only Simili cards and never unsupported rarities', () => {
+    let profile = createDefaultProfile()
+    profile.gold = 10000
+    const rng = createSeededRng(33)
+    const seenRarities = new Set<string>()
+
+    for (let index = 0; index < 10; index += 1) {
+      const result = purchaseAndOpenSpecialPack(profile, { packId: 'simili_focus' }, rng)
+      profile = result.profile
+      for (const pull of result.opened.pulls) {
+        const card = cardPool.find((entry) => entry.id === pull.cardId)
+        expect(card?.categoryId).toBe('simili')
+        seenRarities.add(pull.rarity)
+      }
+    }
+
+    expect(seenRarities.has('common')).toBe(false)
+    expect(seenRarities.has('epic')).toBe(false)
+    expect(seenRarities.has('legendary')).toBe(false)
+  })
+
+  test('legendary_focus miss at base 1% increases pity chance to 2%', () => {
+    const profile = createDefaultProfile()
+    profile.gold = 5000
+    profile.specialPackPity = { legendaryFocusChancePercent: 1 }
+    const targetLegendaryCardId = legendaryPool[0]
+
+    const result = purchaseAndOpenSpecialPack(
+      profile,
+      { packId: 'legendary_focus', targetLegendaryCardId },
+      createFixedIntRng([1, 0, 0, 0, 0, 0, 0]),
+    )
+
+    expect(result.opened.pulls[0].cardId).not.toBe(targetLegendaryCardId)
+    expect(result.profile.specialPackPity?.legendaryFocusChancePercent).toBe(2)
+  })
+
+  test('legendary_focus hit resets pity chance to 1% and grants target card', () => {
+    const profile = createDefaultProfile()
+    profile.gold = 5000
+    profile.specialPackPity = { legendaryFocusChancePercent: 4 }
+    const targetLegendaryCardId = legendaryPool[0]
+    const targetCopiesBefore = profile.cardCopiesById[targetLegendaryCardId] ?? 0
+
+    const result = purchaseAndOpenSpecialPack(
+      profile,
+      { packId: 'legendary_focus', targetLegendaryCardId },
+      createFixedIntRng([3, 0, 0, 0, 0, 0]),
+    )
+
+    expect(result.opened.pulls[0].cardId).toBe(targetLegendaryCardId)
+    expect(result.opened.pulls[0].rarity).toBe('legendary')
+    expect(result.profile.cardCopiesById[targetLegendaryCardId]).toBe(targetCopiesBefore + 1)
+    expect(result.profile.specialPackPity?.legendaryFocusChancePercent).toBe(1)
+  })
+
+  test('legendary_focus pity chance caps at 100% when misses continue', () => {
+    const profile = createDefaultProfile()
+    profile.gold = 5000
+    profile.specialPackPity = { legendaryFocusChancePercent: 99 }
+    const targetLegendaryCardId = legendaryPool[0]
+
+    const result = purchaseAndOpenSpecialPack(
+      profile,
+      { packId: 'legendary_focus', targetLegendaryCardId },
+      createFixedIntRng([99, 0, 0, 0, 0, 0, 0]),
+    )
+
+    expect(result.opened.pulls[0].cardId).not.toBe(targetLegendaryCardId)
+    expect(result.profile.specialPackPity?.legendaryFocusChancePercent).toBe(100)
+  })
+
+  test('legendary_focus pulls 2 and 3 are always boss/heros fillers', () => {
+    const profile = createDefaultProfile()
+    profile.gold = 5000
+    const targetLegendaryCardId = legendaryPool[0]
+
+    const result = purchaseAndOpenSpecialPack(
+      profile,
+      { packId: 'legendary_focus', targetLegendaryCardId },
+      createSeededRng(91),
+    )
+
+    for (const filler of result.opened.pulls.slice(1)) {
+      const card = cardPool.find((entry) => entry.id === filler.cardId)
+      expect(card && ['boss_kh', 'heros'].includes(card.categoryId)).toBe(true)
+    }
+  })
+
+  test('purchaseAndOpenSpecialPack always evaluates achievements after opening', () => {
+    const profile = createDefaultProfile()
+    profile.gold = 2000
+    profile.stats.played = 1
+    profile.achievements = []
+
+    const result = purchaseAndOpenSpecialPack(profile, { packId: 'sans_coeur_focus' }, createSeededRng(97))
+
+    expect(result.profile.achievements.some((entry) => entry.id === 'play_1')).toBe(true)
+  })
+
+  test('purchaseAndOpenSpecialPack updates copies and NEW ownership flags', () => {
+    const profile = createDefaultProfile()
+    profile.gold = 2000
+    const result = purchaseAndOpenSpecialPack(profile, { packId: 'sans_coeur_focus' }, createSeededRng(101))
+
+    const totalCopiesBefore = Object.values(profile.cardCopiesById).reduce((sum, copies) => sum + copies, 0)
+    const totalCopiesAfter = Object.values(result.profile.cardCopiesById).reduce((sum, copies) => sum + copies, 0)
+    expect(totalCopiesAfter).toBe(totalCopiesBefore + 3)
+
+    for (const pull of result.opened.pulls) {
+      expect(result.profile.cardCopiesById[pull.cardId]).toBeGreaterThanOrEqual(1)
+      if (pull.isNewOwnership) {
+        expect(result.profile.ownedCardIds.includes(pull.cardId)).toBe(true)
+      }
+    }
   })
 })

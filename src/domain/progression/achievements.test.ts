@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test, vi } from 'vitest'
 import { cardPool } from '../cards/cardPool'
 import { createDefaultProfile } from './profile'
 import { achievementCatalog, evaluateAchievements, isAchievementId } from './achievements'
@@ -58,5 +58,29 @@ describe('achievement progression', () => {
     const unlocked = evaluateAchievements(profile)
 
     expect(unlocked.some((entry) => entry.id === 'rule_scholar')).toBe(true)
+  })
+
+  test('uses card pool size for final collection achievement', async () => {
+    vi.resetModules()
+    vi.doMock('../cards/cardPool', () => ({
+      cardPool: Array.from({ length: 151 }, (_, index) => ({
+        id: `c${String(index + 1).padStart(2, '0')}`,
+      })),
+    }))
+
+    const { achievementCatalog: mockedCatalog } = await import('./achievements')
+    const fullCollection = mockedCatalog.find((achievement) => achievement.id === 'owned_150')
+
+    expect(fullCollection).toBeTruthy()
+    expect(fullCollection?.condition).toBe('Own all 151 cards')
+    expect(fullCollection?.check({ ownedCardIds: Array.from({ length: 150 }, (_, index) => `c${index + 1}`) } as never)).toBe(
+      false,
+    )
+    expect(fullCollection?.check({ ownedCardIds: Array.from({ length: 151 }, (_, index) => `c${index + 1}`) } as never)).toBe(
+      true,
+    )
+
+    vi.doUnmock('../cards/cardPool')
+    vi.resetModules()
   })
 })

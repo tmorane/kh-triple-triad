@@ -4,17 +4,22 @@ import { useGame } from '../../app/useGame'
 import { getCard } from '../../domain/cards/cardPool'
 import { selectCpuMove } from '../../domain/match/ai'
 import { applyMove, listLegalMoves, resolveMatchResult } from '../../domain/match/engine'
+import { getModeSpec } from '../../domain/match/modeSpec'
 import { applyMatchRewards } from '../../domain/progression/rewards'
 import { applyRankedMatchResult } from '../../domain/progression/ranked'
 import type { Actor, CardId } from '../../domain/types'
 import { playCriticalVictorySound } from '../audio/criticalVictorySound'
 import { PixiBoard } from '../components/PixiBoard'
+import { RankedLpRecap } from '../components/RankedLpRecap'
 import { RuleBadges } from '../components/RuleBadges'
 import { TriadCard } from '../components/TriadCard'
 
 function formatGoldBonusDetails(rewards: {
   bonusGoldFromDuplicate: number
   bonusGoldFromDifficulty: number
+  bonusGoldFromComboBounty: number
+  bonusGoldFromCleanVictory: number
+  bonusGoldFromSecondarySynergy: number
   bonusGoldFromCriticalVictory: number
   bonusGoldFromAutoDeck: number
 }): string {
@@ -24,6 +29,15 @@ function formatGoldBonusDetails(rewards: {
   }
   if (rewards.bonusGoldFromDuplicate > 0) {
     parts.push(`+${rewards.bonusGoldFromDuplicate} duplicate`)
+  }
+  if (rewards.bonusGoldFromComboBounty > 0) {
+    parts.push(`+${rewards.bonusGoldFromComboBounty} combo`)
+  }
+  if (rewards.bonusGoldFromCleanVictory > 0) {
+    parts.push(`+${rewards.bonusGoldFromCleanVictory} clean`)
+  }
+  if (rewards.bonusGoldFromSecondarySynergy > 0) {
+    parts.push(`+${rewards.bonusGoldFromSecondarySynergy} secondary`)
   }
   if (rewards.bonusGoldFromCriticalVictory > 0) {
     parts.push(`+${rewards.bonusGoldFromCriticalVictory} critical`)
@@ -38,6 +52,8 @@ const STARTER_SPIN_DURATION_MS = 1600
 const STARTER_REVEAL_HOLD_MS = 340
 const STARTER_BASE_TURNS = 6
 
+type KeyboardDirection = 'up' | 'down' | 'left' | 'right'
+
 function getOutcomeLabel(winner: 'player' | 'cpu' | 'draw'): 'WIN' | 'LOSE' | 'DRAW' {
   if (winner === 'player') {
     return 'WIN'
@@ -48,10 +64,77 @@ function getOutcomeLabel(winner: 'player' | 'cpu' | 'draw'): 'WIN' | 'LOSE' | 'D
   return 'DRAW'
 }
 
+function getDigitFromKeyboardCode(code: string): number | null {
+  if (/^Digit[1-8]$/.test(code)) {
+    return Number(code.replace('Digit', ''))
+  }
+  if (/^Numpad[1-8]$/.test(code)) {
+    return Number(code.replace('Numpad', ''))
+  }
+  return null
+}
+
+function getKeyboardDirection(code: string): KeyboardDirection | null {
+  if (code === 'ArrowUp') {
+    return 'up'
+  }
+  if (code === 'ArrowDown') {
+    return 'down'
+  }
+  if (code === 'ArrowLeft') {
+    return 'left'
+  }
+  if (code === 'ArrowRight') {
+    return 'right'
+  }
+  return null
+}
+
+function getNextKeyboardTargetCell(
+  currentCell: number,
+  direction: KeyboardDirection,
+  boardSize: number,
+  legalCells: Set<number>,
+): number {
+  const row = Math.floor(currentCell / boardSize)
+  const col = currentCell % boardSize
+  const deltaByDirection: Record<KeyboardDirection, { row: number; col: number }> = {
+    up: { row: -1, col: 0 },
+    down: { row: 1, col: 0 },
+    left: { row: 0, col: -1 },
+    right: { row: 0, col: 1 },
+  }
+  const delta = deltaByDirection[direction]
+
+  for (let step = 1; step < boardSize; step += 1) {
+    const nextRow = row + delta.row * step
+    const nextCol = col + delta.col * step
+    if (nextRow < 0 || nextRow >= boardSize || nextCol < 0 || nextCol >= boardSize) {
+      break
+    }
+
+    const nextCell = nextRow * boardSize + nextCol
+    if (legalCells.has(nextCell)) {
+      return nextCell
+    }
+  }
+
+  return currentCell
+}
+
+function isEditableElement(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false
+  }
+  const tag = target.tagName.toLowerCase()
+  return target.isContentEditable || tag === 'input' || tag === 'textarea' || tag === 'select'
+}
+
 export function MatchPage() {
   const navigate = useNavigate()
   const { profile, currentMatch, startMatch, updateCurrentMatch, finalizeCurrentMatch } = useGame()
   const [selectedCard, setSelectedCard] = useState<CardId | null>(null)
+  const [keyboardTargetCell, setKeyboardTargetCell] = useState<number | null>(null)
   const [selectedClaimCardId, setSelectedClaimCardId] = useState<CardId | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isFinishing, setIsFinishing] = useState(false)
@@ -70,7 +153,7 @@ export function MatchPage() {
 
   const board = useMemo(() => {
     if (!currentMatch) {
-      return Array.from({ length: 9 }, () => null)
+      return []
     }
 
     return currentMatch.runtime.getCells().map((cell) =>
@@ -93,6 +176,19 @@ export function MatchPage() {
 
     return legalPlayerMoves.filter((move) => move.cardId === selectedCard).map((move) => move.cell)
   }, [legalPlayerMoves, selectedCard, state])
+
+  const legalMovesForSelectedCard = useMemo(() => {
+    if (!selectedCard) {
+      return []
+    }
+
+    return legalPlayerMoves.filter((move) => move.cardId === selectedCard)
+  }, [legalPlayerMoves, selectedCard])
+
+  const legalCellSetForSelectedCard = useMemo(
+    () => new Set(legalMovesForSelectedCard.map((move) => move.cell)),
+    [legalMovesForSelectedCard],
+  )
 
   const finishPreview = useMemo(() => {
     if (!currentMatch || !state || state.status !== 'finished') {
@@ -243,6 +339,29 @@ export function MatchPage() {
     return null
   }
 
+  const isFourByFourMatch = state.config.mode === '4x4'
+  const isKeyboardControlEnabled = starterRevealComplete && state.status === 'active' && state.turn === 'player'
+
+  useEffect(() => {
+    if (!isKeyboardControlEnabled) {
+      return
+    }
+
+    const topCardId = state.hands.player[0] ?? null
+    if (topCardId === null) {
+      if (selectedCard !== null) {
+        setSelectedCard(null)
+      }
+      return
+    }
+
+    if (selectedCard !== null && state.hands.player.includes(selectedCard)) {
+      return
+    }
+
+    setSelectedCard(topCardId)
+  }, [isKeyboardControlEnabled, selectedCard, state.hands.player])
+
   const handleCellClick = (cell: number) => {
     if (!starterRevealComplete || state.turn !== 'player' || state.status === 'finished') {
       return
@@ -256,9 +375,10 @@ export function MatchPage() {
       const nextState = applyMove(state, {
         actor: 'player',
         cardId: selectedCard,
-        cell: cell as 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8,
+        cell,
       })
       setSelectedCard(null)
+      setKeyboardTargetCell(null)
       setError(null)
       updateCurrentMatch(nextState)
     } catch (err) {
@@ -266,6 +386,80 @@ export function MatchPage() {
       setError(message)
     }
   }
+
+  useEffect(() => {
+    if (!selectedCard) {
+      setKeyboardTargetCell(null)
+      return
+    }
+
+    setKeyboardTargetCell((currentTarget) => {
+      if (currentTarget !== null && legalCellSetForSelectedCard.has(currentTarget)) {
+        return currentTarget
+      }
+      return legalMovesForSelectedCard[0]?.cell ?? null
+    })
+  }, [legalCellSetForSelectedCard, legalMovesForSelectedCard, selectedCard])
+
+  useEffect(() => {
+    if (!isKeyboardControlEnabled) {
+      return
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey || isEditableElement(event.target)) {
+        return
+      }
+
+      const digit = getDigitFromKeyboardCode(event.code)
+      if (digit !== null) {
+        event.preventDefault()
+        const cardId = state.hands.player[digit - 1]
+        if (cardId) {
+          setSelectedCard(cardId)
+          setError(null)
+        }
+        return
+      }
+
+      const direction = getKeyboardDirection(event.code)
+      if (direction) {
+        if (!selectedCard || legalMovesForSelectedCard.length === 0) {
+          return
+        }
+
+        event.preventDefault()
+        const startCell = keyboardTargetCell ?? legalMovesForSelectedCard[0]!.cell
+        const boardSize = getModeSpec(state.config.mode).boardSize
+        const nextCell = getNextKeyboardTargetCell(startCell, direction, boardSize, legalCellSetForSelectedCard)
+        setKeyboardTargetCell(nextCell)
+        setError(null)
+        return
+      }
+
+      if (event.code === 'Enter' || event.code === 'NumpadEnter') {
+        if (!selectedCard || keyboardTargetCell === null || !legalCellSetForSelectedCard.has(keyboardTargetCell)) {
+          return
+        }
+
+        event.preventDefault()
+        handleCellClick(keyboardTargetCell)
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [
+    handleCellClick,
+    isKeyboardControlEnabled,
+    keyboardTargetCell,
+    legalCellSetForSelectedCard,
+    legalMovesForSelectedCard,
+    selectedCard,
+    state,
+  ])
+
+  const focusedCell = isKeyboardControlEnabled && selectedCard ? keyboardTargetCell : null
 
   const handleFinish = () => {
     const isPlayerVictory = finishPreview?.result.winner === 'player'
@@ -291,7 +485,9 @@ export function MatchPage() {
 
     try {
       finalizeCurrentMatch(selectedClaimCardId ?? undefined)
-      startMatch(currentMatch.queue, rematchDeck, rematchRules)
+      const rematchOptions =
+        currentMatch.queue === 'normal' ? { normalOpponentLevel: currentMatch.opponent.level } : undefined
+      startMatch(currentMatch.queue, currentMatch.state.config.mode, rematchDeck, rematchRules, rematchOptions)
       setSelectedCard(null)
       setSelectedClaimCardId(null)
       setError(null)
@@ -305,11 +501,11 @@ export function MatchPage() {
   }
 
   return (
-    <section className="panel match-panel">
+    <section className={`panel match-panel ${isFourByFourMatch ? 'match-panel--4x4' : 'match-panel--3x3'}`}>
       <div className="match-arena">
         <aside className="match-lane match-lane--cpu" data-testid="match-lane-cpu">
           <h2>CPU Hand (Open)</h2>
-          <div className="hand-row hand-row--cpu" aria-label="CPU hand">
+          <div className={`hand-row hand-row--cpu ${isFourByFourMatch ? 'hand-row--two-columns' : ''}`} aria-label="CPU hand">
             {state.hands.cpu.map((cardId) => {
               const card = getCard(cardId)
               return <TriadCard key={cardId} card={card} context="hand-cpu" />
@@ -324,6 +520,12 @@ export function MatchPage() {
                 ? 'Determining first turn...'
                 : `Turn ${state.turns + 1}: ${state.turn === 'player' ? 'Player' : 'CPU'}`}
             </p>
+            {isKeyboardControlEnabled ? (
+              <p className="small match-keyboard-help" data-testid="match-keyboard-help">
+                Clavier: 1-8 carte • Flèches case • Entrée poser
+                {selectedCard && focusedCell !== null ? ` • Cible ${focusedCell + 1}` : ''}
+              </p>
+            ) : null}
             <p className="small" data-testid="match-opponent-badge">
               CPU L{currentMatch.opponent.level} • Score {currentMatch.opponent.deckScore}
             </p>
@@ -336,6 +538,7 @@ export function MatchPage() {
             onCellClick={handleCellClick}
             turnActor={state.turn}
             status={state.status}
+            focusedCell={focusedCell}
           />
           {isStarterRollActive && (
             <div
@@ -386,7 +589,10 @@ export function MatchPage() {
 
         <aside className="match-lane match-lane--player" data-testid="match-lane-player">
           <h2>Your Hand</h2>
-          <div className="hand-row hand-row--player" aria-label="Player hand">
+          <div
+            className={`hand-row hand-row--player ${isFourByFourMatch ? 'hand-row--two-columns' : ''}`}
+            aria-label="Player hand"
+          >
             {state.hands.player.map((cardId) => {
               const card = getCard(cardId)
               return (
@@ -492,18 +698,7 @@ export function MatchPage() {
             )}
 
             {finishPreview.rankedUpdate ? (
-              <div className="result-block">
-                <h2>Ranked LP</h2>
-                <p>
-                  {finishPreview.rankedUpdate.deltaLp >= 0 ? '+' : ''}
-                  {finishPreview.rankedUpdate.deltaLp} LP
-                  {' • '}
-                  {finishPreview.rankedUpdate.next.tier.toUpperCase()}
-                  {finishPreview.rankedUpdate.next.division ? ` ${finishPreview.rankedUpdate.next.division}` : ''}
-                  {' • '}
-                  {finishPreview.rankedUpdate.next.lp} LP
-                </p>
-              </div>
+              <RankedLpRecap update={finishPreview.rankedUpdate} animated context="modal" testIdPrefix="match-ranked" />
             ) : null}
 
             <div className="actions">

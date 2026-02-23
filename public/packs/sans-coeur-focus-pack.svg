@@ -1,0 +1,62 @@
+<svg width="640" height="900" viewBox="0 0 640 900" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Sans-coeur Focus Pack</title>
+  <desc id="desc">A dark crimson focus pack themed around Sans-coeur units.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0b1320"/>
+      <stop offset="52%" stop-color="#182139"/>
+      <stop offset="100%" stop-color="#37202f"/>
+    </linearGradient>
+    <linearGradient id="foil" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffd7d1"/>
+      <stop offset="58%" stop-color="#e8a1a1"/>
+      <stop offset="100%" stop-color="#a95767"/>
+    </linearGradient>
+    <linearGradient id="heartFoil" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#171216"/>
+      <stop offset="100%" stop-color="#09090d"/>
+    </linearGradient>
+    <radialGradient id="shine" cx="32%" cy="18%" r="72%">
+      <stop offset="0%" stop-color="#ffd8d4" stop-opacity="0.78"/>
+      <stop offset="100%" stop-color="#ffd8d4" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect x="0" y="0" width="640" height="900" rx="36" fill="url(#bg)"/>
+  <rect x="24" y="24" width="592" height="852" rx="28" fill="none" stroke="#f1b4bc" stroke-opacity="0.64" stroke-width="4"/>
+  <ellipse cx="180" cy="165" rx="220" ry="182" fill="url(#shine)"/>
+
+  <g fill="none" stroke="#ffe0dc" stroke-opacity="0.75" stroke-width="6">
+    <path d="M120 180 L320 100 L520 180 L520 420 L320 500 L120 420 Z"/>
+    <path d="M165 250 L320 190 L475 250 L475 380 L320 440 L165 380 Z" stroke-opacity="0.48"/>
+  </g>
+
+  <g transform="translate(320 320)">
+    <circle r="84" fill="none" stroke="#efb2b8" stroke-opacity="0.62" stroke-width="5"/>
+    <path d="M0 -62 C20 -98 58 -102 72 -58 C83 -27 62 2 0 68 C-62 2 -83 -27 -72 -58 C-58 -102 -20 -98 0 -62 Z" fill="url(#heartFoil)" stroke="#f0b8bf" stroke-opacity="0.4" stroke-width="4"/>
+    <path d="M-52 -102 C-46 -124 -30 -140 -8 -150" fill="none" stroke="url(#foil)" stroke-width="8" stroke-linecap="round"/>
+    <path d="M52 -102 C46 -124 30 -140 8 -150" fill="none" stroke="url(#foil)" stroke-width="8" stroke-linecap="round"/>
+    <ellipse cx="-22" cy="-26" rx="15" ry="7" fill="#ffe8c5" transform="rotate(-12 -22 -26)"/>
+    <ellipse cx="22" cy="-26" rx="15" ry="7" fill="#ffe8c5" transform="rotate(12 22 -26)"/>
+    <circle cx="-22" cy="-26" r="3" fill="#0b0a0f"/>
+    <circle cx="22" cy="-26" r="3" fill="#0b0a0f"/>
+    <path d="M-20 8 C-10 18 10 18 20 8" fill="none" stroke="#f3bdc4" stroke-width="4" stroke-linecap="round"/>
+  </g>
+
+  <g fill="#ffe8e2">
+    <circle cx="252" cy="236" r="4"/>
+    <circle cx="280" cy="220" r="4"/>
+    <circle cx="320" cy="214" r="4"/>
+    <circle cx="360" cy="220" r="4"/>
+    <circle cx="388" cy="236" r="4"/>
+  </g>
+
+  <g fill="#fff0eb" font-family="Rajdhani, sans-serif" text-anchor="middle">
+    <text x="320" y="640" font-size="64" font-weight="700" letter-spacing="7">SANS-COEUR</text>
+    <text x="320" y="704" font-size="52" font-weight="700" letter-spacing="6">FOCUS PACK</text>
+    <text x="320" y="758" font-size="34" font-weight="600" letter-spacing="6">TRIPLE TRIAD</text>
+  </g>
+
+  <circle cx="320" cy="556" r="28" fill="#fee8e2" fill-opacity="0.95"/>
+  <path d="M320 542 C328 528 344 528 350 542 C355 554 347 565 320 585 C293 565 285 554 290 542 C296 528 312 528 320 542 Z" fill="#a65467"/>
+</svg>

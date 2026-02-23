@@ -1,7 +1,17 @@
 import { beforeEach, describe, expect, test } from 'vitest'
 import { starterDeck, starterOwnedCardIds } from '../cards/decks'
 import { cardPool } from '../cards/cardPool'
-import { createDefaultProfile, createResetProfile, loadProfile, PROFILE_STORAGE_KEY, saveProfile } from './profile'
+import {
+  createDefaultProfile,
+  createResetProfile,
+  createStoredProfile,
+  deleteStoredProfile,
+  listStoredProfiles,
+  loadProfile,
+  PROFILE_STORAGE_KEY,
+  saveProfile,
+  switchStoredProfile,
+} from './profile'
 
 function copiesFor(cardIds: string[]): Record<string, number> {
   return Object.fromEntries(cardIds.map((cardId) => [cardId, 1]))
@@ -17,6 +27,19 @@ function emptyPackInventory() {
   }
 }
 
+function fillToEight(seedCards: string[], ownedCardIds: string[]): string[] {
+  const next: string[] = []
+  for (const cardId of [...seedCards, ...ownedCardIds]) {
+    if (!next.includes(cardId)) {
+      next.push(cardId)
+    }
+    if (next.length >= 8) {
+      break
+    }
+  }
+  return next
+}
+
 describe('profile persistence', () => {
   beforeEach(() => {
     localStorage.clear()
@@ -25,7 +48,7 @@ describe('profile persistence', () => {
   test('creates a default profile on first launch', () => {
     const profile = loadProfile()
 
-    expect(profile.version).toBe(6)
+    expect(profile.version).toBe(7)
     expect(profile.playerName).toBe('Joueur')
     expect(profile.gold).toBe(100)
     expect(profile.ownedCardIds).toEqual(starterOwnedCardIds)
@@ -36,21 +59,32 @@ describe('profile persistence', () => {
       {
         id: 'slot-1',
         name: 'Deck 1',
+        mode: '4x4',
         cards: starterDeck,
+        cards4x4: fillToEight(starterDeck, starterOwnedCardIds),
         rules: { same: false, plus: false },
       },
       {
         id: 'slot-2',
         name: 'Deck 2',
+        mode: '4x4',
         cards: [],
+        cards4x4: fillToEight([], starterOwnedCardIds),
         rules: { same: false, plus: false },
       },
       {
         id: 'slot-3',
         name: 'Deck 3',
+        mode: '4x4',
         cards: [],
+        cards4x4: fillToEight([], starterOwnedCardIds),
         rules: { same: false, plus: false },
       },
+    ])
+    expect(Object.keys(profile.missions)).toEqual([
+      'm1_type_specialist',
+      'm2_combo_practitioner',
+      'm3_corner_tactician',
     ])
     expect(profile.ranked).toEqual({
       tier: 'iron',
@@ -64,6 +98,7 @@ describe('profile persistence', () => {
       demotionShieldLosses: 0,
     })
     expect(profile.settings.audioEnabled).toBe(false)
+    expect(profile.specialPackPity).toEqual({ legendaryFocusChancePercent: 1 })
   })
 
   test('createResetProfile gives 6 common, 2 uncommon, 1 rare, 1 epic starter cards', () => {
@@ -95,7 +130,9 @@ describe('profile persistence', () => {
     })
 
     expect(profile.deckSlots[0].cards).toHaveLength(5)
+    expect(profile.deckSlots[0].cards4x4).toHaveLength(8)
     expect(profile.deckSlots[0].cards.every((cardId) => profile.ownedCardIds.includes(cardId))).toBe(true)
+    expect(profile.deckSlots[0].cards4x4.every((cardId) => profile.ownedCardIds.includes(cardId))).toBe(true)
     expect(profile.ranked.tier).toBe('iron')
     expect(profile.ranked.lp).toBe(0)
   })
@@ -123,19 +160,25 @@ describe('profile persistence', () => {
         {
           id: 'slot-1' as const,
           name: 'Deck 1',
+          mode: '4x4' as const,
           cards: starterDeck,
+          cards4x4: fillToEight(starterDeck, starterOwnedCardIds),
           rules: { same: false, plus: false },
         },
         {
           id: 'slot-2' as const,
           name: 'Ranked',
+          mode: '4x4' as const,
           cards: slotTwoCards,
+          cards4x4: fillToEight(slotTwoCards, starterOwnedCardIds),
           rules: { same: true, plus: false },
         },
         {
           id: 'slot-3' as const,
           name: 'Alt',
+          mode: '4x4' as const,
           cards: [],
+          cards4x4: fillToEight([], starterOwnedCardIds),
           rules: { same: false, plus: true },
         },
       ],
@@ -182,7 +225,7 @@ describe('profile persistence', () => {
     )
   })
 
-  test('migrates a v5 profile to v6 and resets ranked state', () => {
+  test('migrates a v5 profile to v7, initializes missions, and resets ranked state', () => {
     const v5 = {
       version: 5,
       gold: 420,
@@ -220,9 +263,16 @@ describe('profile persistence', () => {
 
     const migrated = loadProfile()
 
-    expect(migrated.version).toBe(6)
+    expect(migrated.version).toBe(7)
     expect(migrated.gold).toBe(420)
     expect(migrated.stats).toEqual(v5.stats)
+    expect(migrated.deckSlots[0].cards4x4).toEqual(fillToEight(v5.deckSlots[0].cards, starterOwnedCardIds))
+    expect(migrated.deckSlots[1].cards4x4).toEqual(fillToEight(v5.deckSlots[1].cards, starterOwnedCardIds))
+    expect(migrated.deckSlots[2].cards4x4).toEqual(fillToEight(v5.deckSlots[2].cards, starterOwnedCardIds))
+    expect(migrated.deckSlots[0].mode).toBe('4x4')
+    expect(migrated.deckSlots[1].mode).toBe('4x4')
+    expect(migrated.deckSlots[2].mode).toBe('4x4')
+    expect(Object.keys(migrated.missions)).toHaveLength(3)
     expect(migrated.ranked).toEqual({
       tier: 'iron',
       division: 'IV',
@@ -236,10 +286,10 @@ describe('profile persistence', () => {
     })
 
     const persisted = JSON.parse(localStorage.getItem(PROFILE_STORAGE_KEY) ?? '{}') as { version?: number }
-    expect(persisted.version).toBe(6)
+    expect(persisted.version).toBe(7)
   })
 
-  test('migrates a v2 profile to v6 and preserves deck/stat data', () => {
+  test('migrates a v2 profile to v7 and preserves deck/stat data', () => {
     const v2Owned = starterOwnedCardIds
     const v2 = {
       version: 2,
@@ -275,12 +325,14 @@ describe('profile persistence', () => {
 
     const migrated = loadProfile()
 
-    expect(migrated.version).toBe(6)
+    expect(migrated.version).toBe(7)
     expect(migrated.gold).toBe(175)
     expect(migrated.ownedCardIds).toEqual(v2.ownedCardIds)
     expect(migrated.stats).toEqual(v2.stats)
     expect(migrated.selectedDeckSlotId).toBe('slot-1')
     expect(migrated.deckSlots[0].rules).toEqual({ same: true, plus: false })
+    expect(migrated.deckSlots[0].cards4x4).toEqual(fillToEight(v2.deckSlots[0].cards, v2Owned))
+    expect(migrated.deckSlots[0].mode).toBe('4x4')
     expect(migrated.cardCopiesById).toEqual(copiesFor(v2Owned))
     expect(migrated.packInventoryByRarity).toEqual(emptyPackInventory())
     expect(migrated.ranked.tier).toBe('iron')
@@ -288,10 +340,13 @@ describe('profile persistence', () => {
 
   test('migrates a v6 profile without playerName and keeps existing progression data', () => {
     const base = createDefaultProfile()
-    const legacyV6 = Object.fromEntries(Object.entries(base).filter(([key]) => key !== 'playerName')) as Omit<
-      typeof base,
-      'playerName'
-    >
+    const rest = { ...base }
+    delete (rest as { playerName?: string }).playerName
+    delete (rest as { missions?: unknown }).missions
+    const legacyV6 = {
+      ...rest,
+      version: 6 as const,
+    }
     legacyV6.gold = 333
     legacyV6.stats.played = 4
     legacyV6.stats.won = 3
@@ -300,11 +355,62 @@ describe('profile persistence', () => {
 
     const migrated = loadProfile()
 
-    expect(migrated.version).toBe(6)
+    expect(migrated.version).toBe(7)
     expect(migrated.playerName).toBe('Joueur')
     expect(migrated.gold).toBe(333)
     expect(migrated.stats.played).toBe(4)
     expect(migrated.stats.won).toBe(3)
+  })
+
+  test('migrates a legacy profile without cards4x4 by generating 8-card mode decks', () => {
+    const base = createDefaultProfile()
+    const legacy = {
+      ...base,
+      deckSlots: base.deckSlots.map((slot) => ({
+        id: slot.id,
+        name: slot.name,
+        cards: [...slot.cards],
+        rules: { ...slot.rules },
+      })),
+    }
+
+    localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(legacy))
+
+    const migrated = loadProfile()
+    expect(migrated.deckSlots[0].cards4x4).toEqual(fillToEight(migrated.deckSlots[0].cards, migrated.ownedCardIds))
+    expect(migrated.deckSlots[1].cards4x4).toEqual(fillToEight(migrated.deckSlots[1].cards, migrated.ownedCardIds))
+    expect(migrated.deckSlots[2].cards4x4).toEqual(fillToEight(migrated.deckSlots[2].cards, migrated.ownedCardIds))
+    expect(migrated.deckSlots[0].mode).toBe('4x4')
+    expect(migrated.deckSlots[1].mode).toBe('4x4')
+    expect(migrated.deckSlots[2].mode).toBe('4x4')
+  })
+
+  test('hydrates missing legendary focus pity state on loaded v7 profile', () => {
+    const base = createDefaultProfile()
+    const legacyWithoutPity = { ...base }
+    delete (legacyWithoutPity as { specialPackPity?: unknown }).specialPackPity
+    localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(legacyWithoutPity))
+
+    const loaded = loadProfile()
+    expect(loaded.specialPackPity).toEqual({ legendaryFocusChancePercent: 1 })
+  })
+
+  test('normalizes invalid slot mode to 4x4 on load', () => {
+    const base = createDefaultProfile()
+    const corrupted = {
+      ...base,
+      deckSlots: base.deckSlots.map((slot, index) => ({
+        ...slot,
+        mode: index === 1 ? 'invalid-mode' : slot.mode,
+      })),
+    }
+
+    localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(corrupted))
+
+    const migrated = loadProfile()
+    expect(migrated.deckSlots[0].mode).toBe('4x4')
+    expect(migrated.deckSlots[1].mode).toBe('4x4')
+    expect(migrated.deckSlots[2].mode).toBe('4x4')
   })
 
   test('falls back to default profile on corrupt JSON', () => {
@@ -313,5 +419,62 @@ describe('profile persistence', () => {
     const profile = loadProfile()
 
     expect(profile).toEqual(createDefaultProfile())
+  })
+
+  test('creates a second stored profile and can switch back to the original', () => {
+    const original = loadProfile()
+    original.playerName = 'Host'
+    saveProfile(original)
+    const originalId = listStoredProfiles().activeProfileId
+
+    const created = createStoredProfile('Alice')
+    expect(created.valid).toBe(true)
+    expect(loadProfile().playerName).toBe('Alice')
+
+    const profiles = listStoredProfiles()
+    expect(profiles.profiles).toHaveLength(2)
+    expect(profiles.profiles.find((profile) => profile.playerName === 'Alice')?.isActive).toBe(true)
+
+    switchStoredProfile(originalId)
+    expect(loadProfile().playerName).toBe('Host')
+  })
+
+  test('rejects stored profile creation when name is invalid', () => {
+    loadProfile()
+
+    const created = createStoredProfile('   ')
+
+    expect(created.valid).toBe(false)
+    expect(listStoredProfiles().profiles).toHaveLength(1)
+  })
+
+  test('prevents deleting the last remaining stored profile', () => {
+    loadProfile()
+    const onlyProfileId = listStoredProfiles().activeProfileId
+
+    const deleted = deleteStoredProfile(onlyProfileId)
+
+    expect(deleted.valid).toBe(false)
+    expect(deleted.reason).toMatch(/at least one/i)
+    expect(listStoredProfiles().profiles).toHaveLength(1)
+  })
+
+  test('deletes a non-active stored profile and keeps active one loaded', () => {
+    const host = loadProfile()
+    host.playerName = 'Host'
+    saveProfile(host)
+    const hostId = listStoredProfiles().activeProfileId
+
+    expect(createStoredProfile('Bob').valid).toBe(true)
+    switchStoredProfile(hostId)
+
+    const bobId = listStoredProfiles().profiles.find((profile) => profile.playerName === 'Bob')?.id
+    expect(bobId).toBeDefined()
+
+    const deleted = deleteStoredProfile(bobId!)
+
+    expect(deleted.valid).toBe(true)
+    expect(listStoredProfiles().profiles.find((profile) => profile.id === bobId)).toBeUndefined()
+    expect(loadProfile().playerName).toBe('Host')
   })
 })

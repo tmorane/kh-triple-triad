@@ -14,6 +14,7 @@ function renderFallbackBoard(overrides?: {
   interactive?: boolean
   turnActor?: Actor
   status?: 'active' | 'finished'
+  focusedCell?: number | null
 }) {
   return render(
     <PixiBoard
@@ -23,6 +24,7 @@ function renderFallbackBoard(overrides?: {
       onCellClick={vi.fn()}
       turnActor={overrides?.turnActor ?? 'player'}
       status={overrides?.status ?? 'active'}
+      focusedCell={overrides?.focusedCell ?? null}
     />,
   )
 }
@@ -89,5 +91,26 @@ describe('PixiBoard', () => {
     expect(screen.getByTestId('board-cell-4-stat-right')).toHaveTextContent(String(placedCard.right))
     expect(screen.getByTestId('board-cell-4-stat-bottom')).toHaveTextContent(String(placedCard.bottom))
     expect(screen.getByTestId('board-cell-4-stat-left')).toHaveTextContent(String(placedCard.left))
+  })
+
+  test('renders a 16-cell fallback grid for 4x4 boards', () => {
+    const board = Array.from({ length: 16 }, () => null)
+    renderFallbackBoard({ board, interactive: false })
+
+    expect(screen.getAllByRole('gridcell')).toHaveLength(16)
+  })
+
+  test('applies keyboard target class on focused fallback cell', () => {
+    renderFallbackBoard({ focusedCell: 4, interactive: false })
+
+    expect(screen.getByTestId('board-cell-4')).toHaveClass('is-keyboard-target')
+    expect(screen.getByTestId('board-cell-3')).not.toHaveClass('is-keyboard-target')
+  })
+
+  test('does not apply keyboard target class when focused cell is null', () => {
+    renderFallbackBoard({ focusedCell: null, interactive: false })
+
+    const highlightedCells = screen.getAllByRole('gridcell').filter((cell) => cell.classList.contains('is-keyboard-target'))
+    expect(highlightedCells).toHaveLength(0)
   })
 })

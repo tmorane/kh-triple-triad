@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { GameContext } from '../../app/GameContext'
 import { createDefaultProfile } from '../../domain/progression/profile'
-import type { OpenedPackResult, ShopPackId } from '../../domain/progression/shop'
+import type { OpenedPackBatchResult, OpenedPackResult, ShopPackId } from '../../domain/progression/shop'
 import { playNewCardSound } from '../audio/newCardSound'
 import { PacksPage } from './PacksPage'
 
@@ -18,6 +18,7 @@ function renderPacksWithContext(options: {
   profileGold?: number
   rarePackCount?: number
   openOwnedPack: (packId: ShopPackId) => OpenedPackResult
+  openOwnedPacks?: (packId: ShopPackId, quantity: number) => OpenedPackBatchResult
 }) {
   const profile = createDefaultProfile()
   profile.gold = options.profileGold ?? profile.gold
@@ -25,6 +26,19 @@ function renderPacksWithContext(options: {
 
   const contextValue: GameContextValue = {
     profile,
+    storedProfiles: {
+      activeProfileId: 'profile-1',
+      profiles: [
+        {
+          id: 'profile-1',
+          playerName: profile.playerName,
+          gold: profile.gold,
+          played: profile.stats.played,
+          wins: profile.stats.won,
+          isActive: true,
+        },
+      ],
+    },
     currentMatch: null,
     lastMatchSummary: null,
     startMatch: () => {
@@ -42,6 +56,9 @@ function renderPacksWithContext(options: {
     toggleDeckSlotCard: () => {
       throw new Error('Not implemented in test.')
     },
+    setDeckSlotMode: () => {
+      throw new Error('Not implemented in test.')
+    },
     setDeckSlotRules: () => {
       throw new Error('Not implemented in test.')
     },
@@ -57,8 +74,22 @@ function renderPacksWithContext(options: {
     purchaseShopPack: () => {
       throw new Error('Not implemented in test.')
     },
+    purchaseShopPacks: undefined,
     openOwnedPack: options.openOwnedPack,
+    openOwnedPacks: options.openOwnedPacks,
+    buySpecialPack: () => {
+      throw new Error('Not implemented in test.')
+    },
     addTestGold: () => {
+      throw new Error('Not implemented in test.')
+    },
+    createStoredProfile: () => {
+      throw new Error('Not implemented in test.')
+    },
+    switchStoredProfile: () => {
+      throw new Error('Not implemented in test.')
+    },
+    deleteStoredProfile: () => {
       throw new Error('Not implemented in test.')
     },
     resetProfile: () => {
@@ -195,5 +226,38 @@ describe('PacksPage', () => {
       vi.advanceTimersByTime(1000)
     })
     expect(playNewCardSound).toHaveBeenCalledTimes(2)
+  })
+
+  test('opens multiple packs at once when quantity selector is above 1', () => {
+    const openOwnedPack = vi.fn<(packId: ShopPackId) => OpenedPackResult>()
+    const openOwnedPacks = vi.fn<(packId: ShopPackId, quantity: number) => OpenedPackBatchResult>().mockReturnValue({
+      packId: 'rare',
+      openedCount: 2,
+      remainingPackCount: 1,
+      pulls: [
+        { cardId: 'c41', rarity: 'rare', isNewOwnership: true, copiesAfter: 1 },
+        { cardId: 'c42', rarity: 'rare', isNewOwnership: false, copiesAfter: 2 },
+        { cardId: 'c43', rarity: 'rare', isNewOwnership: false, copiesAfter: 2 },
+        { cardId: 'c44', rarity: 'rare', isNewOwnership: false, copiesAfter: 2 },
+        { cardId: 'c45', rarity: 'rare', isNewOwnership: false, copiesAfter: 2 },
+        { cardId: 'c46', rarity: 'rare', isNewOwnership: false, copiesAfter: 2 },
+      ],
+    })
+
+    renderPacksWithContext({
+      rarePackCount: 3,
+      openOwnedPack,
+      openOwnedPacks,
+    })
+
+    fireEvent.click(screen.getByTestId('packs-open-quantity-increment-rare'))
+    expect(screen.getByTestId('packs-open-quantity-value-rare')).toHaveTextContent('2')
+    fireEvent.click(screen.getByTestId('open-pack-quantity-rare'))
+
+    expect(openOwnedPacks).toHaveBeenCalledWith('rare', 2)
+    expect(openOwnedPack).not.toHaveBeenCalled()
+    expect(screen.getAllByTestId(/^packs-reveal-triad-/)).toHaveLength(6)
+    expect(screen.queryByTestId('packs-reveal-placeholder-0')).not.toBeInTheDocument()
+    expect(screen.getByText('Opened x2 | Remaining: x1')).toBeInTheDocument()
   })
 })

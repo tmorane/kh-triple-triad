@@ -93,3 +93,29 @@ npx netlify deploy --prod --dir dist
 ```
 
 `netlify.toml` is included with the same SPA redirect behavior.
+
+## Cloud Accounts + Shared Profiles
+
+This project supports Supabase auth, cloud profile sync (`/account`), and global ladders (`/ranks`).
+
+1. Copy env values:
+
+```bash
+cp .env.example .env
+```
+
+2. Fill `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in `.env`.
+3. Run SQL script `docs/supabase-player-profiles.sql` in Supabase SQL editor (creates `player_profiles` + `player_ladder`).
+4. Start app (`npm run dev`) and open `/account`.
+5. Use `/ranks` to see:
+   - leaderboard by owned cards
+   - leaderboard by highest peak rank
+
+### Optional: Mock Global Ladders
+
+Set `VITE_ENABLE_MOCK_LADDER=true` (or `1`) in `.env` to inject 10 fixed mock users with varied progression.
+
+- Local tester profiles are included in ladders by default (not only cloud-synced users).
+- Works even if Supabase is not configured.
+- If Supabase is configured, real rows are merged with mock rows and sorted globally.
+- If cloud ladder fetch fails, the UI falls back to mock rows.

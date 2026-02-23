@@ -1,10 +1,15 @@
 import type { CSSProperties } from 'react'
-import { useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import {
+  fetchOwnedCardsLadder,
+  fetchPeakRankLadder,
+  isGlobalLadderEnabled,
+  type LadderEntry,
+} from '../../app/cloud/cloudLadderStore'
 import { useGame } from '../../app/useGame'
 import { cardPool } from '../../domain/cards/cardPool'
-import { achievementCatalog } from '../../domain/progression/achievements'
-import type { RankedTierId } from '../../domain/types'
+import type { MissionId, RankedTierId } from '../../domain/types'
 
 const GOLD_MILESTONES = [150, 200, 300, 450, 600, 800, 1000]
 const numberFormat = new Intl.NumberFormat('en-US')
@@ -31,6 +36,14 @@ interface ProfileMetric {
   testId?: string
 }
 
+const missionOrder: MissionId[] = ['m1_type_specialist', 'm2_combo_practitioner', 'm3_corner_tactician']
+
+const missionTitles: Record<MissionId, string> = {
+  m1_type_specialist: 'Type Specialist',
+  m2_combo_practitioner: 'Combo Practitioner',
+  m3_corner_tactician: 'Corner Tactician',
+}
+
 function clampPercent(value: number): number {
   return Math.max(0, Math.min(100, value))
 }
@@ -54,17 +67,41 @@ function formatTierLabel(tier: RankedTierId, division: string | null): string {
   return tierLabel
 }
 
+function parseDivisionNumber(division: string | null): number | null {
+  if (division === 'IV') {
+    return 4
+  }
+  if (division === 'III') {
+    return 3
+  }
+  if (division === 'II') {
+    return 2
+  }
+  if (division === 'I') {
+    return 1
+  }
+  return null
+}
+
+function formatTierLabelExplicit(tier: RankedTierId, division: string | null): string {
+  const label = formatTierLabel(tier, division)
+  const divisionNumber = parseDivisionNumber(division)
+  if (divisionNumber === null) {
+    return label
+  }
+  return `${label} (Division ${divisionNumber})`
+}
+
 export function HomePage() {
-  const { profile, currentMatch, renamePlayer, resetProfile } = useGame()
-  const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false)
-  const [playerNameDraft, setPlayerNameDraft] = useState(profile.playerName)
-  const [isEditingPlayerName, setIsEditingPlayerName] = useState(false)
-  const [playerNameError, setPlayerNameError] = useState<string | null>(null)
-  const playerNameInputRef = useRef<HTMLInputElement | null>(null)
+  const { profile, currentMatch } = useGame()
+  const laddersEnabled = isGlobalLadderEnabled()
+  const [isLoadingLadders, setIsLoadingLadders] = useState(laddersEnabled)
+  const [ownedCardsLadder, setOwnedCardsLadder] = useState<LadderEntry[]>([])
+  const [peakRankLadder, setPeakRankLadder] = useState<LadderEntry[]>([])
+  const [ladderError, setLadderError] = useState<string | null>(null)
 
   const played = profile.stats.played
   const wins = profile.stats.won
-  const losses = Math.max(played - wins, 0)
   const winRatePercent = played > 0 ? Math.round((wins / played) * 100) : 0
   const winRateLabel = played > 0 ? `${winRatePercent}%` : '---'
 
@@ -72,22 +109,60 @@ export function HomePage() {
   const playActionTarget = currentMatch ? '/match' : '/setup'
   const playActionLabel = currentMatch ? 'Continue' : 'Play'
 
-  const activeDeckCount = selectedDeck.cards.length
   const ownedCards = profile.ownedCardIds.length
   const totalCards = cardPool.length
-  const unlockedAchievements = profile.achievements.length
-  const totalAchievements = achievementCatalog.length
   const nextGoldTarget = GOLD_MILESTONES.find((milestone) => profile.gold < milestone) ?? null
+  const missions = missionOrder.map((missionId) => profile.missions[missionId])
+  const completedMissions = missions.filter((mission) => mission.completed).length
 
   const ranked = profile.ranked
-  const rankedTierLabel = formatTierLabel(ranked.tier, ranked.division)
-  const rankedRecordLabel = `${ranked.wins}W ${ranked.losses}L ${ranked.draws}D`
+  const rankedTierLabel = formatTierLabelExplicit(ranked.tier, ranked.division)
   const rankedProgressPercent = ranked.lp
 
   const panelStyle = {
     '--home-win-rate': `${winRatePercent}%`,
     '--home-rank-progress': `${rankedProgressPercent}%`,
   } as CSSProperties
+
+  useEffect(() => {
+    if (!laddersEnabled) {
+      setIsLoadingLadders(false)
+      setOwnedCardsLadder([])
+      setPeakRankLadder([])
+      setLadderError(null)
+      return
+    }
+
+    let mounted = true
+
+    const loadLadders = async () => {
+      setIsLoadingLadders(true)
+      setLadderError(null)
+      try {
+        const [owned, peak] = await Promise.all([fetchOwnedCardsLadder(5), fetchPeakRankLadder(5)])
+        if (!mounted) {
+          return
+        }
+        setOwnedCardsLadder(owned)
+        setPeakRankLadder(peak)
+      } catch (error) {
+        if (!mounted) {
+          return
+        }
+        setLadderError(error instanceof Error ? error.message : 'Unable to load ladders.')
+      } finally {
+        if (mounted) {
+          setIsLoadingLadders(false)
+        }
+      }
+    }
+
+    void loadLadders()
+
+    return () => {
+      mounted = false
+    }
+  }, [laddersEnabled])
 
   const metrics: ProfileMetric[] = [
     {
@@ -112,67 +187,9 @@ export function HomePage() {
       value: `${ownedCards}/${totalCards}`,
       sub: `${clampPercent(Math.round((ownedCards / totalCards) * 100))}% complete`,
       progress: clampPercent(Math.round((ownedCards / totalCards) * 100)),
-    },
-    {
-      icon: 'A',
-      label: 'Achievements',
-      value: `${unlockedAchievements}/${totalAchievements}`,
-      sub: `${clampPercent(Math.round((unlockedAchievements / totalAchievements) * 100))}% unlocked`,
-      progress: clampPercent(Math.round((unlockedAchievements / totalAchievements) * 100)),
-    },
-    {
-      icon: 'D',
-      label: selectedDeck.name,
-      value: `${activeDeckCount}/5`,
-      sub: 'Active deck slots filled',
-      progress: clampPercent(Math.round((activeDeckCount / 5) * 100)),
-    },
-    {
-      icon: 'S',
-      label: 'Current Streak',
-      value: `${profile.stats.streak}`,
-      sub: `Best streak: ${profile.stats.bestStreak}`,
-    },
-    {
-      icon: 'B',
-      label: 'Ranked Record',
-      value: rankedRecordLabel,
-      sub: `${ranked.matchesPlayed} ranked matches`,
-      testId: 'home-ranked-record',
-    },
-    {
-      icon: 'M',
-      label: 'Battle Record',
-      value: `${wins}W / ${losses}L`,
-      sub: `${played} matches played`,
+      testId: 'home-collection-value',
     },
   ]
-
-  const startPlayerNameEdit = () => {
-    setPlayerNameDraft(profile.playerName)
-    setPlayerNameError(null)
-    setIsEditingPlayerName(true)
-  }
-
-  const cancelPlayerNameEdit = () => {
-    setPlayerNameDraft(profile.playerName)
-    setPlayerNameError(null)
-    setIsEditingPlayerName(false)
-  }
-
-  const savePlayerName = () => {
-    const result = renamePlayer(playerNameDraft)
-    if (!result.valid) {
-      setPlayerNameError(result.reason ?? 'Invalid player name.')
-      requestAnimationFrame(() => {
-        playerNameInputRef.current?.focus()
-      })
-      return
-    }
-
-    setPlayerNameError(null)
-    setIsEditingPlayerName(false)
-  }
 
   return (
     <section className="panel home-panel" style={panelStyle}>
@@ -186,7 +203,7 @@ export function HomePage() {
         <Link className="button" to="/packs" data-testid="home-quick-action-packs">
           Open Packs
         </Link>
-        <Link className="button" to="/setup" data-testid="home-quick-action-setup">
+        <Link className="button" to="/decks" data-testid="home-quick-action-setup">
           Edit Deck
         </Link>
       </nav>
@@ -198,47 +215,7 @@ export function HomePage() {
           </div>
 
           <div className="home-identity-copy">
-            <h1>
-              {isEditingPlayerName ? (
-                <input
-                  id="home-player-name-input"
-                  ref={playerNameInputRef}
-                  className="home-player-name-input"
-                  type="text"
-                  value={playerNameDraft}
-                  aria-label="Player Name"
-                  onChange={(event) => setPlayerNameDraft(event.target.value)}
-                  onBlur={savePlayerName}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                      event.preventDefault()
-                      savePlayerName()
-                    }
-
-                    if (event.key === 'Escape') {
-                      event.preventDefault()
-                      cancelPlayerNameEdit()
-                    }
-                  }}
-                  data-testid="home-player-name-input"
-                  autoFocus
-                />
-              ) : (
-                <button
-                  type="button"
-                  className="home-player-name-trigger"
-                  data-testid="home-player-name-trigger"
-                  onClick={startPlayerNameEdit}
-                >
-                  {profile.playerName}
-                </button>
-              )}
-            </h1>
-            {playerNameError ? (
-              <p className="error" role="alert">
-                {playerNameError}
-              </p>
-            ) : null}
+            <h1>{profile.playerName}</h1>
             <p className="lead" data-testid="home-ranked-tier-label">{rankedTierLabel}</p>
             <p className="home-rank-line" data-testid="home-ranked-lp">
               {ranked.lp} LP
@@ -264,16 +241,8 @@ export function HomePage() {
               className="home-ranked-badge"
               data-testid="home-ranked-badge"
             />
+            <p className="home-ranked-badge-caption" data-testid="home-ranked-badge-label">{rankedTierLabel}</p>
           </aside>
-
-          <button
-            type="button"
-            className="home-reset-trigger"
-            data-testid="home-reset-trigger"
-            onClick={() => setIsResetConfirmOpen(true)}
-          >
-            Reset Profile Data
-          </button>
         </div>
       </div>
 
@@ -299,32 +268,93 @@ export function HomePage() {
         ))}
       </div>
 
-      {isResetConfirmOpen ? (
-        <section className="home-reset-confirmation" aria-live="polite">
-          <p className="small">This resets your game profile data. This action cannot be undone.</p>
-          <div className="home-reset-confirmation__actions">
-            <button
-              type="button"
-              className="button button-danger"
-              data-testid="home-reset-confirm"
-              onClick={() => {
-                resetProfile()
-                setIsResetConfirmOpen(false)
-              }}
-            >
-              Confirmer reset
-            </button>
-            <button
-              type="button"
-              className="button"
-              data-testid="home-reset-cancel"
-              onClick={() => setIsResetConfirmOpen(false)}
-            >
-              Annuler
-            </button>
+      <section className="home-missions-block" data-testid="home-missions-block">
+        <div className="home-missions-head">
+          <h2>Missions</h2>
+          <Link className="button" to="/missions" data-testid="home-missions-link">
+            View missions
+          </Link>
+        </div>
+        <p className="small">
+          {completedMissions}/{missions.length} completed
+        </p>
+        <div className="home-missions-list">
+          {missions.map((mission) => {
+            const progressPercent = clampPercent(Math.round((mission.progress / mission.target) * 100))
+            return (
+              <article key={mission.id} className="home-mission-card" data-testid={`home-mission-${mission.id}`}>
+                <p className="home-mission-title">{missionTitles[mission.id]}</p>
+                <p className="small" data-testid={`home-mission-progress-${mission.id}`}>
+                  {mission.progress}/{mission.target}
+                </p>
+                <div className="home-meter" aria-hidden="true">
+                  <span style={{ width: `${progressPercent}%` }} />
+                </div>
+                <p className="small">{mission.claimed ? 'Claimed' : mission.completed ? 'Completed' : 'In progress'}</p>
+              </article>
+            )
+          })}
+        </div>
+      </section>
+
+      <section className="ranks-ladders home-ladders-block" aria-label="Global ladders on home">
+        <div className="ranks-ladders-head">
+          <h2>Global Ladders</h2>
+          <p className="small">Top 5 players</p>
+        </div>
+
+        {!laddersEnabled ? (
+          <p className="small" data-testid="home-ladder-disabled-note">
+            Global ladders are unavailable until cloud auth is configured.
+          </p>
+        ) : null}
+
+        {laddersEnabled && isLoadingLadders ? <p className="small">Loading global ladders...</p> : null}
+
+        {laddersEnabled && ladderError ? (
+          <p className="error" role="alert">
+            {ladderError}
+          </p>
+        ) : null}
+
+        {laddersEnabled && !isLoadingLadders && !ladderError ? (
+          <div className="ranks-ladder-grid">
+            <article className="ranks-ladder-card" data-testid="home-owned-ladder">
+              <h3>Most Owned Cards</h3>
+              {ownedCardsLadder.length === 0 ? (
+                <p className="small">No players yet.</p>
+              ) : (
+                <ol className="ranks-ladder-list">
+                  {ownedCardsLadder.map((entry, index) => (
+                    <li key={entry.userId} className="ranks-ladder-row">
+                      <span className="ranks-ladder-position">#{index + 1}</span>
+                      <span className="ranks-ladder-name">{entry.playerName}</span>
+                      <span className="ranks-ladder-value">{entry.ownedCardsCount} cards</span>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </article>
+
+            <article className="ranks-ladder-card" data-testid="home-peak-ladder">
+              <h3>Highest Peak Rank</h3>
+              {peakRankLadder.length === 0 ? (
+                <p className="small">No players yet.</p>
+              ) : (
+                <ol className="ranks-ladder-list">
+                  {peakRankLadder.map((entry, index) => (
+                    <li key={entry.userId} className="ranks-ladder-row">
+                      <span className="ranks-ladder-position">#{index + 1}</span>
+                      <span className="ranks-ladder-name">{entry.playerName}</span>
+                      <span className="ranks-ladder-value">{entry.peakRankLabel}</span>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </article>
           </div>
-        </section>
-      ) : null}
+        ) : null}
+      </section>
     </section>
   )
 }

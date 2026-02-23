@@ -1,10 +1,14 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import { CloudProfileAutoSync } from './app/cloud/CloudProfileAutoSync'
 import { useGame } from './app/useGame'
 import { AchievementsPage } from './ui/pages/AchievementsPage'
+import { AccountPage } from './ui/pages/AccountPage'
 import { CollectionPage } from './ui/pages/CollectionPage'
+import { DecksPage } from './ui/pages/DecksPage'
 import { HomePage } from './ui/pages/HomePage'
 import { MatchPage } from './ui/pages/MatchPage'
+import { MissionsPage } from './ui/pages/MissionsPage'
 import { PacksPage } from './ui/pages/PacksPage'
 import { ResultsPage } from './ui/pages/ResultsPage'
 import { RanksPage } from './ui/pages/RanksPage'
@@ -60,6 +64,8 @@ function App() {
 
   return (
     <div className="app-shell">
+      <CloudProfileAutoSync />
+
       <button
         type="button"
         className="bg-toggle"
@@ -83,6 +89,9 @@ function App() {
           <NavLink to={ctaTarget} className="topbar-cta" data-testid="topbar-cta-link">
             {ctaLabel}
           </NavLink>
+          <NavLink to="/decks" data-testid="topbar-link-decks">
+            Decks
+          </NavLink>
           <NavLink to="/collection" data-testid="topbar-link-collection">
             Collection
           </NavLink>
@@ -91,6 +100,9 @@ function App() {
           </NavLink>
           <NavLink to="/packs" data-testid="topbar-link-packs">
             Packs
+          </NavLink>
+          <NavLink to="/account" data-testid="topbar-link-account">
+            Account
           </NavLink>
           <button
             type="button"
@@ -134,11 +146,17 @@ function App() {
               <NavLink to="/achievements" data-testid="topbar-more-link-achievements" onClick={() => setIsMoreOpen(false)}>
                 Achievements
               </NavLink>
+              <NavLink to="/missions" data-testid="topbar-more-link-missions" onClick={() => setIsMoreOpen(false)}>
+                Missions
+              </NavLink>
               <NavLink to="/ranks" data-testid="topbar-more-link-ranks" onClick={() => setIsMoreOpen(false)}>
                 Ranks
               </NavLink>
               <NavLink to="/rules" data-testid="topbar-more-link-rules" onClick={() => setIsMoreOpen(false)}>
                 Rules
+              </NavLink>
+              <NavLink to="/account" data-testid="topbar-more-link-account" onClick={() => setIsMoreOpen(false)}>
+                Account
               </NavLink>
             </nav>
           </section>
@@ -149,6 +167,7 @@ function App() {
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/rules" element={<RulesPage />} />
+          <Route path="/decks" element={<DecksPage />} />
           <Route path="/setup" element={<SetupPage />} />
           <Route path="/shop" element={<ShopPage />} />
           <Route path="/packs" element={<PacksPage />} />
@@ -156,7 +175,9 @@ function App() {
           <Route path="/results" element={<ResultsPage />} />
           <Route path="/collection" element={<CollectionPage />} />
           <Route path="/achievements" element={<AchievementsPage />} />
+          <Route path="/missions" element={<MissionsPage />} />
           <Route path="/ranks" element={<RanksPage />} />
+          <Route path="/account" element={<AccountPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
@@ -164,6 +185,9 @@ function App() {
       <nav className="mobile-main-nav" data-testid="mobile-main-nav" aria-label="Primary mobile navigation">
         <NavLink to={ctaTarget} className="mobile-main-nav__item">
           {ctaLabel}
+        </NavLink>
+        <NavLink to="/decks" className="mobile-main-nav__item">
+          Decks
         </NavLink>
         <NavLink to="/collection" className="mobile-main-nav__item">
           Collection
@@ -173,6 +197,9 @@ function App() {
         </NavLink>
         <NavLink to="/packs" className="mobile-main-nav__item">
           Packs
+        </NavLink>
+        <NavLink to="/account" className="mobile-main-nav__item">
+          Account
         </NavLink>
         <button
           type="button"

@@ -1,5 +1,6 @@
 import { createSeededRng } from '../random/seededRng'
 import type { OpponentLevel } from '../match/opponents'
+import { getModeSpec } from '../match/modeSpec'
 import type { AchievementId, CardId, MatchResult, PlayerProfile } from '../types'
 import { evaluateAchievements } from './achievements'
 
@@ -7,6 +8,9 @@ export interface RewardBreakdown {
   goldAwarded: number
   bonusGoldFromDuplicate: number
   bonusGoldFromDifficulty: number
+  bonusGoldFromComboBounty: number
+  bonusGoldFromCleanVictory: number
+  bonusGoldFromSecondarySynergy: number
   bonusGoldFromCriticalVictory: number
   bonusGoldFromAutoDeck: number
   criticalVictory: boolean
@@ -40,11 +44,17 @@ export function applyMatchRewards(
     deckSlots: profile.deckSlots.map((slot) => ({
       ...slot,
       cards: [...slot.cards],
+      cards4x4: [...slot.cards4x4],
       rules: { ...slot.rules },
     })) as PlayerProfile['deckSlots'],
     selectedDeckSlotId: profile.selectedDeckSlotId,
     stats: { ...profile.stats },
     achievements: [...profile.achievements],
+    missions: {
+      m1_type_specialist: { ...profile.missions.m1_type_specialist },
+      m2_combo_practitioner: { ...profile.missions.m2_combo_practitioner },
+      m3_corner_tactician: { ...profile.missions.m3_corner_tactician },
+    },
     ranked: {
       ...profile.ranked,
       resultStreak: { ...profile.ranked.resultStreak },
@@ -64,6 +74,21 @@ export function applyMatchRewards(
   const baseGold = result.winner === 'player' ? 60 : result.winner === 'draw' ? 30 : 20
   let bonusGoldFromDuplicate = 0
   const bonusGoldFromDifficulty = result.winner === 'player' ? (opponentLevel - 1) * 4 : 0
+  const playerSamePlusTriggers = result.metrics?.samePlusTriggersByActor.player ?? 0
+  const playerPrimaryTypeId = result.typeSynergy?.player.primaryTypeId ?? null
+  const bonusGoldFromComboBounty =
+    playerPrimaryTypeId === 'nescient' ? Math.min(Math.max(0, playerSamePlusTriggers), 4) * 3 : 0
+  const bonusGoldFromCleanVictory =
+    playerPrimaryTypeId !== null &&
+    playerPrimaryTypeId !== 'sans_coeur' &&
+    playerPrimaryTypeId !== 'simili' &&
+    playerPrimaryTypeId !== 'nescient' &&
+    result.winner === 'player' &&
+    result.playerCount - result.cpuCount >= 2
+      ? 10
+      : 0
+  const bonusGoldFromSecondarySynergy =
+    result.winner === 'player' && result.typeSynergy?.player.secondaryTypeId ? 5 : 0
   const safeMultiplier = Number.isFinite(rewardMultiplier) && rewardMultiplier > 0 ? rewardMultiplier : 1
   let droppedCardId: CardId | null = null
   let duplicateConverted = false
@@ -81,8 +106,16 @@ export function applyMatchRewards(
     updatedProfile.cardCopiesById[capturedCardId] = (updatedProfile.cardCopiesById[capturedCardId] ?? 0) + 1
   }
 
-  const criticalVictory = result.winner === 'player' && result.playerCount === 9 && result.cpuCount === 0
-  const baseSubtotal = baseGold + bonusGoldFromDuplicate + bonusGoldFromDifficulty
+  const criticalVictoryCellCount = getModeSpec(result.mode).cellCount
+  const criticalVictory =
+    result.winner === 'player' && result.playerCount === criticalVictoryCellCount && result.cpuCount === 0
+  const baseSubtotal =
+    baseGold +
+    bonusGoldFromDuplicate +
+    bonusGoldFromDifficulty +
+    bonusGoldFromComboBounty +
+    bonusGoldFromCleanVictory +
+    bonusGoldFromSecondarySynergy
   const bonusGoldFromCriticalVictory = criticalVictory ? Math.floor(baseSubtotal * 0.25) : 0
   const rawTotalGold = baseSubtotal + bonusGoldFromCriticalVictory
   const multipliedTotalGold = Math.floor(rawTotalGold * safeMultiplier)
@@ -100,6 +133,9 @@ export function applyMatchRewards(
       goldAwarded: baseGold,
       bonusGoldFromDuplicate,
       bonusGoldFromDifficulty,
+      bonusGoldFromComboBounty,
+      bonusGoldFromCleanVictory,
+      bonusGoldFromSecondarySynergy,
       bonusGoldFromCriticalVictory,
       bonusGoldFromAutoDeck,
       criticalVictory,

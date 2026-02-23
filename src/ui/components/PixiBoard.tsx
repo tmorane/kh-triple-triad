@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { getCard } from '../../domain/cards/cardPool'
 import type { Actor, CardId } from '../../domain/types'
 
@@ -10,6 +10,7 @@ export interface BoardSlot {
 interface PixiBoardProps {
   board: Array<BoardSlot | null>
   highlightedCells: number[]
+  focusedCell?: number | null
   interactive: boolean
   onCellClick(cell: number): void
   turnActor: Actor
@@ -19,10 +20,18 @@ interface PixiBoardProps {
 const boardSize = 468
 const boardInset = 30
 const gap = 10
-const cellSize = (boardSize - boardInset * 2 - gap * 2) / 3
+
+function getBoardDimension(cellCount: number): number {
+  const dimension = Math.round(Math.sqrt(cellCount))
+  return dimension > 0 ? dimension : 1
+}
 
 function cloneBoardSnapshot(board: Array<BoardSlot | null>): Array<BoardSlot | null> {
   return board.map((slot) => (slot ? { ...slot } : null))
+}
+
+function getBoardSignature(board: Array<BoardSlot | null>): string {
+  return board.map((slot) => (slot ? `${slot.owner}:${slot.cardId}` : '_')).join('|')
 }
 
 function getCardSigil(name: string): string {
@@ -35,12 +44,21 @@ function getCardSigil(name: string): string {
     .toUpperCase()
 }
 
-export function PixiBoard({ board, highlightedCells, interactive, onCellClick, turnActor, status }: PixiBoardProps) {
+export function PixiBoard({
+  board,
+  highlightedCells,
+  focusedCell = null,
+  interactive,
+  onCellClick,
+  turnActor,
+  status,
+}: PixiBoardProps) {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const previousBoardRef = useRef<Array<BoardSlot | null> | null>(null)
   const appRef = useRef<unknown | null>(null)
   const tickerCleanupRef = useRef<(() => void) | null>(null)
   const onCellClickRef = useRef(onCellClick)
+  const lastAnimatedBoardSignatureRef = useRef<string | null>(null)
   const [appReadyVersion, setAppReadyVersion] = useState(0)
   const shouldUseFallback = import.meta.env.MODE === 'test'
 
@@ -50,6 +68,11 @@ export function PixiBoard({ board, highlightedCells, interactive, onCellClick, t
     }
     return window.matchMedia('(prefers-reduced-motion: reduce)').matches
   }, [])
+  const boardDimension = useMemo(() => getBoardDimension(board.length), [board.length])
+  const cellSize = useMemo(
+    () => (boardSize - boardInset * 2 - gap * Math.max(0, boardDimension - 1)) / boardDimension,
+    [boardDimension],
+  )
 
   const highlightedSet = useMemo(() => new Set(highlightedCells), [highlightedCells])
   const recentPlacedSet = useMemo(() => {
@@ -196,10 +219,12 @@ export function PixiBoard({ board, highlightedCells, interactive, onCellClick, t
       const pulseOverlays: PixiGraphics[] = []
       const placementFlashes: Array<{ sprite: PixiGraphics; elapsedMs: number }> = []
       const placementBursts: Array<{ container: PixiContainer; elapsedMs: number }> = []
+      const boardSignature = getBoardSignature(board)
+      const shouldAnimateRecentPlacements = lastAnimatedBoardSignatureRef.current !== boardSignature
 
       board.forEach((slot, index) => {
-        const row = Math.floor(index / 3)
-        const col = index % 3
+        const row = Math.floor(index / boardDimension)
+        const col = index % boardDimension
         const x = boardInset + col * (cellSize + gap)
         const y = boardInset + row * (cellSize + gap)
 
@@ -211,6 +236,7 @@ export function PixiBoard({ board, highlightedCells, interactive, onCellClick, t
         cell.stroke({ width: 2, color: 0xf4d79c, alpha: 0.86 })
 
         const isClickable = interactive && slot === null
+        const isKeyboardTarget = focusedCell === index && slot === null
         cell.eventMode = isClickable ? 'static' : 'none'
         if (isClickable) {
           cell.cursor = 'pointer'
@@ -218,6 +244,14 @@ export function PixiBoard({ board, highlightedCells, interactive, onCellClick, t
         }
 
         app.stage.addChild(cell)
+
+        if (isKeyboardTarget) {
+          const keyboardTargetGlow = new Graphics()
+          keyboardTargetGlow.roundRect(x + 2, y + 2, cellSize - 4, cellSize - 4, 10)
+          keyboardTargetGlow.fill({ color: 0xfff0c6, alpha: 0.14 })
+          keyboardTargetGlow.stroke({ width: 3, color: 0xffe4a3, alpha: 0.95 })
+          app.stage.addChild(keyboardTargetGlow)
+        }
 
         if (highlightedSet.has(index) && slot === null) {
           const overlay = new Graphics()
@@ -228,7 +262,7 @@ export function PixiBoard({ board, highlightedCells, interactive, onCellClick, t
           pulseOverlays.push(overlay)
         }
 
-        if (recentPlacedSet.has(index)) {
+        if (shouldAnimateRecentPlacements && recentPlacedSet.has(index)) {
           const flash = new Graphics()
           flash.roundRect(x + 1, y + 1, cellSize - 2, cellSize - 2, 11)
           flash.fill({ color: 0xffe4ad, alpha: prefersReducedMotion ? 0.26 : 0.6 })
@@ -304,7 +338,7 @@ export function PixiBoard({ board, highlightedCells, interactive, onCellClick, t
             cardContainer.addChild(chipText)
           })
 
-          if (recentPlacedSet.has(index) && !prefersReducedMotion) {
+          if (shouldAnimateRecentPlacements && recentPlacedSet.has(index) && !prefersReducedMotion) {
             cardContainer.scale.set(0.72)
             cardContainer.alpha = 0.36
             placementBursts.push({ container: cardContainer, elapsedMs: 0 })
@@ -380,6 +414,7 @@ export function PixiBoard({ board, highlightedCells, interactive, onCellClick, t
           app.ticker.remove(animate)
         }
       }
+      lastAnimatedBoardSignatureRef.current = boardSignature
     }
 
     void render()
@@ -387,7 +422,20 @@ export function PixiBoard({ board, highlightedCells, interactive, onCellClick, t
     return () => {
       cancelled = true
     }
-  }, [appReadyVersion, board, highlightedSet, interactive, prefersReducedMotion, recentPlacedSet, shouldUseFallback, status, turnActor])
+  }, [
+    appReadyVersion,
+    board,
+    boardDimension,
+    cellSize,
+    focusedCell,
+    highlightedSet,
+    interactive,
+    prefersReducedMotion,
+    recentPlacedSet,
+    shouldUseFallback,
+    status,
+    turnActor,
+  ])
 
   if (shouldUseFallback) {
     const boardClasses = [
@@ -399,13 +447,19 @@ export function PixiBoard({ board, highlightedCells, interactive, onCellClick, t
       .join(' ')
 
     return (
-      <div className={boardClasses} role="grid" aria-label="Match board">
+      <div
+        className={boardClasses}
+        role="grid"
+        aria-label="Match board"
+        style={{ '--fallback-grid-cols': `${boardDimension}` } as CSSProperties}
+      >
         {board.map((slot, index) => {
           const card = slot ? getCard(slot.cardId) : null
           const isClickable = interactive && slot === null
           const classes = [
             'fallback-cell',
             slot?.owner ?? 'empty',
+            focusedCell === index && slot === null ? 'is-keyboard-target' : '',
             highlightedSet.has(index) ? 'highlighted is-highlighted' : '',
             recentPlacedSet.has(index) ? 'is-recent-placement' : '',
           ]

@@ -1,3 +1,4 @@
+import { cardPool } from '../cards/cardPool'
 import type { AchievementId, AchievementUnlock, PlayerProfile } from '../types'
 
 export interface AchievementDefinition {
@@ -6,6 +7,8 @@ export interface AchievementDefinition {
   condition: string
   check(profile: PlayerProfile): boolean
 }
+
+const fullCollectionSize = cardPool.length
 
 function playedAtLeast(matches: number) {
   return (profile: PlayerProfile) => profile.stats.played >= matches
@@ -59,7 +62,12 @@ export const achievementCatalog: AchievementDefinition[] = [
   { id: 'owned_105', title: 'Collection 105', condition: 'Own 105 cards', check: ownsAtLeastCards(105) },
   { id: 'owned_120', title: 'Collection 120', condition: 'Own 120 cards', check: ownsAtLeastCards(120) },
   { id: 'owned_135', title: 'Collection 135', condition: 'Own 135 cards', check: ownsAtLeastCards(135) },
-  { id: 'owned_150', title: 'Collection 150', condition: 'Own all 150 cards', check: ownsAtLeastCards(150) },
+  {
+    id: 'owned_150',
+    title: `Collection ${fullCollectionSize}`,
+    condition: `Own all ${fullCollectionSize} cards`,
+    check: ownsAtLeastCards(fullCollectionSize),
+  },
   { id: 'gold_150', title: 'Purse Up', condition: 'Reach 150 gold', check: hasGoldAtLeast(150) },
   { id: 'gold_200', title: 'Coin Keeper', condition: 'Reach 200 gold', check: hasGoldAtLeast(200) },
   { id: 'gold_300', title: 'Treasure Scout', condition: 'Reach 300 gold', check: hasGoldAtLeast(300) },

@@ -1,20 +1,41 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useGame } from '../../app/useGame'
-import { getPackDropRates, getPackPrice, type OpenedPackResult, type ShopPackId } from '../../domain/progression/shop'
+import {
+  getLegendaryFocusDropChancePercent,
+  getPackDropRates,
+  getPackPrice,
+  getSpecialPackPrice,
+  type OpenedPackResult,
+  type OpenedSpecialPackResult,
+  type ShopPackId,
+  type SpecialPackId,
+  type SpecialPackPurchaseRequest,
+} from '../../domain/progression/shop'
 import { cardPool, getCard } from '../../domain/cards/cardPool'
-import type { Rarity } from '../../domain/types'
+import type { CardCategoryId, Rarity } from '../../domain/types'
 import { TriadCard } from '../components/TriadCard'
 
 const packOrder: ShopPackId[] = ['common', 'uncommon', 'rare', 'legendary']
+const specialPackOrder: SpecialPackId[] = ['sans_coeur_focus', 'simili_focus', 'legendary_focus']
 const dropRarityOrder: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary']
+const SHOP_MODAL_PAGE_SIZE = 5
+const SHOP_MAX_STANDARD_PACK_QUANTITY = 20
+const typeFocusBaseRates: Record<Rarity, number> = { common: 70, uncommon: 22, rare: 5, epic: 2, legendary: 1 }
+const typeFocusCategoryByPack: Record<'sans_coeur_focus' | 'simili_focus', CardCategoryId> = {
+  sans_coeur_focus: 'sans_coeur',
+  simili_focus: 'simili',
+}
+
+type AnyShopPackId = ShopPackId | SpecialPackId
+type OpenedRevealResult = OpenedPackResult | OpenedSpecialPackResult
 
 interface PackVisual {
   tagline: string
   artSrc: string
 }
 
-const packVisuals: Record<ShopPackId, PackVisual> = {
+const packVisuals: Record<AnyShopPackId, PackVisual> = {
   common: {
     tagline: 'Reliable foundations for every deck.',
     artSrc: '/packs/common-pack.svg',
@@ -35,23 +56,77 @@ const packVisuals: Record<ShopPackId, PackVisual> = {
     tagline: 'Endgame royalty with unmatched pressure.',
     artSrc: '/packs/legendary-pack.svg',
   },
+  sans_coeur_focus: {
+    tagline: 'Only Sans-cœur cards with remapped rarity odds.',
+    artSrc: '/packs/sans-coeur-focus-pack.svg',
+  },
+  simili_focus: {
+    tagline: 'Only Simili cards with remapped rarity odds.',
+    artSrc: '/packs/simili-focus-pack.svg',
+  },
+  legendary_focus: {
+    tagline: 'Target a specific legendary with pity odds that ramp after misses.',
+    artSrc: '/packs/legendary-focus-pack.svg',
+  },
 }
 
-function formatPackLabel(packId: ShopPackId): string {
-  return `${packId.charAt(0).toUpperCase()}${packId.slice(1)} Pack`
+const packLabels: Record<AnyShopPackId, string> = {
+  common: 'Common Pack',
+  uncommon: 'Uncommon Pack',
+  rare: 'Rare Pack',
+  epic: 'Epic Pack',
+  legendary: 'Legendary Pack',
+  sans_coeur_focus: 'Sans-cœur Focus Pack',
+  simili_focus: 'Simili Focus Pack',
+  legendary_focus: 'Legendary Focus Pack',
+}
+
+function formatPackLabel(packId: AnyShopPackId): string {
+  return packLabels[packId]
 }
 
 function formatRarityLabel(rarity: Rarity): string {
   return `${rarity.charAt(0).toUpperCase()}${rarity.slice(1)}`
 }
 
+function isOpenedInventoryPack(result: OpenedRevealResult): result is OpenedPackResult {
+  return 'remainingPackCount' in result
+}
+
+function isTypeFocusPack(packId: SpecialPackId): packId is 'sans_coeur_focus' | 'simili_focus' {
+  return packId === 'sans_coeur_focus' || packId === 'simili_focus'
+}
+
+function sanitizePackQuantity(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 1
+  }
+  return Math.max(1, Math.min(SHOP_MAX_STANDARD_PACK_QUANTITY, Math.floor(value)))
+}
+
 export function ShopPage() {
-  const { profile, purchaseShopPack, openOwnedPack, addTestGold } = useGame()
+  const { profile, purchaseShopPack, purchaseShopPacks, openOwnedPack, buySpecialPack, addTestGold } = useGame()
   const [purchaseToast, setPurchaseToast] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [openPackId, setOpenPackId] = useState<ShopPackId | null>(null)
-  const [openedPackResult, setOpenedPackResult] = useState<OpenedPackResult | null>(null)
+  const [openPackRarity, setOpenPackRarity] = useState<Rarity | null>(null)
+  const [openPackPage, setOpenPackPage] = useState(0)
+  const [openedPackResult, setOpenedPackResult] = useState<OpenedRevealResult | null>(null)
+  const [legendaryFocusTargetCardId, setLegendaryFocusTargetCardId] = useState('')
+  const [buyQuantityByPack, setBuyQuantityByPack] = useState<Record<ShopPackId, number>>({
+    common: 1,
+    uncommon: 1,
+    rare: 1,
+    epic: 1,
+    legendary: 1,
+  })
   const ownedCardIdsSet = useMemo(() => new Set(profile.ownedCardIds), [profile.ownedCardIds])
+  const legendaryFocusChancePercent = getLegendaryFocusDropChancePercent(profile)
+  const legendaryCards = useMemo(() => cardPool.filter((card) => card.rarity === 'legendary'), [])
+  const defaultLegendaryFocusTargetCardId = useMemo(
+    () => legendaryCards.find((card) => !ownedCardIdsSet.has(card.id))?.id ?? legendaryCards[0]?.id ?? '',
+    [legendaryCards, ownedCardIdsSet],
+  )
   const modalSections = useMemo(() => {
     if (!openPackId) {
       return []
@@ -72,6 +147,25 @@ export function ShopPage() {
         }
       })
   }, [openPackId, ownedCardIdsSet])
+  const activeModalSection = useMemo(() => {
+    if (modalSections.length === 0) {
+      return null
+    }
+
+    if (!openPackRarity) {
+      return modalSections[0]
+    }
+
+    return modalSections.find((section) => section.rarity === openPackRarity) ?? modalSections[0]
+  }, [modalSections, openPackRarity])
+  const openPackPageCount = activeModalSection ? Math.max(1, Math.ceil(activeModalSection.cards.length / SHOP_MODAL_PAGE_SIZE)) : 1
+  const openPackPageIndex = Math.min(openPackPage, openPackPageCount - 1)
+  const activeModalCards = activeModalSection
+    ? activeModalSection.cards.slice(
+        openPackPageIndex * SHOP_MODAL_PAGE_SIZE,
+        (openPackPageIndex + 1) * SHOP_MODAL_PAGE_SIZE,
+      )
+    : []
   const openedRevealEntries = useMemo(
     () =>
       openedPackResult
@@ -84,6 +178,35 @@ export function ShopPage() {
   )
   const openPackVisual = openPackId ? packVisuals[openPackId] : null
   const openedPackVisual = openedPackResult ? packVisuals[openedPackResult.packId] : null
+  const openedPackSubtitle = useMemo(() => {
+    if (!openedPackResult) {
+      return ''
+    }
+
+    if (isOpenedInventoryPack(openedPackResult)) {
+      return `Remaining: x${openedPackResult.remainingPackCount}`
+    }
+
+    if (openedPackResult.packId === 'legendary_focus' && openedPackResult.targetLegendaryCardId) {
+      return `Target: ${getCard(openedPackResult.targetLegendaryCardId).name}`
+    }
+
+    return 'Opened instantly'
+  }, [openedPackResult])
+
+  useEffect(() => {
+    if (legendaryCards.length === 0) {
+      if (legendaryFocusTargetCardId !== '') {
+        setLegendaryFocusTargetCardId('')
+      }
+      return
+    }
+
+    const isCurrentTargetValid = legendaryCards.some((card) => card.id === legendaryFocusTargetCardId)
+    if (!isCurrentTargetValid) {
+      setLegendaryFocusTargetCardId(defaultLegendaryFocusTargetCardId)
+    }
+  }, [defaultLegendaryFocusTargetCardId, legendaryCards, legendaryFocusTargetCardId])
 
   useEffect(() => {
     if (!openPackId && !openedPackResult) {
@@ -93,6 +216,8 @@ export function ShopPage() {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setOpenPackId(null)
+        setOpenPackRarity(null)
+        setOpenPackPage(0)
         setOpenedPackResult(null)
       }
     }
@@ -101,13 +226,48 @@ export function ShopPage() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [openPackId, openedPackResult])
 
-  const handleBuyPack = (packId: ShopPackId) => {
+  const handleBuyPack = (packId: ShopPackId, quantity: number) => {
+    const normalizedQuantity = sanitizePackQuantity(quantity)
     try {
-      const receipt = purchaseShopPack(packId)
-      setPurchaseToast(`${formatPackLabel(receipt.packId)} added to inventory (+1).`)
+      const receipt =
+        normalizedQuantity > 1
+          ? purchaseShopPacks?.(packId, normalizedQuantity)
+          : {
+              ...purchaseShopPack(packId),
+              quantity: 1,
+            }
+
+      if (!receipt) {
+        throw new Error('Bulk purchase is unavailable in this context.')
+      }
+
+      setPurchaseToast(`${formatPackLabel(receipt.packId)} added to inventory (+${receipt.quantity}).`)
       setError(null)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unable to complete purchase.'
+      setError(message)
+    }
+  }
+
+  const handleBuySpecialPack = (packId: SpecialPackId) => {
+    try {
+      const request: SpecialPackPurchaseRequest = { packId }
+      if (packId === 'legendary_focus') {
+        if (!legendaryFocusTargetCardId) {
+          throw new Error('Please select a legendary focus target.')
+        }
+        request.targetLegendaryCardId = legendaryFocusTargetCardId
+      }
+
+      const result = buySpecialPack(request)
+      setOpenedPackResult(result)
+      setOpenPackId(null)
+      setOpenPackRarity(null)
+      setOpenPackPage(0)
+      setPurchaseToast(null)
+      setError(null)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unable to complete special pack purchase.'
       setError(message)
     }
   }
@@ -117,6 +277,8 @@ export function ShopPage() {
       const result = openOwnedPack(packId)
       setOpenedPackResult(result)
       setOpenPackId(null)
+      setOpenPackRarity(null)
+      setOpenPackPage(0)
       setPurchaseToast(null)
       setError(null)
     } catch (err) {
@@ -126,7 +288,7 @@ export function ShopPage() {
   }
 
   const handleOpenAnotherOwnedPack = () => {
-    if (!openedPackResult || openedPackResult.remainingPackCount <= 0) {
+    if (!openedPackResult || !isOpenedInventoryPack(openedPackResult) || openedPackResult.remainingPackCount <= 0) {
       return
     }
     handleOpenOwnedPack(openedPackResult.packId)
@@ -173,12 +335,14 @@ export function ShopPage() {
         {packOrder.map((packId) => {
           const price = getPackPrice(packId)
           const dropRates = getPackDropRates(packId)
-          const affordable = profile.gold >= price
           const cardsInRarity = cardPool.filter((card) => card.rarity === packId)
           const ownedInRarity = cardsInRarity.filter((card) => profile.ownedCardIds.includes(card.id)).length
           const ownedPackCount = profile.packInventoryByRarity[packId]
+          const buyQuantity = sanitizePackQuantity(buyQuantityByPack[packId] ?? 1)
+          const totalPrice = price * buyQuantity
           const isOpen = openPackId === packId
           const packVisual = packVisuals[packId]
+          const affordable = profile.gold >= totalPrice
 
           return (
             <article className={`shop-pack-card shop-pack-card--${packId}`} key={packId} data-testid={`shop-pack-${packId}`}>
@@ -208,20 +372,58 @@ export function ShopPage() {
                   </span>
                 ))}
               </div>
+              <div className="shop-pack-quantity" data-testid={`buy-pack-quantity-${packId}`}>
+                <span className="shop-pack-quantity__label">Qty</span>
+                <div className="shop-pack-quantity__controls">
+                  <button
+                    type="button"
+                    className="shop-pack-quantity__step"
+                    onClick={() =>
+                      setBuyQuantityByPack((current) => ({
+                        ...current,
+                        [packId]: sanitizePackQuantity((current[packId] ?? 1) - 1),
+                      }))
+                    }
+                    disabled={buyQuantity <= 1}
+                    aria-label={`Decrease ${formatPackLabel(packId)} purchase quantity`}
+                    data-testid={`buy-pack-quantity-decrement-${packId}`}
+                  >
+                    -
+                  </button>
+                  <span className="shop-pack-quantity__value" data-testid={`buy-pack-quantity-value-${packId}`}>
+                    {buyQuantity}
+                  </span>
+                  <button
+                    type="button"
+                    className="shop-pack-quantity__step"
+                    onClick={() =>
+                      setBuyQuantityByPack((current) => ({
+                        ...current,
+                        [packId]: sanitizePackQuantity((current[packId] ?? 1) + 1),
+                      }))
+                    }
+                    disabled={buyQuantity >= SHOP_MAX_STANDARD_PACK_QUANTITY}
+                    aria-label={`Increase ${formatPackLabel(packId)} purchase quantity`}
+                    data-testid={`buy-pack-quantity-increment-${packId}`}
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
               <button
                 type="button"
                 className={`shop-price-buy shop-price-buy--${packId}`}
                 disabled={!affordable}
-                onClick={() => handleBuyPack(packId)}
+                onClick={() => handleBuyPack(packId, buyQuantity)}
                 data-testid={`buy-pack-${packId}`}
-                aria-label={`Buy ${formatPackLabel(packId)} for ${price} gold`}
+                aria-label={`Buy ${formatPackLabel(packId)} x${buyQuantity} for ${totalPrice} gold`}
               >
                 <span className="shop-price-buy__label">Price</span>
                 <span className="shop-price-buy__value">
-                  {price}
+                  {totalPrice}
                   <span className="shop-price-buy__unit">G</span>
                 </span>
-                <span className="shop-price-buy__hint">{affordable ? 'Tap to buy this pack' : 'Not enough gold'}</span>
+                <span className="shop-price-buy__hint">{affordable ? `Buy x${buyQuantity}` : 'Not enough gold'}</span>
               </button>
               <button
                 type="button"
@@ -235,7 +437,19 @@ export function ShopPage() {
               <button
                 type="button"
                 className={`button shop-view-button shop-view-button--${packId}`}
-                onClick={() => setOpenPackId(isOpen ? null : packId)}
+                onClick={() => {
+                  if (isOpen) {
+                    setOpenPackId(null)
+                    setOpenPackRarity(null)
+                    setOpenPackPage(0)
+                    return
+                  }
+
+                  const firstRarity = dropRarityOrder.find((rarity) => dropRates[rarity] > 0) ?? null
+                  setOpenPackId(packId)
+                  setOpenPackRarity(firstRarity)
+                  setOpenPackPage(0)
+                }}
                 data-testid={`toggle-pack-cards-${packId}`}
               >
                 {isOpen ? 'Close preview' : 'View cards'}
@@ -245,8 +459,144 @@ export function ShopPage() {
         })}
       </div>
 
+      <section className="shop-special-section" aria-labelledby="shop-special-title">
+        <div className="shop-special-head">
+          <h2 id="shop-special-title">Special Packs</h2>
+          <p className="small">Instant opening with 3 pulls focused by type or legendary target.</p>
+        </div>
+        <div className="shop-special-grid">
+          {specialPackOrder.map((packId) => {
+            const price = getSpecialPackPrice(packId)
+            const affordable = profile.gold >= price
+            const isLegendaryFocus = packId === 'legendary_focus'
+            const canBuy = affordable && (!isLegendaryFocus || legendaryFocusTargetCardId.length > 0)
+            const visual = packVisuals[packId]
+            const selectedLegendaryCard = legendaryCards.find((card) => card.id === legendaryFocusTargetCardId) ?? null
+            const typeFocusPool = isTypeFocusPack(packId)
+              ? cardPool.filter((card) => card.categoryId === typeFocusCategoryByPack[packId])
+              : []
+            const typeFocusOwnedCount = typeFocusPool.filter((card) => ownedCardIdsSet.has(card.id)).length
+            const typeFocusRarities = dropRarityOrder.filter((rarity) => typeFocusPool.some((card) => card.rarity === rarity))
+
+            return (
+              <article
+                key={packId}
+                className={`shop-special-pack-card shop-special-pack-card--${packId}`}
+                data-testid={`shop-special-pack-${packId}`}
+              >
+                <div className="shop-special-pack-head">
+                  <img
+                    className="shop-special-pack-art"
+                    src={visual.artSrc}
+                    alt={`${formatPackLabel(packId)} artwork`}
+                    loading="lazy"
+                    decoding="async"
+                  />
+                  <div>
+                    <h3>{formatPackLabel(packId)}</h3>
+                    <p className="small">{visual.tagline}</p>
+                  </div>
+                </div>
+
+                {isLegendaryFocus ? (
+                  <div className="shop-special-pack-target-wrap">
+                    <div className="shop-special-pack-intel shop-special-pack-intel--legendary">
+                      <span className="shop-special-pack-intel-tag">1 Focus Roll + 2 Fillers</span>
+                      <span className="shop-special-pack-intel-sub">1% base, +1% per miss, reset on hit.</span>
+                    </div>
+                    <p className="shop-special-pack-target-label">Target Legendary</p>
+                    <div
+                      className="shop-special-pack-target-picker"
+                      data-testid="shop-special-pack-legendary-target"
+                      role="listbox"
+                      aria-label="Legendary focus targets"
+                    >
+                      {legendaryCards.map((card) => (
+                        <article
+                          key={card.id}
+                          className={`shop-special-pack-target-option ${
+                            legendaryFocusTargetCardId === card.id ? 'is-selected' : ''
+                          }`}
+                          role="option"
+                          aria-selected={legendaryFocusTargetCardId === card.id}
+                        >
+                          <TriadCard
+                            card={card}
+                            context="collection-list"
+                            owned
+                            copies={profile.cardCopiesById[card.id] ?? 0}
+                            interactive
+                            selected={legendaryFocusTargetCardId === card.id}
+                            onClick={() => setLegendaryFocusTargetCardId(card.id)}
+                            className="shop-special-pack-target-card"
+                            testId={`shop-special-pack-legendary-option-${card.id}`}
+                          />
+                          <span className="shop-special-pack-target-option-name">{card.name}</span>
+                          <span
+                            className={`shop-special-pack-target-option-state ${
+                              ownedCardIdsSet.has(card.id) ? 'is-owned' : 'is-missing'
+                            }`}
+                          >
+                            {ownedCardIdsSet.has(card.id) ? 'Owned' : 'Missing'}
+                          </span>
+                        </article>
+                      ))}
+                    </div>
+                    <p className="small shop-special-pack-target-note">
+                      Focus slot: {selectedLegendaryCard ? selectedLegendaryCard.name : 'No target selected'} | Current chance:{' '}
+                      {legendaryFocusChancePercent}%
+                    </p>
+                  </div>
+                ) : (
+                  <div className="shop-special-pack-intel">
+                    <span className="shop-special-pack-intel-tag">100% Type Focus · 3 Pulls</span>
+                    <div className="shop-special-pack-intel-stats">
+                      <span>Pool: {typeFocusPool.length}</span>
+                      <span>
+                        Owned: {typeFocusOwnedCount}/{typeFocusPool.length}
+                      </span>
+                    </div>
+                    <div className="shop-special-pack-intel-rates">
+                      {typeFocusRarities.map((rarity) => (
+                        <span key={rarity} className={`shop-special-pack-intel-rate shop-special-pack-intel-rate--${rarity}`}>
+                          {formatRarityLabel(rarity)} {typeFocusBaseRates[rarity]}%
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  className="shop-price-buy shop-special-pack-buy"
+                  disabled={!canBuy}
+                  onClick={() => handleBuySpecialPack(packId)}
+                  data-testid={`buy-open-special-pack-${packId}`}
+                  aria-label={`Buy and open ${formatPackLabel(packId)} for ${price} gold`}
+                >
+                  <span className="shop-price-buy__label">Price</span>
+                  <span className="shop-price-buy__value">
+                    {price}
+                    <span className="shop-price-buy__unit">G</span>
+                  </span>
+                  <span className="shop-price-buy__hint">Buy &amp; Open</span>
+                </button>
+              </article>
+            )
+          })}
+        </div>
+      </section>
+
       {openPackId ? (
-        <div className="shop-pack-modal-backdrop" role="presentation" onClick={() => setOpenPackId(null)}>
+        <div
+          className="shop-pack-modal-backdrop"
+          role="presentation"
+          onClick={() => {
+            setOpenPackId(null)
+            setOpenPackRarity(null)
+            setOpenPackPage(0)
+          }}
+        >
           <section
             className={`shop-pack-modal shop-pack-modal--${openPackId}`}
             role="dialog"
@@ -273,30 +623,55 @@ export function ShopPage() {
               <button
                 type="button"
                 className="button"
-                onClick={() => setOpenPackId(null)}
+                onClick={() => {
+                  setOpenPackId(null)
+                  setOpenPackRarity(null)
+                  setOpenPackPage(0)
+                }}
                 data-testid="shop-pack-modal-close"
               >
                 Close
               </button>
             </div>
             <div className="shop-pack-modal-sections">
-              {modalSections.map((section) => (
+              <div className="shop-pack-modal-rarity-tabs" role="tablist" aria-label="Rarity pages">
+                {modalSections.map((section) => {
+                  const isActive = activeModalSection?.rarity === section.rarity
+                  return (
+                    <button
+                      key={section.rarity}
+                      type="button"
+                      className={`shop-pack-modal-rarity-tab ${isActive ? 'is-active' : ''}`}
+                      aria-pressed={isActive}
+                      data-testid={`shop-pack-modal-rarity-tab-${section.rarity}`}
+                      onClick={() => {
+                        setOpenPackRarity(section.rarity)
+                        setOpenPackPage(0)
+                      }}
+                    >
+                      <span>{formatRarityLabel(section.rarity)}</span>
+                      <span className="shop-pack-modal-rarity-tab-meta">{section.dropRate}%</span>
+                    </button>
+                  )
+                })}
+              </div>
+              {activeModalSection ? (
                 <section
                   className="shop-pack-modal-section"
-                  aria-labelledby={`shop-pack-modal-rarity-title-${openPackId}-${section.rarity}`}
-                  key={section.rarity}
+                  aria-labelledby={`shop-pack-modal-rarity-title-${openPackId}-${activeModalSection.rarity}`}
+                  key={activeModalSection.rarity}
                 >
                   <div className="shop-pack-modal-section-head">
-                    <h3 id={`shop-pack-modal-rarity-title-${openPackId}-${section.rarity}`}>
-                      {formatRarityLabel(section.rarity)}
+                    <h3 id={`shop-pack-modal-rarity-title-${openPackId}-${activeModalSection.rarity}`}>
+                      {formatRarityLabel(activeModalSection.rarity)}
                     </h3>
                     <p className="small">
-                      {section.ownedCount}/{section.cards.length} owned | {section.dropRate}%
+                      {activeModalSection.ownedCount}/{activeModalSection.cards.length} owned | {activeModalSection.dropRate}%
                     </p>
                   </div>
                   <div className="shop-pack-modal-grid">
-                    {section.cards.length > 0 ? (
-                      section.cards.map((card) => {
+                    {activeModalCards.length > 0 ? (
+                      activeModalCards.map((card) => {
                         const owned = ownedCardIdsSet.has(card.id)
                         return (
                           <TriadCard
@@ -313,8 +688,33 @@ export function ShopPage() {
                       <p className="small shop-pack-modal-empty">No cards available in this rarity.</p>
                     )}
                   </div>
+                  {activeModalSection.cards.length > SHOP_MODAL_PAGE_SIZE ? (
+                    <div className="shop-pack-modal-pagination">
+                      <button
+                        type="button"
+                        className="button shop-pack-modal-page-button"
+                        data-testid="shop-pack-modal-page-prev"
+                        disabled={openPackPageIndex <= 0}
+                        onClick={() => setOpenPackPage((page) => Math.max(0, page - 1))}
+                      >
+                        Previous
+                      </button>
+                      <p className="small" data-testid="shop-pack-modal-page-indicator">
+                        Page {openPackPageIndex + 1} / {openPackPageCount}
+                      </p>
+                      <button
+                        type="button"
+                        className="button shop-pack-modal-page-button"
+                        data-testid="shop-pack-modal-page-next"
+                        disabled={openPackPageIndex >= openPackPageCount - 1}
+                        onClick={() => setOpenPackPage((page) => Math.min(openPackPageCount - 1, page + 1))}
+                      >
+                        Next
+                      </button>
+                    </div>
+                  ) : null}
                 </section>
-              ))}
+              ) : null}
             </div>
           </section>
         </div>
@@ -335,11 +735,11 @@ export function ShopPage() {
                 <img className="packs-reveal-art" src={openedPackVisual?.artSrc} alt="" aria-hidden="true" />
                 <div>
                   <h2 id="shop-opened-reveal-title">{formatPackLabel(openedPackResult.packId)} Opened</h2>
-                  <p className="small">Remaining: x{openedPackResult.remainingPackCount}</p>
+                  <p className="small">{openedPackSubtitle}</p>
                 </div>
               </div>
               <div className="packs-reveal-actions">
-                {openedPackResult.remainingPackCount > 0 ? (
+                {isOpenedInventoryPack(openedPackResult) && openedPackResult.remainingPackCount > 0 ? (
                   <button
                     type="button"
                     className="button button-primary"

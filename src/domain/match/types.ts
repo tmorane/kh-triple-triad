@@ -1,4 +1,4 @@
-import type { Actor, CardId, MatchConfig, Move, RuleSet } from '../types'
+import type { Actor, CardId, MatchConfig, MatchMetrics, MatchTypeSynergyState, Move, RuleSet } from '../types'
 
 export interface BoardSlot {
   cardId: CardId
@@ -8,6 +8,8 @@ export interface BoardSlot {
 export interface MatchState {
   config: MatchConfig
   rules: RuleSet
+  typeSynergy: MatchTypeSynergyState
+  metrics: MatchMetrics
   turn: Actor
   board: Array<BoardSlot | null>
   hands: Record<Actor, CardId[]>

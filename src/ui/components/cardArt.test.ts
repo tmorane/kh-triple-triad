@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, expect, test } from 'vitest'
 import { getCardArtCandidates } from './cardArt'
 
@@ -18,5 +20,19 @@ describe('getCardArtCandidates', () => {
     const candidates = getCardArtCandidates('Surveillant')
 
     expect(candidates).toContain('/splashart/Robot%20de%20Surveillance.png')
+  })
+
+  test('keeps candidate list compact to avoid excessive failed image requests', () => {
+    const candidates = getCardArtCandidates('Larve Rampante')
+
+    expect(candidates.length).toBeLessThanOrEqual(8)
+    expect(candidates).not.toContain('/splashart/larve-rampante.webp')
+    expect(candidates).not.toContain('/splashart/larve_rampante.webp')
+  })
+
+  test('has Larve Rampante splashart file in public assets', () => {
+    const absolutePath = resolve(process.cwd(), 'public/splashart/Larve Rampante.webp')
+
+    expect(existsSync(absolutePath)).toBe(true)
   })
 })

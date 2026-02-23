@@ -1,4 +1,4 @@
-import type { CardCategoryId, CardElementId } from '../types'
+import type { CardCategoryId, CardElementId, CardTypeId } from '../types'
 
 export const cardCategoryIds: CardCategoryId[] = [
   'porteur_de_keyblade',
@@ -45,6 +45,8 @@ export const cardElementIds: CardElementId[] = [
   'neutre',
 ]
 
+export const cardTypeIds: CardTypeId[] = ['sans_coeur', 'simili', 'nescient', 'humain', 'disney', 'boss']
+
 export const cardCategoryLabelById: Record<CardCategoryId, string> = {
   porteur_de_keyblade: 'Porteur de Keyblade',
   antagoniste: 'Antagoniste',
@@ -90,10 +92,50 @@ export const cardElementLabelById: Record<CardElementId, string> = {
   neutre: '—',
 }
 
+export const cardTypeLabelById: Record<CardTypeId, string> = {
+  sans_coeur: 'Sans-coeur',
+  simili: 'Simili',
+  nescient: 'Nescient',
+  humain: 'Humain',
+  disney: 'Disney',
+  boss: 'Boss',
+}
+
+export const cardTypeByCategoryId: Record<CardCategoryId, CardTypeId> = {
+  porteur_de_keyblade: 'humain',
+  antagoniste: 'humain',
+  entite: 'boss',
+  organisation_xiii: 'simili',
+  arme_legendaire: 'humain',
+  mechant_disney: 'disney',
+  sans_coeur: 'sans_coeur',
+  simili: 'simili',
+  allie: 'humain',
+  final_fantasy: 'humain',
+  invocation: 'disney',
+  allie_disney: 'disney',
+  nescient: 'nescient',
+  reve_mangeur: 'nescient',
+  pnj: 'humain',
+  allie_twewy: 'humain',
+  alliee: 'humain',
+  disney: 'disney',
+  heros: 'humain',
+  boss_kh: 'boss',
+}
+
 export function getCategoryLabel(categoryId: CardCategoryId): string {
   return cardCategoryLabelById[categoryId]
 }
 
 export function getElementLabel(elementId: CardElementId): string {
   return cardElementLabelById[elementId]
+}
+
+export function getTypeIdByCategory(categoryId: CardCategoryId): CardTypeId {
+  return cardTypeByCategoryId[categoryId]
+}
+
+export function getTypeLabel(typeId: CardTypeId): string {
+  return cardTypeLabelById[typeId]
 }

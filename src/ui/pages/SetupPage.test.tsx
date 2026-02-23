@@ -5,56 +5,32 @@ import { MemoryRouter } from 'react-router-dom'
 import { GameProvider } from '../../app/GameContext'
 import { cardPool } from '../../domain/cards/cardPool'
 import { createDefaultProfile, saveProfile } from '../../domain/progression/profile'
-import type { CardDef, PlayerProfile, Rarity } from '../../domain/types'
+import type { PlayerProfile } from '../../domain/types'
 import { SetupPage } from './SetupPage'
 
-const rarityFilterOrder: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary']
-
-function createCollectionRichProfile(): PlayerProfile {
+function createPlayProfile(): PlayerProfile {
   const profile = createDefaultProfile()
-  profile.ownedCardIds = cardPool.map((card) => card.id)
-  profile.cardCopiesById = Object.fromEntries(cardPool.map((card) => [card.id, 1])) as PlayerProfile['cardCopiesById']
-  profile.deckSlots[0].cards = cardPool.slice(0, 5).map((card) => card.id)
+  const uniqueOwnedCardIds = Array.from(new Set(cardPool.map((card) => card.id)))
+  profile.ownedCardIds = uniqueOwnedCardIds
+  profile.cardCopiesById = Object.fromEntries(uniqueOwnedCardIds.map((cardId) => [cardId, 1])) as PlayerProfile['cardCopiesById']
+
+  profile.deckSlots[0].mode = '4x4'
+  profile.deckSlots[0].cards = uniqueOwnedCardIds.slice(0, 5)
+  profile.deckSlots[0].cards4x4 = uniqueOwnedCardIds.slice(0, 8)
+
+  profile.deckSlots[1].mode = '3x3'
+  profile.deckSlots[1].cards = uniqueOwnedCardIds.slice(8, 13)
+  profile.deckSlots[1].cards4x4 = uniqueOwnedCardIds.slice(8, 16)
+
+  profile.deckSlots[2].mode = '4x4'
+  profile.deckSlots[2].cards = []
+  profile.deckSlots[2].cards4x4 = []
+
   profile.selectedDeckSlotId = 'slot-1'
   return profile
 }
 
-function readShownResultCount(): number {
-  const text = screen.getByTestId('setup-result-count').textContent ?? ''
-  const matched = text.match(/^(\d+)/)
-  return matched ? Number(matched[1]) : 0
-}
-
-function getVisibleSetupCards() {
-  return screen.queryAllByTestId(/^setup-card-/)
-}
-
-function sortByName(cards: CardDef[]): CardDef[] {
-  return [...cards].sort((left, right) => {
-    const byName = left.name.localeCompare(right.name, 'fr', { sensitivity: 'base' })
-    if (byName !== 0) {
-      return byName
-    }
-    return left.id.localeCompare(right.id)
-  })
-}
-
-function sortByPower(cards: CardDef[]): CardDef[] {
-  const totalPower = (card: CardDef) => card.top + card.right + card.bottom + card.left
-  return [...cards].sort((left, right) => {
-    const byPower = totalPower(right) - totalPower(left)
-    if (byPower !== 0) {
-      return byPower
-    }
-    const byName = left.name.localeCompare(right.name, 'fr', { sensitivity: 'base' })
-    if (byName !== 0) {
-      return byName
-    }
-    return left.id.localeCompare(right.id)
-  })
-}
-
-function renderSetup(profile = createCollectionRichProfile()) {
+function renderSetup(profile = createPlayProfile()) {
   saveProfile(profile)
   return render(
     <MemoryRouter initialEntries={['/setup']}>
@@ -65,179 +41,127 @@ function renderSetup(profile = createCollectionRichProfile()) {
   )
 }
 
-describe('SetupPage', () => {
+describe('SetupPage (Play lobby)', () => {
   beforeEach(() => {
     localStorage.clear()
   })
 
-  test('renders setup layout columns and stable test hooks', () => {
+  test('shows only large mode choices before selection', () => {
     renderSetup()
 
-    expect(screen.getByTestId('setup-layout')).toBeInTheDocument()
-    expect(screen.getByTestId('setup-column-builder')).toBeInTheDocument()
-    expect(screen.getByTestId('setup-column-collection')).toBeInTheDocument()
-    expect(screen.getByLabelText('Deck slots')).toBeInTheDocument()
-    expect(screen.getByLabelText('Deck selection')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Play' })).not.toBeInTheDocument()
+    expect(screen.getByTestId('setup-preset-grid')).toBeInTheDocument()
+    expect(screen.getByTestId('setup-mode-3x3')).toBeInTheDocument()
+    expect(screen.getByTestId('setup-mode-4x4')).toBeInTheDocument()
+    expect(screen.getByTestId('setup-mode-3x3-ranked')).toBeInTheDocument()
+    expect(screen.getByTestId('setup-mode-4x4-ranked')).toBeInTheDocument()
+    expect(screen.queryByTestId('start-match-button')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Deck slots')).not.toBeInTheDocument()
   })
 
-  test('shows opponent preview with level, score range, and win bonus', () => {
-    renderSetup()
-
-    expect(screen.getByTestId('setup-opponent-level')).toHaveTextContent('L1')
-    expect(screen.getByTestId('setup-opponent-score-range')).toHaveTextContent('34-40')
-    expect(screen.getByTestId('setup-opponent-bonus')).toHaveTextContent('+0')
-    expect(screen.getByTestId('setup-ranked-note')).toHaveTextContent('Ranked uses Open only')
-    expect(screen.getByTestId('setup-queue-tab-ranked')).toBeInTheDocument()
-    expect(screen.getByTestId('start-match-button')).toBeInTheDocument()
-  })
-
-  test('renders launch actions before selected cards in builder flow', () => {
-    renderSetup()
-
-    const launchBar = screen.getByTestId('setup-launch-bar')
-    const selectedCards = screen.getByTestId('setup-selected-cards')
-
-    expect(launchBar.compareDocumentPosition(selectedCards) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
-    expect(within(launchBar).getByTestId('setup-queue-tab-normal')).toBeInTheDocument()
-    expect(within(launchBar).getByTestId('setup-queue-tab-ranked')).toBeInTheDocument()
-    expect(within(launchBar).getByTestId('start-match-button')).toBeInTheDocument()
-  })
-
-  test('queue tabs switch between normal and ranked start modes', async () => {
+  test('selecting a preset reveals deck/deckmode/opponent/start controls', async () => {
     const user = userEvent.setup()
     renderSetup()
 
-    const normalTab = screen.getByTestId('setup-queue-tab-normal')
-    const rankedTab = screen.getByTestId('setup-queue-tab-ranked')
-    const startButton = screen.getByTestId('start-match-button')
+    await user.click(screen.getByTestId('setup-mode-4x4'))
 
-    expect(normalTab).toHaveAttribute('aria-selected', 'true')
-    expect(rankedTab).toHaveAttribute('aria-selected', 'false')
-    expect(startButton).toHaveTextContent('Start Normal')
-
-    await user.click(rankedTab)
-
-    expect(normalTab).toHaveAttribute('aria-selected', 'false')
-    expect(rankedTab).toHaveAttribute('aria-selected', 'true')
-    expect(startButton).toHaveTextContent('Start Ranked')
-  })
-
-  test('shows five selected cards in preview strip for active deck slot', () => {
-    renderSetup()
-
-    const preview = screen.getByTestId('setup-selected-cards')
-    expect(within(preview).getAllByTestId(/^setup-selected-card-/)).toHaveLength(5)
-    expect(within(preview).queryAllByTestId(/^setup-selected-slot-empty-/)).toHaveLength(0)
-  })
-
-  test('clicking a preview card removes it from active deck and disables start', async () => {
-    const user = userEvent.setup()
-    renderSetup()
-
-    const preview = screen.getByTestId('setup-selected-cards')
-    const firstPreviewCard = within(preview).getAllByTestId(/^setup-selected-card-/)[0]
-    await user.click(firstPreviewCard)
-
-    expect(within(preview).getAllByTestId(/^setup-selected-card-/)).toHaveLength(4)
-    expect(within(preview).getAllByTestId(/^setup-selected-slot-empty-/)).toHaveLength(1)
-    expect(screen.getByText('Deck: 4/5 selected')).toBeInTheDocument()
-    expect(screen.getByTestId('start-match-button')).toBeDisabled()
-  })
-
-  test('auto deck mode allows starting even when selected slot has no cards', async () => {
-    const user = userEvent.setup()
-    renderSetup()
-
-    await user.click(screen.getByTestId('deck-slot-slot-2'))
-    expect(screen.getByTestId('start-match-button')).toBeDisabled()
-
-    await user.click(screen.getByTestId('setup-deck-mode-auto'))
+    const selectedModeHead = screen.getByTestId('setup-selected-mode-head')
+    const selectedLeftStack = screen.getByTestId('setup-selected-left-stack')
+    expect(within(selectedModeHead).getByTestId('setup-selected-preset')).toHaveTextContent('4X4 NORMAL')
+    expect(within(selectedModeHead).getByTestId('setup-change-mode')).toBeInTheDocument()
+    expect(within(selectedLeftStack).getByLabelText('Deck slots')).toBeInTheDocument()
+    expect(screen.getByTestId('setup-deck-mode-manual')).toBeInTheDocument()
+    expect(screen.getByTestId('setup-opponent-level-option-1')).toBeInTheDocument()
+    expect(screen.getByTestId('setup-new-challenger')).toBeInTheDocument()
+    expect(screen.getByTestId('setup-opponent-score-range')).toBeInTheDocument()
+    expect(screen.getByTestId('setup-opponent-bonus')).toBeInTheDocument()
+    expect(screen.getByTestId('setup-opponent-ai')).toBeInTheDocument()
+    expect(screen.getByTestId('setup-opponent-rarity')).toBeInTheDocument()
+    expect(screen.queryByText('Next Opponent')).not.toBeInTheDocument()
+    expect(screen.getByTestId('start-match-button')).toHaveTextContent('Start 4x4 Normal')
     expect(screen.getByTestId('start-match-button')).toBeEnabled()
   })
 
-  test('search + rarity filters change result set and reset restores defaults', async () => {
+  test('ranked preset locks opponent level and uses ranked start label', async () => {
     const user = userEvent.setup()
     renderSetup()
 
-    const totalCards = cardPool.length
-    expect(readShownResultCount()).toBe(totalCards)
+    await user.click(screen.getByTestId('setup-mode-3x3-ranked'))
 
-    const targetCard = cardPool[0]
-    const searchInput = screen.getByTestId('setup-filter-search')
-    await user.clear(searchInput)
-    await user.type(searchInput, targetCard.id)
-
-    expect(readShownResultCount()).toBeGreaterThan(0)
-    expect(readShownResultCount()).toBeLessThan(totalCards)
-
-    const alternateRarity = rarityFilterOrder.find(
-      (rarity) => rarity !== targetCard.rarity && cardPool.some((card) => card.rarity === rarity),
-    )
-    expect(alternateRarity).toBeTruthy()
-
-    if (!alternateRarity) {
-      return
-    }
-
-    for (const rarity of rarityFilterOrder) {
-      if (rarity === alternateRarity) {
-        continue
-      }
-      await user.click(screen.getByTestId(`setup-filter-rarity-${rarity}`))
-    }
-
-    expect(readShownResultCount()).toBe(0)
-    expect(getVisibleSetupCards()).toHaveLength(0)
-
-    await user.click(screen.getByTestId('setup-filter-reset'))
-
-    expect(screen.getByTestId('setup-filter-search')).toHaveValue('')
-    expect(readShownResultCount()).toBe(totalCards)
-    for (const rarity of rarityFilterOrder) {
-      expect(screen.getByTestId(`setup-filter-rarity-${rarity}`)).toHaveAttribute('aria-pressed', 'true')
-    }
+    expect(screen.getByTestId('setup-selected-preset')).toHaveTextContent('3X3 RANKED')
+    expect(screen.getByTestId('setup-ranked-note')).toBeInTheDocument()
+    expect(screen.getByTestId('setup-opponent-ranked-lock')).toBeInTheDocument()
+    expect(screen.queryByTestId('setup-opponent-level-option-1')).not.toBeInTheDocument()
+    expect(screen.getByTestId('start-match-button')).toHaveTextContent('Start 3x3 Ranked')
+    expect(within(screen.getByTestId('setup-selected-cards')).getAllByTestId(/^setup-selected-card-/)).toHaveLength(5)
   })
 
-  test('sort select applies selected-first, name-asc, and power-desc ordering', async () => {
+  test('deck completeness follows selected mode and slot', async () => {
     const user = userEvent.setup()
-    const profile = createCollectionRichProfile()
+    renderSetup()
+
+    await user.click(screen.getByTestId('setup-mode-4x4'))
+    expect(screen.getByText('Deck: 8/8 selected (4x4)')).toBeInTheDocument()
+    expect(screen.getByTestId('start-match-button')).toBeEnabled()
+
+    await user.click(screen.getByTestId('deck-slot-slot-3'))
+    expect(screen.getByText('Deck: 0/8 selected (4x4)')).toBeInTheDocument()
+    expect(screen.getByTestId('start-match-button')).toBeDisabled()
+
+    await user.click(screen.getByTestId('setup-change-mode'))
+    await user.click(screen.getByTestId('setup-mode-3x3'))
+    await user.click(screen.getByTestId('deck-slot-slot-2'))
+
+    expect(screen.getByText('Deck: 5/5 selected (3x3)')).toBeInTheDocument()
+    expect(screen.getByTestId('start-match-button')).toBeEnabled()
+  })
+
+  test('auto deck mode allows starting with incomplete deck', async () => {
+    const user = userEvent.setup()
+    renderSetup()
+
+    await user.click(screen.getByTestId('setup-mode-3x3'))
+    await user.click(screen.getByTestId('deck-slot-slot-3'))
+
+    expect(screen.getByTestId('start-match-button')).toBeDisabled()
+    expect(screen.getByText('Deck: 0/5 selected (3x3)')).toBeInTheDocument()
+    expect(screen.getByTestId('setup-selected-cards')).toBeInTheDocument()
+
+    await user.click(screen.getByTestId('setup-deck-mode-auto'))
+    expect(screen.getByTestId('start-match-button')).toBeEnabled()
+    expect(screen.queryByText('Deck: 0/5 selected (3x3)')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('setup-selected-cards')).not.toBeInTheDocument()
+  })
+
+  test('auto deck is unavailable in 4x4 when player owns fewer than 8 cards', async () => {
+    const user = userEvent.setup()
+    const profile = createDefaultProfile()
+    const limitedOwned = profile.ownedCardIds.slice(0, 7)
+    profile.ownedCardIds = limitedOwned
+    profile.cardCopiesById = Object.fromEntries(limitedOwned.map((cardId) => [cardId, 1])) as PlayerProfile['cardCopiesById']
+    profile.deckSlots[0].cards = limitedOwned.slice(0, 5)
+    profile.deckSlots[0].cards4x4 = [...limitedOwned]
+    profile.selectedDeckSlotId = 'slot-1'
     renderSetup(profile)
 
-    const sortSelect = screen.getByTestId('setup-sort-select')
-    const expectedFirstByPower = sortByPower(cardPool)[0]
-    expect(getVisibleSetupCards()[0]).toHaveAttribute('data-testid', `setup-card-${expectedFirstByPower.id}`)
+    await user.click(screen.getByTestId('setup-mode-4x4'))
 
-    await user.selectOptions(sortSelect, 'selected-first')
-    const cardsAtSelectedFirst = getVisibleSetupCards()
-    expect(cardsAtSelectedFirst[0]).toHaveAttribute('aria-pressed', 'true')
-
-    await user.selectOptions(sortSelect, 'name-asc')
-    const expectedFirstByName = sortByName(cardPool)[0]
-    expect(getVisibleSetupCards()[0]).toHaveAttribute('data-testid', `setup-card-${expectedFirstByName.id}`)
-
-    await user.selectOptions(sortSelect, 'power-desc')
-    expect(getVisibleSetupCards()[0]).toHaveAttribute('data-testid', `setup-card-${expectedFirstByPower.id}`)
+    const autoDeckInput = screen.getByTestId('setup-deck-mode-auto')
+    expect(autoDeckInput).toBeDisabled()
+    expect(screen.getByTestId('setup-auto-deck-note')).toHaveTextContent('Auto Deck requires at least 8 owned cards for 4X4.')
+    expect(screen.getByTestId('start-match-button')).toBeDisabled()
   })
 
-  test('selecting a card keeps its position in right-side choices with default sort', async () => {
+  test('change mode returns to first-step preset choices', async () => {
     const user = userEvent.setup()
     renderSetup()
 
-    const preview = screen.getByTestId('setup-selected-cards')
-    await user.click(within(preview).getAllByTestId(/^setup-selected-card-/)[0])
+    await user.click(screen.getByTestId('setup-mode-4x4-ranked'))
+    expect(screen.getByTestId('setup-selected-preset')).toHaveTextContent('4X4 RANKED')
 
-    const cardsBefore = getVisibleSetupCards()
-    const targetIndex = 6
-    const targetCard = cardsBefore[targetIndex]
-    const targetCardId = targetCard.getAttribute('data-testid')
-    expect(targetCardId).toBeTruthy()
+    await user.click(screen.getByTestId('setup-change-mode'))
 
-    await user.click(targetCard)
-
-    const cardsAfter = getVisibleSetupCards()
-    expect(cardsAfter[targetIndex]).toHaveAttribute('data-testid', targetCardId ?? '')
-    if (targetCardId) {
-      expect(screen.getByTestId(targetCardId)).toHaveAttribute('aria-pressed', 'true')
-    }
+    expect(screen.getByTestId('setup-preset-grid')).toBeInTheDocument()
+    expect(screen.queryByTestId('start-match-button')).not.toBeInTheDocument()
   })
 })

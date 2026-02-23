@@ -1,7 +1,8 @@
 import { cardPool, getCard } from '../cards/cardPool'
 import { createSeededRng } from '../random/seededRng'
-import type { CardId, PlayerProfile, RankedTierId, Rarity } from '../types'
+import type { CardId, MatchMode, PlayerProfile, RankedTierId, Rarity } from '../types'
 import type { CpuAiProfile } from './ai'
+import { getModeSpec } from './modeSpec'
 
 export type OpponentLevel = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8
 
@@ -32,6 +33,15 @@ export interface CpuOpponentPreview {
 export interface CpuOpponent extends CpuOpponentPreview {
   deck: CardId[]
   deckScore: number
+}
+
+export interface OpponentLevelInfo {
+  level: OpponentLevel
+  tierId: RankedTierId
+  scoreRange: DeckScoreRange
+  aiProfile: CpuAiProfile
+  winGoldBonus: number
+  rarityWeights: Partial<Record<Rarity, number>>
 }
 
 interface CandidateDeck {
@@ -135,17 +145,27 @@ export function getOpponentLevelForProfile(profile: PlayerProfile): OpponentLeve
   return getConfigForTier(profile.ranked.tier).level
 }
 
-export function getCpuOpponentPreview(profile: PlayerProfile, playerDeck: CardId[]): CpuOpponentPreview {
-  const config = getConfigForTier(profile.ranked.tier)
+export function getCpuOpponentPreview(profile: PlayerProfile, playerDeck: CardId[], mode: MatchMode = '3x3'): CpuOpponentPreview {
+  const level = getOpponentLevelForProfile(profile)
+  return getCpuOpponentPreviewForLevel(level, playerDeck, mode)
+}
+
+export function getCpuOpponentPreviewForLevel(
+  level: OpponentLevel,
+  playerDeck: CardId[],
+  mode: MatchMode = '3x3',
+): CpuOpponentPreview {
+  const config = getConfigForLevel(level)
+  const scoreRange = scaleScoreRangeForMode(config.scoreRange, mode)
   const playerDeckScore = computeDeckScore(playerDeck)
-  const { min, max } = config.scoreRange
+  const { min, max } = scoreRange
   const baseTargetScore = Math.round((min + max) / 2)
   const adaptiveTargetScore = clamp(Math.round(baseTargetScore + (playerDeckScore - baseTargetScore) * 0.4), min, max)
 
   return {
     level: config.level,
     tierId: config.tierId,
-    scoreRange: { ...config.scoreRange },
+    scoreRange: { ...scoreRange },
     aiProfile: config.aiProfile,
     baseTargetScore,
     adaptiveTargetScore,
@@ -153,16 +173,32 @@ export function getCpuOpponentPreview(profile: PlayerProfile, playerDeck: CardId
   }
 }
 
-export function buildCpuOpponent(profile: PlayerProfile, playerDeck: CardId[], seed: number): CpuOpponent {
-  const preview = getCpuOpponentPreview(profile, playerDeck)
-  const config = getConfigForTier(preview.tierId)
+export function buildCpuOpponent(
+  profile: PlayerProfile,
+  playerDeck: CardId[],
+  seed: number,
+  mode: MatchMode = '3x3',
+): CpuOpponent {
+  const level = getOpponentLevelForProfile(profile)
+  return buildCpuOpponentForLevel(level, playerDeck, seed, mode)
+}
+
+export function buildCpuOpponentForLevel(
+  level: OpponentLevel,
+  playerDeck: CardId[],
+  seed: number,
+  mode: MatchMode = '3x3',
+): CpuOpponent {
+  const deckSize = getModeSpec(mode).deckSize
+  const preview = getCpuOpponentPreviewForLevel(level, playerDeck, mode)
+  const config = getConfigForLevel(level)
   const rng = createSeededRng(seed)
 
   let bestInRange: CandidateDeck | null = null
   let bestOverall: CandidateDeck | null = null
 
   for (let index = 0; index < candidateDeckCount; index += 1) {
-    const deck = generateCandidateDeck(config.rarityWeights, rng)
+    const deck = generateCandidateDeck(config.rarityWeights, rng, deckSize)
     const score = computeDeckScore(deck)
     const distanceToTarget = Math.abs(score - preview.adaptiveTargetScore)
     const candidate: CandidateDeck = { deck, score, distanceToTarget }
@@ -187,6 +223,18 @@ export function buildCpuOpponent(profile: PlayerProfile, playerDeck: CardId[], s
   }
 }
 
+export function getOpponentLevelInfo(level: OpponentLevel, mode: MatchMode = '3x3'): OpponentLevelInfo {
+  const config = getConfigForLevel(level)
+  return {
+    level: config.level,
+    tierId: config.tierId,
+    scoreRange: scaleScoreRangeForMode(config.scoreRange, mode),
+    aiProfile: config.aiProfile,
+    winGoldBonus: config.winGoldBonus,
+    rarityWeights: { ...config.rarityWeights },
+  }
+}
+
 function getConfigForTier(tierId: RankedTierId): OpponentLevelConfig {
   if (tierId === 'grandmaster' || tierId === 'challenger') {
     return opponentLevelConfigs[opponentLevelConfigs.length - 1]!
@@ -199,11 +247,31 @@ function getConfigForTier(tierId: RankedTierId): OpponentLevelConfig {
   return config
 }
 
-export function buildAutoPlayerDeck(scoreRange: CpuOpponentPreview['scoreRange'], seed: number): CardId[] {
+function getConfigForLevel(level: OpponentLevel): OpponentLevelConfig {
+  const config = opponentLevelConfigs.find((entry) => entry.level === level)
+  if (!config) {
+    throw new Error(`No opponent config for level ${level}.`)
+  }
+  return config
+}
+
+export function buildAutoPlayerDeck(
+  scoreRange: CpuOpponentPreview['scoreRange'],
+  seed: number,
+  mode: MatchMode = '3x3',
+  ownedCardIds: CardId[],
+): CardId[] {
+  const deckSize = getModeSpec(mode).deckSize
+  const ownedCardIdSet = new Set(ownedCardIds)
+  const ownedCandidates = cardPool.map((card) => card.id).filter((cardId) => ownedCardIdSet.has(cardId))
+  if (ownedCandidates.length < deckSize) {
+    throw new Error(`Auto Deck requires at least ${deckSize} owned cards for ${mode}.`)
+  }
+
   const target = Math.round((scoreRange.min + scoreRange.max) / 2)
-  const perCardTarget = target / 5
-  const allCardIds = cardPool.map((card) => card.id)
+  const perCardTarget = target / deckSize
   const rankedByPerCardTarget = cardPool
+    .filter((card) => ownedCardIdSet.has(card.id))
     .map((card) => ({
       cardId: card.id,
       total: card.top + card.right + card.bottom + card.left,
@@ -217,13 +285,13 @@ export function buildAutoPlayerDeck(scoreRange: CpuOpponentPreview['scoreRange']
     })
     .map((entry) => entry.cardId)
 
-  const narrowPool = rankedByPerCardTarget.slice(0, Math.max(5, autoDeckNarrowPoolSize))
-  const narrowPass = findBestDeckForRange(narrowPool, target, scoreRange, seed, autoDeckNarrowPassCandidates)
+  const narrowPool = rankedByPerCardTarget.slice(0, Math.max(deckSize, autoDeckNarrowPoolSize))
+  const narrowPass = findBestDeckForRange(narrowPool, target, scoreRange, seed, autoDeckNarrowPassCandidates, deckSize)
   if (narrowPass.bestInRange) {
     return [...narrowPass.bestInRange.deck]
   }
 
-  const broadPass = findBestDeckForRange(allCardIds, target, scoreRange, seed + 1, autoDeckBroadPassCandidates)
+  const broadPass = findBestDeckForRange(ownedCandidates, target, scoreRange, seed + 1, autoDeckBroadPassCandidates, deckSize)
   const chosen = broadPass.bestInRange ?? broadPass.bestOverall
   if (!chosen) {
     throw new Error('Unable to build automatic player deck.')
@@ -232,11 +300,15 @@ export function buildAutoPlayerDeck(scoreRange: CpuOpponentPreview['scoreRange']
   return [...chosen.deck]
 }
 
-function generateCandidateDeck(rarityWeights: Partial<Record<Rarity, number>>, rng: ReturnType<typeof createSeededRng>): CardId[] {
+function generateCandidateDeck(
+  rarityWeights: Partial<Record<Rarity, number>>,
+  rng: ReturnType<typeof createSeededRng>,
+  deckSize: number,
+): CardId[] {
   const selected = new Set<CardId>()
   const deck: CardId[] = []
 
-  while (deck.length < 5) {
+  while (deck.length < deckSize) {
     const rarity = pickRarity(rarityWeights, selected, rng)
     const available = cardsByRarity[rarity].filter((cardId) => !selected.has(cardId))
     if (available.length === 0) {
@@ -257,9 +329,10 @@ function findBestDeckForRange(
   scoreRange: CpuOpponentPreview['scoreRange'],
   seed: number,
   attempts: number,
+  deckSize: number,
 ): { bestInRange: CandidateDeck | null; bestOverall: CandidateDeck | null } {
-  if (candidateCardIds.length < 5) {
-    throw new Error('At least five candidate cards are required to build an automatic deck.')
+  if (candidateCardIds.length < deckSize) {
+    throw new Error(`At least ${deckSize} candidate cards are required to build an automatic deck.`)
   }
 
   const rng = createSeededRng(seed)
@@ -267,7 +340,7 @@ function findBestDeckForRange(
   let bestOverall: CandidateDeck | null = null
 
   for (let index = 0; index < attempts; index += 1) {
-    const deck = pickRandomDistinct(candidateCardIds, 5, rng)
+    const deck = pickRandomDistinct(candidateCardIds, deckSize, rng)
     const score = computeDeckScore(deck)
     const candidate: CandidateDeck = {
       deck: [...deck].sort(),
@@ -347,6 +420,14 @@ function compareDeckLexicographically(left: CardId[], right: CardId[]): number {
   const leftKey = [...left].sort().join('|')
   const rightKey = [...right].sort().join('|')
   return leftKey.localeCompare(rightKey)
+}
+
+function scaleScoreRangeForMode(scoreRange: DeckScoreRange, mode: MatchMode): DeckScoreRange {
+  const factor = getModeSpec(mode).deckSize / 5
+  return {
+    min: Math.round(scoreRange.min * factor),
+    max: Math.round(scoreRange.max * factor),
+  }
 }
 
 function clamp(value: number, min: number, max: number): number {

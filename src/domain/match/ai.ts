@@ -1,6 +1,7 @@
 import { getCard } from '../cards/cardPool'
 import type { Actor, Move } from '../types'
 import { applyMoveDetailed, listLegalMoves } from './engine'
+import { getModeSpec } from './modeSpec'
 import type { MatchState } from './types'
 
 type Direction = 'up' | 'right' | 'down' | 'left'
@@ -74,6 +75,7 @@ export function selectCpuMove(state: MatchState, aiProfile: CpuAiProfile = 'stan
   if (legalMoves.length === 0) {
     throw new Error('No legal moves available for CPU.')
   }
+  const boardSize = getModeSpec(state.config.mode).boardSize
 
   const scoredMoves = legalMoves.map((move) => scoreMove(state, move, aiProfile))
 
@@ -85,7 +87,7 @@ export function selectCpuMove(state: MatchState, aiProfile: CpuAiProfile = 'stan
       return b.immediateFlips - a.immediateFlips
     }
 
-    const zoneDelta = zonePriority(b.move.cell) - zonePriority(a.move.cell)
+    const zoneDelta = zonePriority(b.move.cell, boardSize) - zonePriority(a.move.cell, boardSize)
     if (zoneDelta !== 0) {
       return zoneDelta
     }
@@ -102,12 +104,13 @@ export function selectCpuMove(state: MatchState, aiProfile: CpuAiProfile = 'stan
 }
 
 function scoreMove(state: MatchState, move: Move, aiProfile: CpuAiProfile): ScoredMove {
+  const boardSize = getModeSpec(state.config.mode).boardSize
   const tuning = aiTuningByProfile[aiProfile]
   const resolution = applyMoveDetailed(state, move)
   const immediateFlips = resolution.immediateFlips
   const exposureRisk = calculateExposureRisk(resolution.state, move.cell)
-  const cornerBonus = isCorner(move.cell) ? 1 : 0
-  const centerBonus = move.cell === 4 ? 1 : 0
+  const cornerBonus = isCorner(move.cell, boardSize) ? 1 : 0
+  const centerBonus = isCenter(move.cell, boardSize) ? 1 : 0
   const lookaheadScore =
     tuning.lookaheadWeight > 0 ? calculateWorstCaseCpuLeadAfterPlayerTurn(resolution.state) * tuning.lookaheadWeight * 20 : 0
   const score =
@@ -194,8 +197,9 @@ function calculateExposureRisk(state: MatchState, placedCell: number): number {
 
 function getEmptyNeighborCells(placedCell: number, state: MatchState): Array<[number, Direction]> {
   const neighbors: Array<[number, Direction]> = []
+  const boardSize = getModeSpec(state.config.mode).boardSize
 
-  for (const [direction, cell] of getNeighbors(placedCell)) {
+  for (const [direction, cell] of getNeighbors(placedCell, boardSize)) {
     if (state.board[cell] !== null) {
       continue
     }
@@ -206,36 +210,50 @@ function getEmptyNeighborCells(placedCell: number, state: MatchState): Array<[nu
   return neighbors
 }
 
-function getNeighbors(cell: number): Array<[Direction, number]> {
-  const row = Math.floor(cell / 3)
-  const col = cell % 3
+function getNeighbors(cell: number, boardSize: number): Array<[Direction, number]> {
+  const row = Math.floor(cell / boardSize)
+  const col = cell % boardSize
   const neighbors: Array<[Direction, number]> = []
 
   for (const direction of Object.keys(directionDelta) as Direction[]) {
     const [dr, dc] = directionDelta[direction]
     const nextRow = row + dr
     const nextCol = col + dc
-    if (nextRow < 0 || nextRow > 2 || nextCol < 0 || nextCol > 2) {
+    if (nextRow < 0 || nextRow >= boardSize || nextCol < 0 || nextCol >= boardSize) {
       continue
     }
-    neighbors.push([direction, nextRow * 3 + nextCol])
+    neighbors.push([direction, nextRow * boardSize + nextCol])
   }
 
   return neighbors
 }
 
-function zonePriority(cell: number): number {
-  if (cell === 4) {
+function zonePriority(cell: number, boardSize: number): number {
+  if (isCenter(cell, boardSize)) {
     return 3
   }
-  if (isCorner(cell)) {
+  if (isCorner(cell, boardSize)) {
     return 2
   }
   return 1
 }
 
-function isCorner(cell: number): boolean {
-  return cell === 0 || cell === 2 || cell === 6 || cell === 8
+function isCorner(cell: number, boardSize: number): boolean {
+  const last = boardSize * boardSize - 1
+  return cell === 0 || cell === boardSize - 1 || cell === last - (boardSize - 1) || cell === last
+}
+
+function isCenter(cell: number, boardSize: number): boolean {
+  const row = Math.floor(cell / boardSize)
+  const col = cell % boardSize
+  if (boardSize % 2 === 1) {
+    const center = Math.floor(boardSize / 2)
+    return row === center && col === center
+  }
+
+  const centerLow = boardSize / 2 - 1
+  const centerHigh = centerLow + 1
+  return (row === centerLow || row === centerHigh) && (col === centerLow || col === centerHigh)
 }
 
 function getSide(card: ReturnType<typeof getCard>, direction: Direction): number {

@@ -1,149 +1,228 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useGame } from '../../app/useGame'
 import { getCard } from '../../domain/cards/cardPool'
-import { getSelectedDeckSlot, hasExactlyFiveUniqueCards } from '../../domain/cards/decks'
-import { cardPool } from '../../domain/cards/cardPool'
-import { getCpuOpponentPreview } from '../../domain/match/opponents'
-import type { CardDef, CardId, MatchQueue, Rarity } from '../../domain/types'
+import { getDeckForMode, getSelectedDeckSlot, hasExactlyDeckSizeUniqueCards } from '../../domain/cards/decks'
+import { getModeSpec } from '../../domain/match/modeSpec'
+import {
+  getCpuOpponentPreview,
+  getCpuOpponentPreviewForLevel,
+  getOpponentLevelForProfile,
+  getOpponentLevelInfo,
+  type OpponentLevel,
+} from '../../domain/match/opponents'
+import type { MatchMode, MatchQueue, Rarity } from '../../domain/types'
 import { TriadCard } from '../components/TriadCard'
 
-type SetupSortMode = 'selected-first' | 'power-desc' | 'name-asc'
 type SetupDeckMode = 'manual' | 'auto'
+type SetupPresetId = '3x3-normal' | '4x4-normal' | '3x3-ranked' | '4x4-ranked'
 
-const rarityFilterOrder: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary']
+const modeAssetBasePath = `${import.meta.env.BASE_URL}modes/`
 
-const setupSortOptions: Array<{ value: SetupSortMode; label: string }> = [
-  { value: 'power-desc', label: 'Power (High to Low)' },
-  { value: 'selected-first', label: 'Selected First' },
-  { value: 'name-asc', label: 'Name (A-Z)' },
+interface SetupPreset {
+  id: SetupPresetId
+  mode: MatchMode
+  queue: MatchQueue
+  title: string
+  subtitle: string
+  artwork: string
+}
+
+const setupPresets: SetupPreset[] = [
+  {
+    id: '3x3-normal',
+    mode: '3x3',
+    queue: 'normal',
+    title: '3X3',
+    subtitle: 'Normal',
+    artwork: `${modeAssetBasePath}mode-3x3-normal.svg`,
+  },
+  {
+    id: '4x4-normal',
+    mode: '4x4',
+    queue: 'normal',
+    title: '4X4',
+    subtitle: 'Normal',
+    artwork: `${modeAssetBasePath}mode-4x4-normal.svg`,
+  },
+  {
+    id: '3x3-ranked',
+    mode: '3x3',
+    queue: 'ranked',
+    title: '3X3',
+    subtitle: 'Ranked',
+    artwork: `${modeAssetBasePath}mode-3x3-ranked.svg`,
+  },
+  {
+    id: '4x4-ranked',
+    mode: '4x4',
+    queue: 'ranked',
+    title: '4X4',
+    subtitle: 'Ranked',
+    artwork: `${modeAssetBasePath}mode-4x4-ranked.svg`,
+  },
 ]
 
-function getCardPower(card: CardDef): number {
-  return card.top + card.right + card.bottom + card.left
+const presetById = Object.fromEntries(setupPresets.map((preset) => [preset.id, preset])) as Record<SetupPresetId, SetupPreset>
+
+function toOpponentLevel(value: number): OpponentLevel {
+  return Math.max(1, Math.min(8, value)) as OpponentLevel
 }
 
-function compareByName(left: CardDef, right: CardDef): number {
-  const byName = left.name.localeCompare(right.name, 'fr', { sensitivity: 'base' })
-  if (byName !== 0) {
-    return byName
-  }
-  return left.id.localeCompare(right.id)
+function formatTierLabel(tierId: string): string {
+  return tierId.charAt(0).toUpperCase() + tierId.slice(1)
 }
 
-function compareByPower(left: CardDef, right: CardDef): number {
-  const byPower = getCardPower(right) - getCardPower(left)
-  if (byPower !== 0) {
-    return byPower
+function formatRarityMix(weights: Partial<Record<Rarity, number>>): string {
+  const activeRarities = Object.entries(weights).filter(([, weight]) => (weight ?? 0) > 0)
+  if (activeRarities.length === 0) {
+    return 'N/A'
   }
-  return compareByName(left, right)
+
+  const total = activeRarities.reduce((sum, [, weight]) => sum + (weight ?? 0), 0)
+  if (total <= 0) {
+    return 'N/A'
+  }
+
+  return activeRarities
+    .map(([rarity, weight]) => {
+      const ratio = (weight ?? 0) / total
+      return `${rarity} ${Math.round(ratio * 100)}%`
+    })
+    .join(' / ')
+}
+
+function formatPresetLabel(preset: SetupPreset): string {
+  return `${preset.mode.toUpperCase()} ${preset.queue === 'ranked' ? 'RANKED' : 'NORMAL'}`
+}
+
+function getPresetTestId(presetId: SetupPresetId): string {
+  if (presetId === '3x3-normal') {
+    return 'setup-mode-3x3'
+  }
+  if (presetId === '4x4-normal') {
+    return 'setup-mode-4x4'
+  }
+  if (presetId === '3x3-ranked') {
+    return 'setup-mode-3x3-ranked'
+  }
+  return 'setup-mode-4x4-ranked'
 }
 
 export function SetupPage() {
   const navigate = useNavigate()
-  const { profile, startMatch, selectDeckSlot, toggleDeckSlotCard, setDeckSlotRules } = useGame()
+  const { profile, startMatch, selectDeckSlot, setDeckSlotMode } = useGame()
   const selectedSlot = getSelectedDeckSlot(profile)
 
   const [error, setError] = useState<string | null>(null)
-
-  const ownedCards = useMemo(
-    () => cardPool.filter((card) => profile.ownedCardIds.includes(card.id)),
-    [profile.ownedCardIds],
-  )
-
-  const availableRarities = useMemo(
-    () => rarityFilterOrder.filter((rarity) => ownedCards.some((card) => card.rarity === rarity)),
-    [ownedCards],
-  )
-
-  const [searchTerm, setSearchTerm] = useState('')
-  const [selectedRarities, setSelectedRarities] = useState<Rarity[]>(availableRarities)
-  const [sortMode, setSortMode] = useState<SetupSortMode>('power-desc')
   const [deckMode, setDeckMode] = useState<SetupDeckMode>('manual')
-  const [matchQueue, setMatchQueue] = useState<MatchQueue>('normal')
+  const [selectedPresetId, setSelectedPresetId] = useState<SetupPresetId | null>(null)
+
+  const maxNormalLevel = useMemo(() => getOpponentLevelForProfile(profile), [profile.ranked.tier, profile.ranked.division])
+  const [selectedNormalOpponentLevel, setSelectedNormalOpponentLevel] = useState<OpponentLevel>(maxNormalLevel)
+
+  const selectedPreset = selectedPresetId ? presetById[selectedPresetId] : null
+  const selectedMode = selectedPreset?.mode ?? null
+  const selectedQueue = selectedPreset?.queue ?? null
+  const shouldShowManualDeckPreview = deckMode === 'manual'
+  const ownedUniqueCount = useMemo(() => new Set(profile.ownedCardIds).size, [profile.ownedCardIds])
+
+  const modeSpec = useMemo(() => (selectedMode ? getModeSpec(selectedMode) : null), [selectedMode])
+  const canUseAutoDeck = modeSpec ? ownedUniqueCount >= modeSpec.deckSize : false
+  const autoDeckRequirementMessage =
+    modeSpec && selectedMode ? `Auto Deck requires at least ${modeSpec.deckSize} owned cards for ${selectedMode.toUpperCase()}.` : null
+  const selectedDeck = useMemo(() => {
+    if (!selectedMode) {
+      return []
+    }
+    return getDeckForMode(selectedSlot, selectedMode)
+  }, [selectedMode, selectedSlot])
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setSelectedRarities((current) => {
-      const filtered = current.filter((rarity) => availableRarities.includes(rarity))
-      if (filtered.length > 0) {
-        return filtered
+    setSelectedNormalOpponentLevel((current) => {
+      if (current > maxNormalLevel) {
+        return maxNormalLevel
       }
-      return availableRarities
+      return current
     })
-  }, [availableRarities])
+  }, [maxNormalLevel])
 
-  const canStart = deckMode === 'auto' ? true : hasExactlyFiveUniqueCards(selectedSlot.cards)
-  const opponentPreview = useMemo(
-    () => getCpuOpponentPreview(profile, selectedSlot.cards),
-    [profile, selectedSlot.cards],
+  useEffect(() => {
+    if (deckMode === 'auto' && !canUseAutoDeck) {
+      setDeckMode('manual')
+    }
+  }, [canUseAutoDeck, deckMode])
+
+  const canStart =
+    selectedPreset && modeSpec
+      ? deckMode === 'auto'
+        ? canUseAutoDeck
+        : hasExactlyDeckSizeUniqueCards(selectedDeck, modeSpec.deckSize)
+      : false
+
+  const availableNormalLevels = useMemo(
+    () => Array.from({ length: maxNormalLevel }, (_, index) => toOpponentLevel(index + 1)),
+    [maxNormalLevel],
   )
 
-  const selectedCardSet = useMemo(() => new Set(selectedSlot.cards), [selectedSlot.cards])
-  const selectedRaritySet = useMemo(() => new Set(selectedRarities), [selectedRarities])
-
-  const normalizedSearch = searchTerm.trim().toLowerCase()
-
-  const filteredCards = useMemo(
-    () =>
-      ownedCards.filter((card) => {
-        if (!selectedRaritySet.has(card.rarity)) {
-          return false
-        }
-
-        if (!normalizedSearch) {
-          return true
-        }
-
-        const nameMatches = card.name.toLowerCase().includes(normalizedSearch)
-        const idMatches = card.id.toLowerCase().includes(normalizedSearch)
-        return nameMatches || idMatches
-      }),
-    [normalizedSearch, ownedCards, selectedRaritySet],
-  )
-
-  const visibleCards = useMemo(() => {
-    const sorted = [...filteredCards]
-
-    if (sortMode === 'selected-first') {
-      sorted.sort((left, right) => {
-        const leftSelected = selectedCardSet.has(left.id)
-        const rightSelected = selectedCardSet.has(right.id)
-        if (leftSelected !== rightSelected) {
-          return leftSelected ? -1 : 1
-        }
-        return compareByPower(left, right)
-      })
-      return sorted
+  const effectiveOpponentLevel = selectedQueue === 'ranked' ? maxNormalLevel : selectedNormalOpponentLevel
+  const opponentPreview = useMemo(() => {
+    if (!selectedPreset || !selectedMode) {
+      return null
     }
 
-    if (sortMode === 'power-desc') {
-      sorted.sort(compareByPower)
-      return sorted
+    return selectedQueue === 'ranked'
+      ? getCpuOpponentPreview(profile, selectedDeck, selectedMode)
+      : getCpuOpponentPreviewForLevel(selectedNormalOpponentLevel, selectedDeck, selectedMode)
+  }, [selectedDeck, selectedMode, selectedNormalOpponentLevel, selectedPreset, selectedQueue, profile])
+
+  const opponentLevelInfo = useMemo(() => {
+    if (!selectedMode || !selectedPreset) {
+      return null
+    }
+    return getOpponentLevelInfo(effectiveOpponentLevel, selectedMode)
+  }, [effectiveOpponentLevel, selectedMode, selectedPreset])
+
+  const handlePresetSelect = (presetId: SetupPresetId) => {
+    const preset = presetById[presetId]
+    setError(null)
+    setSelectedPresetId(presetId)
+    setDeckSlotMode(selectedSlot.id, preset.mode)
+  }
+
+  const handleStart = () => {
+    if (!selectedPreset || !selectedMode || !modeSpec) {
+      setError('Choose a match mode first.')
+      return
     }
 
-    sorted.sort(compareByName)
-    return sorted
-  }, [filteredCards, selectedCardSet, sortMode])
-
-  const isDefaultFilterState =
-    normalizedSearch.length === 0 &&
-    sortMode === 'power-desc' &&
-    selectedRarities.length === availableRarities.length &&
-    availableRarities.every((rarity) => selectedRaritySet.has(rarity))
-
-  const handleStart = (queue: MatchQueue) => {
     if (!canStart) {
-      setError('Select exactly 5 cards to start.')
+      if (deckMode === 'auto' && !canUseAutoDeck && autoDeckRequirementMessage) {
+        setError(autoDeckRequirementMessage)
+        return
+      }
+      setError(`Select exactly ${modeSpec.deckSize} cards to start.`)
       return
     }
 
     try {
-      startMatch(queue, selectedSlot.cards, {
-        open: true,
-        same: selectedSlot.rules.same,
-        plus: selectedSlot.rules.plus,
-      }, { useAutoDeck: deckMode === 'auto' })
+      const activeQueue = selectedPreset.queue
+      const startOptions =
+        activeQueue === 'normal'
+          ? { useAutoDeck: deckMode === 'auto', normalOpponentLevel: selectedNormalOpponentLevel }
+          : { useAutoDeck: deckMode === 'auto' }
+
+      startMatch(
+        activeQueue,
+        selectedMode,
+        selectedDeck,
+        {
+          open: true,
+          same: selectedSlot.rules.same,
+          plus: selectedSlot.rules.plus,
+        },
+        startOptions,
+      )
       navigate('/match')
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unable to start match.'
@@ -151,300 +230,229 @@ export function SetupPage() {
     }
   }
 
-  const handleCardToggle = (cardId: CardId) => {
-    const isSelected = selectedCardSet.has(cardId)
-    if (!isSelected && selectedSlot.cards.length >= 5) {
-      setError('Deck already has 5 cards. Remove one first.')
-      return
-    }
-
-    setError(null)
-    toggleDeckSlotCard(selectedSlot.id, cardId)
-  }
-
-  const handleRarityToggle = (rarity: Rarity) => {
-    setSelectedRarities((current) => {
-      if (current.includes(rarity)) {
-        if (current.length === 1) {
-          return current
-        }
-        return current.filter((value) => value !== rarity)
-      }
-
-      const next = [...current, rarity]
-      return rarityFilterOrder.filter((value) => availableRarities.includes(value) && next.includes(value))
-    })
-  }
-
-  const handleResetFilters = () => {
-    setSearchTerm('')
-    setSelectedRarities(availableRarities)
-    setSortMode('power-desc')
-  }
-
   return (
     <section className="panel setup-panel">
-      <div className="setup-layout" data-testid="setup-layout">
-        <aside className="setup-builder" data-testid="setup-column-builder">
-          <h1>Match Setup</h1>
-
-          <div className="setup-slot-grid" aria-label="Deck slots">
-            {profile.deckSlots.map((slot) => (
-              <button
-                key={slot.id}
-                type="button"
-                className={`setup-slot-button ${slot.id === selectedSlot.id ? 'is-selected' : ''}`}
-                onClick={() => {
-                  setError(null)
-                  selectDeckSlot(slot.id)
-                }}
-                data-testid={`deck-slot-${slot.id}`}
-              >
-                <span className="setup-slot-name">{slot.name}</span>
-                <span className="setup-slot-count">{slot.cards.length}/5</span>
-              </button>
-            ))}
-          </div>
-
-          <fieldset className="setup-rule-block">
-            <legend>Rules</legend>
-            <div className="rule-toggle-group">
-              <label className="setup-rule-toggle">
-                <input
-                  type="checkbox"
-                  checked={selectedSlot.rules.same}
-                  onChange={(event) => {
-                    setError(null)
-                    setDeckSlotRules(selectedSlot.id, {
-                      same: event.target.checked,
-                      plus: selectedSlot.rules.plus,
-                    })
-                  }}
-                />
-                <span>Enable Same</span>
-              </label>
-              <label className="setup-rule-toggle">
-                <input
-                  type="checkbox"
-                  checked={selectedSlot.rules.plus}
-                  onChange={(event) => {
-                    setError(null)
-                    setDeckSlotRules(selectedSlot.id, {
-                      same: selectedSlot.rules.same,
-                      plus: event.target.checked,
-                    })
-                  }}
-                />
-                <span>Enable Plus</span>
-              </label>
-            </div>
-          </fieldset>
-
-          <fieldset className="setup-rule-block">
-            <legend>Deck Mode</legend>
-            <div className="rule-toggle-group setup-deck-mode-group">
-              <label className="setup-rule-toggle setup-rule-toggle--deck-mode">
-                <input
-                  type="radio"
-                  name="setup-deck-mode"
-                  checked={deckMode === 'manual'}
-                  onChange={() => setDeckMode('manual')}
-                  data-testid="setup-deck-mode-manual"
-                />
-                <span>Use My Deck</span>
-              </label>
-              <label className="setup-rule-toggle setup-rule-toggle--deck-mode">
-                <input
-                  type="radio"
-                  name="setup-deck-mode"
-                  checked={deckMode === 'auto'}
-                  onChange={() => setDeckMode('auto')}
-                  data-testid="setup-deck-mode-auto"
-                />
-                <span>Auto Deck (random, in-range, +50% rewards)</span>
-              </label>
-            </div>
-          </fieldset>
-
-          <p className="small" data-testid="setup-ranked-note">
-            Ranked uses Open only (Same/Plus disabled).
-          </p>
-
-          <div className="setup-launch-bar" data-testid="setup-launch-bar">
-            <div className="setup-queue-tabs" role="tablist" aria-label="Match queue">
-              <button
-                type="button"
-                role="tab"
-                className={`setup-queue-tab ${matchQueue === 'normal' ? 'is-active' : ''}`}
-                aria-selected={matchQueue === 'normal'}
-                onClick={() => {
-                  setError(null)
-                  setMatchQueue('normal')
-                }}
-                data-testid="setup-queue-tab-normal"
-              >
-                Normal
-              </button>
-              <button
-                type="button"
-                role="tab"
-                className={`setup-queue-tab ${matchQueue === 'ranked' ? 'is-active' : ''}`}
-                aria-selected={matchQueue === 'ranked'}
-                onClick={() => {
-                  setError(null)
-                  setMatchQueue('ranked')
-                }}
-                data-testid="setup-queue-tab-ranked"
-              >
-                Ranked
-              </button>
-            </div>
-
-            <div className="actions setup-launch-actions">
-              <button
-                type="button"
-                className="button button-primary"
-                onClick={() => handleStart(matchQueue)}
-                disabled={!canStart}
-                data-testid="start-match-button"
-              >
-                {matchQueue === 'ranked' ? 'Start Ranked' : 'Start Normal'}
-              </button>
-            </div>
-            {error && <p className="error setup-launch-error">{error}</p>}
-          </div>
-
-          <section className="setup-opponent-preview" aria-label="Opponent preview">
-            <h2>Next Opponent</h2>
-            <div className="setup-opponent-inline">
-              <p className="small setup-opponent-pill" data-testid="setup-opponent-level">
-                CPU L{opponentPreview.level} ({opponentPreview.aiProfile})
-              </p>
-              <p className="small setup-opponent-pill" data-testid="setup-opponent-score-range">
-                Deck score range: {opponentPreview.scoreRange.min}-{opponentPreview.scoreRange.max}
-              </p>
-              <p className="small setup-opponent-pill" data-testid="setup-opponent-bonus">
-                Win bonus: +{opponentPreview.winGoldBonus}
-              </p>
-            </div>
-          </section>
-
-          <p className="small setup-deck-count">Deck: {selectedSlot.cards.length}/5 selected</p>
-
-          <div className="setup-selected-cards" data-testid="setup-selected-cards" aria-label="Selected cards">
-            {Array.from({ length: 5 }, (_, index) => {
-              const cardId = selectedSlot.cards[index]
-              if (!cardId) {
-                return (
-                  <div className="setup-selected-slot-empty" key={`empty-${index}`} data-testid={`setup-selected-slot-empty-${index}`}>
-                    <span>Empty</span>
-                  </div>
-                )
-              }
-
-              const card = getCard(cardId)
-              return (
-                <TriadCard
-                  key={cardId}
-                  card={card}
-                  context="setup"
-                  selected
-                  interactive
-                  onClick={() => handleCardToggle(cardId)}
-                  className="setup-preview-card"
-                  testId={`setup-selected-card-${cardId}`}
-                />
-              )
-            })}
-          </div>
-        </aside>
-
-        <section className="setup-collection" data-testid="setup-column-collection">
-          <div className="setup-filter-bar" aria-label="Setup filters">
-            <div className="setup-filter-row">
-              <label className="setup-filter-label" htmlFor="setup-filter-search-input">
-                Search
-              </label>
-              <input
-                id="setup-filter-search-input"
-                type="search"
-                value={searchTerm}
-                onChange={(event) => setSearchTerm(event.target.value)}
-                placeholder="Search by name or ID"
-                data-testid="setup-filter-search"
-              />
-            </div>
-
-            <div className="setup-filter-row">
-              <span className="setup-filter-label">Rarity</span>
-              <div className="setup-rarity-filters" role="group" aria-label="Setup rarity filters">
-                {availableRarities.map((rarity) => {
-                  const isActive = selectedRaritySet.has(rarity)
-                  return (
-                    <button
-                      key={rarity}
-                      type="button"
-                      className={`setup-rarity-chip ${isActive ? 'is-active' : ''}`}
-                      aria-pressed={isActive}
-                      onClick={() => handleRarityToggle(rarity)}
-                      data-testid={`setup-filter-rarity-${rarity}`}
-                    >
-                      {rarity}
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-
-            <div className="setup-filter-row setup-filter-row--sort">
-              <label className="setup-filter-label" htmlFor="setup-sort-select-input">
-                Sort
-              </label>
-              <select
-                id="setup-sort-select-input"
-                value={sortMode}
-                onChange={(event) => setSortMode(event.target.value as SetupSortMode)}
-                data-testid="setup-sort-select"
-              >
-                {setupSortOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
+      <div className="setup-layout setup-layout--play" data-testid="setup-layout">
+        <aside className="setup-builder" data-testid="setup-column-play">
+          {!selectedPreset ? (
+            <>
+              <p className="small">Choose your match format.</p>
+              <div className="setup-preset-grid" data-testid="setup-preset-grid" aria-label="Play mode presets">
+                {setupPresets.map((preset) => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    className={`setup-preset-button setup-preset-button--${preset.queue}`}
+                    data-testid={getPresetTestId(preset.id)}
+                    aria-label={`${preset.title} ${preset.subtitle}`}
+                    onClick={() => handlePresetSelect(preset.id)}
+                  >
+                    <span className="setup-preset-art-wrap" aria-hidden="true">
+                      <img className="setup-preset-art" src={preset.artwork} alt="" />
+                    </span>
+                    <span className="setup-preset-overlay" aria-hidden="true" />
+                    <span className="setup-preset-copy">
+                      <span className="setup-preset-title">{preset.title}</span>
+                      <span className="setup-preset-subtitle">{preset.subtitle}</span>
+                    </span>
+                  </button>
                 ))}
-              </select>
-              <button
-                type="button"
-                className="button"
-                onClick={handleResetFilters}
-                disabled={isDefaultFilterState}
-                data-testid="setup-filter-reset"
-              >
-                Reset
-              </button>
-            </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="setup-selected-top-bar">
+                <div className="setup-selected-left-stack" data-testid="setup-selected-left-stack">
+                  <div className="setup-selected-mode-head" data-testid="setup-selected-mode-head">
+                    <p className="small setup-selected-preset" data-testid="setup-selected-preset">
+                      {formatPresetLabel(selectedPreset)}
+                    </p>
+                    <button
+                      type="button"
+                      className="button"
+                      data-testid="setup-change-mode"
+                      onClick={() => {
+                        setError(null)
+                        setSelectedPresetId(null)
+                      }}
+                    >
+                      Change
+                    </button>
+                  </div>
+                  <div className="setup-slot-grid" aria-label="Deck slots">
+                    {profile.deckSlots.map((slot) => (
+                      <button
+                        key={slot.id}
+                        type="button"
+                        className={`setup-slot-button ${slot.id === selectedSlot.id ? 'is-selected' : ''}`}
+                        onClick={() => {
+                          setError(null)
+                          selectDeckSlot(slot.id)
+                          setDeckSlotMode(slot.id, selectedPreset.mode)
+                        }}
+                        data-testid={`deck-slot-${slot.id}`}
+                      >
+                        <span className="setup-slot-name">{slot.name}</span>
+                        <span className="setup-slot-count">
+                          {getDeckForMode(slot, selectedPreset.mode).length}/{getModeSpec(selectedPreset.mode).deckSize} ·{' '}
+                          {selectedPreset.mode}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {opponentPreview && opponentLevelInfo ? (
+                  <div className="setup-opponent-top-right" data-testid="setup-opponent-top-right">
+                    <div className="setup-new-challenger" data-testid="setup-new-challenger">
+                      <p className="setup-new-challenger-title">New Challenger</p>
+                      <p className="setup-new-challenger-meta" data-testid="setup-opponent-level">
+                        CPU L{opponentPreview.level} · {formatTierLabel(opponentLevelInfo.tierId)}
+                      </p>
+                      <div className="setup-new-challenger-details">
+                        <p className="setup-new-challenger-line" data-testid="setup-opponent-score-range">
+                          Deck score range: {opponentPreview.scoreRange.min}-{opponentPreview.scoreRange.max}
+                        </p>
+                        <p className="setup-new-challenger-line" data-testid="setup-opponent-bonus">
+                          Win bonus: +{opponentPreview.winGoldBonus}
+                        </p>
+                        <p className="setup-new-challenger-line" data-testid="setup-opponent-ai">
+                          AI: {opponentLevelInfo.aiProfile}
+                        </p>
+                        <p className="setup-new-challenger-line" data-testid="setup-opponent-rarity">
+                          Rarity mix: {formatRarityMix(opponentLevelInfo.rarityWeights)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
 
-            <p className="small setup-result-count" data-testid="setup-result-count">
-              {visibleCards.length} cards shown / {ownedCards.length} owned
-            </p>
-          </div>
+              <fieldset className="setup-rule-block">
+                <legend>Deck Mode</legend>
+                <div className="rule-toggle-group setup-deck-mode-group">
+                  <label className="setup-rule-toggle setup-rule-toggle--deck-mode">
+                    <input
+                      type="radio"
+                      name="setup-deck-mode"
+                      checked={deckMode === 'manual'}
+                      onChange={() => setDeckMode('manual')}
+                      data-testid="setup-deck-mode-manual"
+                    />
+                    <span>Use My Deck</span>
+                  </label>
+                  <label className="setup-rule-toggle setup-rule-toggle--deck-mode">
+                    <input
+                      type="radio"
+                      name="setup-deck-mode"
+                      checked={deckMode === 'auto'}
+                      onChange={() => setDeckMode('auto')}
+                      data-testid="setup-deck-mode-auto"
+                      disabled={!canUseAutoDeck}
+                    />
+                    <span>Auto Deck (random, in-range, +50% rewards)</span>
+                  </label>
+                </div>
+              </fieldset>
 
-          <div className="setup-card-grid" aria-label="Deck selection">
-            {visibleCards.map((card) => {
-              const selected = selectedCardSet.has(card.id)
-              return (
-                <TriadCard
-                  key={card.id}
-                  card={card}
-                  context="setup"
-                  selected={selected}
-                  interactive
-                  onClick={() => handleCardToggle(card.id)}
-                  testId={`setup-card-${card.id}`}
-                />
-              )
-            })}
-          </div>
-        </section>
+              {!canUseAutoDeck && autoDeckRequirementMessage ? (
+                <p className="small setup-auto-deck-note" data-testid="setup-auto-deck-note">
+                  {autoDeckRequirementMessage}
+                </p>
+              ) : null}
+
+              {selectedQueue === 'ranked' ? (
+                <p className="small" data-testid="setup-ranked-note">
+                  Ranked uses Open only (Same/Plus disabled).
+                </p>
+              ) : null}
+
+              <div className="setup-launch-bar" data-testid="setup-launch-bar">
+                <div className="actions setup-launch-actions">
+                  <button
+                    type="button"
+                    className="button button-primary"
+                    onClick={handleStart}
+                    disabled={!canStart}
+                    data-testid="start-match-button"
+                  >
+                    {selectedQueue === 'ranked' ? `Start ${selectedMode} Ranked` : `Start ${selectedMode} Normal`}
+                  </button>
+                </div>
+                {error && <p className="error setup-launch-error">{error}</p>}
+              </div>
+
+              <section className="setup-opponent-preview" aria-label="Opponent preview">
+                {selectedQueue === 'normal' ? (
+                  <div className="setup-opponent-selector" aria-label="Normal opponent levels">
+                    {availableNormalLevels.map((level) => {
+                      const isSelected = selectedNormalOpponentLevel === level
+                      return (
+                        <button
+                          key={level}
+                          type="button"
+                          className={`setup-opponent-level-chip ${isSelected ? 'is-active' : ''}`}
+                          onClick={() => {
+                            setError(null)
+                            setSelectedNormalOpponentLevel(level)
+                          }}
+                          aria-pressed={isSelected}
+                          data-testid={`setup-opponent-level-option-${level}`}
+                        >
+                          L{level}
+                        </button>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <p className="small setup-opponent-ranked-lock" data-testid="setup-opponent-ranked-lock">
+                    Ranked opponent is locked to your current rank.
+                  </p>
+                )}
+              </section>
+
+              {shouldShowManualDeckPreview ? (
+                <>
+                  <p className="small setup-deck-count">
+                    Deck: {selectedDeck.length}/{modeSpec?.deckSize ?? 0} selected ({selectedMode})
+                  </p>
+
+                  <div
+                    className="setup-selected-cards"
+                    data-testid="setup-selected-cards"
+                    aria-label="Selected cards"
+                    style={{ '--setup-selected-columns': `${modeSpec?.deckSize ?? 0}` } as CSSProperties}
+                  >
+                    {Array.from({ length: modeSpec?.deckSize ?? 0 }, (_, index) => {
+                      const cardId = selectedDeck[index]
+                      if (!cardId) {
+                        return (
+                          <div
+                            className="setup-selected-slot-empty"
+                            key={`empty-${index}`}
+                            data-testid={`setup-selected-slot-empty-${index}`}
+                          >
+                            <span>Empty</span>
+                          </div>
+                        )
+                      }
+
+                      const card = getCard(cardId)
+                      return (
+                        <TriadCard
+                          key={`${cardId}-${index}`}
+                          card={card}
+                          context="setup"
+                          className="setup-preview-card"
+                          testId={`setup-selected-card-${cardId}`}
+                        />
+                      )
+                    })}
+                  </div>
+                </>
+              ) : null}
+            </>
+          )}
+        </aside>
       </div>
     </section>
   )

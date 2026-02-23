@@ -1,23 +1,30 @@
 import { cardPool } from './cardPool'
-import type { CardId, DeckSlot, DeckSlotId, PlayerProfile, Rarity } from '../types'
+import type { CardId, DeckSlot, DeckSlotId, MatchMode, PlayerProfile, Rarity } from '../types'
+import { getModeSpec } from '../match/modeSpec'
 
 function getStarterCardsFromPool(): {
   starterOwnedCardIds: CardId[]
   starterDeck: CardId[]
-  cpuDeckRotation: CardId[][]
+  cpuDeckRotation3x3: CardId[][]
+  cpuDeckRotation4x4: CardId[][]
 } {
   const commonIds = cardPool.filter((card) => card.rarity === 'common').map((card) => card.id)
   const uncommonIds = cardPool.filter((card) => card.rarity === 'uncommon').map((card) => card.id)
   const rareIds = cardPool.filter((card) => card.rarity === 'rare').map((card) => card.id)
 
-  if (commonIds.length < 10 || uncommonIds.length < 5 || rareIds.length < 5) {
+  if (commonIds.length < 17 || uncommonIds.length < 8 || rareIds.length < 5) {
     throw new Error('Card pool does not contain enough cards to build starter and CPU decks.')
   }
 
   return {
     starterOwnedCardIds: commonIds.slice(0, 10),
     starterDeck: commonIds.slice(0, 5),
-    cpuDeckRotation: [commonIds.slice(5, 10), uncommonIds.slice(0, 5), rareIds.slice(0, 5)],
+    cpuDeckRotation3x3: [commonIds.slice(5, 10), uncommonIds.slice(0, 5), rareIds.slice(0, 5)],
+    cpuDeckRotation4x4: [
+      commonIds.slice(5, 13),
+      [...commonIds.slice(13, 17), ...uncommonIds.slice(0, 4)],
+      [...uncommonIds.slice(4, 8), ...rareIds.slice(0, 4)],
+    ],
   }
 }
 
@@ -27,7 +34,10 @@ export const starterOwnedCardIds: CardId[] = starterConfig.starterOwnedCardIds
 
 export const starterDeck: CardId[] = starterConfig.starterDeck
 
-const cpuDeckRotation: CardId[][] = starterConfig.cpuDeckRotation
+const cpuDeckRotationByMode: Record<MatchMode, CardId[][]> = {
+  '3x3': starterConfig.cpuDeckRotation3x3,
+  '4x4': starterConfig.cpuDeckRotation4x4,
+}
 
 const resetStarterRarityCounts: ReadonlyArray<{ rarity: Rarity; count: number }> = [
   { rarity: 'common', count: 6 },
@@ -92,9 +102,10 @@ export function createResetStarterCards(random: () => number = Math.random): {
   }
 }
 
-export function getCpuDeckForMatch(matchIndex: number): CardId[] {
-  const slot = matchIndex % cpuDeckRotation.length
-  return [...cpuDeckRotation[slot]]
+export function getCpuDeckForMatch(matchIndex: number, mode: MatchMode): CardId[] {
+  const rotation = cpuDeckRotationByMode[mode]
+  const slot = matchIndex % rotation.length
+  return [...rotation[slot]]
 }
 
 export function getDeckSlot(profile: PlayerProfile, slotId: DeckSlotId): DeckSlot {
@@ -105,11 +116,15 @@ export function getSelectedDeckSlot(profile: PlayerProfile): DeckSlot {
   return getDeckSlot(profile, profile.selectedDeckSlotId)
 }
 
-export function toggleCardInDeck(deck: CardId[], cardId: CardId): CardId[] {
+export function getDeckForMode(slot: DeckSlot, mode: MatchMode): CardId[] {
+  return mode === '4x4' ? slot.cards4x4 : slot.cards
+}
+
+export function toggleCardInDeck(deck: CardId[], cardId: CardId, maxSize = 5): CardId[] {
   if (deck.includes(cardId)) {
     return deck.filter((id) => id !== cardId)
   }
-  if (deck.length >= 5) {
+  if (deck.length >= maxSize) {
     return deck
   }
   return [...deck, cardId]
@@ -124,7 +139,11 @@ export function isDeckNameValid(name: string): { valid: boolean; reason?: string
 }
 
 export function hasExactlyFiveUniqueCards(deck: CardId[]): boolean {
-  return deck.length === 5 && new Set(deck).size === 5
+  return hasExactlyDeckSizeUniqueCards(deck, 5)
+}
+
+export function hasExactlyDeckSizeUniqueCards(deck: CardId[], deckSize: number): boolean {
+  return deck.length === deckSize && new Set(deck).size === deckSize
 }
 
 export function isDeckSubsetOfOwned(deck: CardId[], ownedCardIds: CardId[]): boolean {
@@ -132,9 +151,10 @@ export function isDeckSubsetOfOwned(deck: CardId[], ownedCardIds: CardId[]): boo
   return deck.every((cardId) => owned.has(cardId))
 }
 
-export function validateDeck(deck: CardId[], ownedCardIds: CardId[]): { valid: boolean; reason?: string } {
-  if (!hasExactlyFiveUniqueCards(deck)) {
-    return { valid: false, reason: 'Deck must contain exactly five unique cards.' }
+export function validateDeck(deck: CardId[], ownedCardIds: CardId[], mode: MatchMode): { valid: boolean; reason?: string } {
+  const modeSpec = getModeSpec(mode)
+  if (!hasExactlyDeckSizeUniqueCards(deck, modeSpec.deckSize)) {
+    return { valid: false, reason: `Deck must contain exactly ${modeSpec.deckSize} unique cards.` }
   }
   if (!isDeckSubsetOfOwned(deck, ownedCardIds)) {
     return { valid: false, reason: 'Deck includes cards not in collection.' }

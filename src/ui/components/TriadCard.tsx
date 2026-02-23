@@ -1,6 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import type { SyntheticEvent } from 'react'
+import { getTypeIdByCategory } from '../../domain/cards/taxonomy'
 import type { CardDef } from '../../domain/types'
 import { getCardArtCandidates } from './cardArt'
+import { getTypeLogoMeta } from './typeLogos'
 
 export type TriadCardContext = 'collection-list' | 'collection-detail' | 'setup' | 'hand-player' | 'hand-cpu'
 export type NewBadgeVariant = 'default' | 'reveal' | 'claim'
@@ -35,7 +38,7 @@ function normalizeRarity(rarity: CardDef['rarity']): string {
   return rarity.charAt(0).toUpperCase() + rarity.slice(1)
 }
 
-export function TriadCard({
+export const TriadCard = memo(function TriadCard({
   card,
   context,
   owned = true,
@@ -52,14 +55,18 @@ export function TriadCard({
   const locked = !owned
   const label = locked ? `Locked card ${card.id.toUpperCase()}` : card.name
   const isMatchHandContext = context === 'hand-player' || context === 'hand-cpu'
+  const hasNewPill = showNew && owned
   const isRevealNew = showNew && owned && newBadgeVariant === 'reveal'
   const artCandidates = useMemo(() => (locked ? [] : getCardArtCandidates(card.name)), [card.name, locked])
-  const [artCandidateIndex, setArtCandidateIndex] = useState(0)
+  const typeLogoMeta = useMemo(
+    () => (locked ? null : getTypeLogoMeta(getTypeIdByCategory(card.categoryId))),
+    [card.categoryId, locked],
+  )
+  const artCandidateIndexRef = useRef(0)
   const [artUnavailable, setArtUnavailable] = useState(false)
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setArtCandidateIndex(0)
+    artCandidateIndexRef.current = 0
     setArtUnavailable(false)
   }, [card.name, locked])
 
@@ -71,6 +78,8 @@ export function TriadCard({
     selected ? 'is-selected' : '',
     interactive ? 'is-interactive' : '',
     isRevealNew ? 'is-reveal-new' : '',
+    hasNewPill ? 'has-new-pill' : '',
+    hasNewPill ? `has-new-pill--${newBadgeVariant}` : '',
     className ?? '',
   ]
     .filter(Boolean)
@@ -80,17 +89,18 @@ export function TriadCard({
   const right = locked ? '?' : card.right
   const bottom = locked ? '?' : card.bottom
   const left = locked ? '?' : card.left
-  const artSrc = !locked && !artUnavailable ? (artCandidates[artCandidateIndex] ?? null) : null
-  // Hide letter sigils for owned cards now that artwork is expected; keep fallback only for locked cards.
-  const showSigil = locked
+  const artSrc = !locked && !artUnavailable ? (artCandidates[0] ?? null) : null
+  const showSigil = locked || artUnavailable
 
-  function handleArtError() {
-    if (artCandidateIndex >= artCandidates.length - 1) {
+  function handleArtError(event: SyntheticEvent<HTMLImageElement>) {
+    const nextCandidateIndex = artCandidateIndexRef.current + 1
+    if (nextCandidateIndex >= artCandidates.length) {
       setArtUnavailable(true)
       return
     }
 
-    setArtCandidateIndex((index) => index + 1)
+    artCandidateIndexRef.current = nextCandidateIndex
+    event.currentTarget.src = artCandidates[nextCandidateIndex]
   }
 
   const content = (
@@ -114,6 +124,24 @@ export function TriadCard({
         )
       ) : null}
       {owned && copies > 1 ? <span className="triad-card__copies-pill">x{copies}</span> : null}
+      {typeLogoMeta ? (
+        <span
+          className={`triad-card__type-badge triad-card__type-badge--${typeLogoMeta.id}`}
+          aria-label={`Type: ${typeLogoMeta.name}`}
+          data-testid="triad-card-type-badge"
+        >
+          <img
+            className="triad-card__type-logo"
+            src={typeLogoMeta.imageSrc}
+            alt=""
+            aria-hidden="true"
+            loading="lazy"
+            decoding="async"
+            draggable={false}
+            data-testid="triad-card-type-logo"
+          />
+        </span>
+      ) : null}
       <div className="triad-card__frame">
         <div className="triad-card__face">
           <span className="triad-card__stat triad-card__stat--top">{top}</span>
@@ -172,4 +200,4 @@ export function TriadCard({
       {content}
     </article>
   )
-}
+})

@@ -1,9 +1,13 @@
 import { Link, Navigate } from 'react-router-dom'
 import { useGame } from '../../app/useGame'
+import { RankedLpRecap } from '../components/RankedLpRecap'
 
 function formatGoldBonusDetails(rewards: {
   bonusGoldFromDuplicate: number
   bonusGoldFromDifficulty: number
+  bonusGoldFromComboBounty: number
+  bonusGoldFromCleanVictory: number
+  bonusGoldFromSecondarySynergy: number
   bonusGoldFromCriticalVictory: number
   bonusGoldFromAutoDeck: number
 }): string {
@@ -13,6 +17,15 @@ function formatGoldBonusDetails(rewards: {
   }
   if (rewards.bonusGoldFromDuplicate > 0) {
     parts.push(`+${rewards.bonusGoldFromDuplicate} duplicate`)
+  }
+  if (rewards.bonusGoldFromComboBounty > 0) {
+    parts.push(`+${rewards.bonusGoldFromComboBounty} combo`)
+  }
+  if (rewards.bonusGoldFromCleanVictory > 0) {
+    parts.push(`+${rewards.bonusGoldFromCleanVictory} clean`)
+  }
+  if (rewards.bonusGoldFromSecondarySynergy > 0) {
+    parts.push(`+${rewards.bonusGoldFromSecondarySynergy} secondary`)
   }
   if (rewards.bonusGoldFromCriticalVictory > 0) {
     parts.push(`+${rewards.bonusGoldFromCriticalVictory} critical`)
@@ -87,18 +100,7 @@ export function ResultsPage() {
       </div>
 
       {rankedUpdate ? (
-        <div className="result-block">
-          <h2>Ranked LP</h2>
-          <p>
-            {rankedUpdate.deltaLp >= 0 ? '+' : ''}
-            {rankedUpdate.deltaLp} LP
-            {' • '}
-            {rankedUpdate.next.tier.toUpperCase()}
-            {rankedUpdate.next.division ? ` ${rankedUpdate.next.division}` : ''}
-            {' • '}
-            {rankedUpdate.next.lp} LP
-          </p>
-        </div>
+        <RankedLpRecap update={rankedUpdate} animated={false} context="results" testIdPrefix="results-ranked" />
       ) : null}
 
       <div className="actions">

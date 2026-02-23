@@ -1,0 +1,126 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">Mode 3X3 Ranked</title>
+  <desc id="desc">Stylized ranked game mode card inspired by JRPG menu aesthetics for 3X3 ranked mode.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#130809"/>
+      <stop offset="45%" stop-color="#3a0f13"/>
+      <stop offset="100%" stop-color="#6e1b25"/>
+    </linearGradient>
+    <radialGradient id="mist" cx="70%" cy="32%" r="55%">
+      <stop offset="0%" stop-color="#ffb3be" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#ffb3be" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="frame" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffe7c4"/>
+      <stop offset="50%" stop-color="#ffbf6a"/>
+      <stop offset="100%" stop-color="#fff3df"/>
+    </linearGradient>
+    <linearGradient id="crownGold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#fff2ce"/>
+      <stop offset="55%" stop-color="#ffcc74"/>
+      <stop offset="100%" stop-color="#d8912d"/>
+    </linearGradient>
+    <linearGradient id="crownSilver" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f6fbff"/>
+      <stop offset="50%" stop-color="#c7d7ea"/>
+      <stop offset="100%" stop-color="#8fa6bf"/>
+    </linearGradient>
+    <radialGradient id="royalAura" cx="50%" cy="50%" r="62%">
+      <stop offset="0%" stop-color="#ffd7a0" stop-opacity="0.36"/>
+      <stop offset="100%" stop-color="#ffd7a0" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="heartGem" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffadb8"/>
+      <stop offset="100%" stop-color="#d34c66"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="crownGlow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="4.5" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#bg)"/>
+  <rect width="1600" height="900" fill="url(#mist)"/>
+  <circle cx="1235" cy="200" r="210" fill="#ff9dae" opacity="0.10"/>
+
+  <rect x="70" y="70" width="1460" height="760" rx="34" fill="none" stroke="url(#frame)" stroke-width="6"/>
+  <rect x="92" y="92" width="1416" height="716" rx="25" fill="none" stroke="#ffe9cc" stroke-opacity="0.30" stroke-width="2"/>
+
+  <g transform="translate(800 120)" filter="url(#glow)">
+    <path d="M0 16c20-22 58-22 78 0 19 21 15 50-17 74L0 138l-61-48c-32-24-36-53-17-74 20-22 58-22 78 0z" fill="#ffdca8" opacity="0.94"/>
+    <rect x="-10" y="138" width="20" height="52" rx="9" fill="#ffdca8"/>
+    <circle cx="0" cy="206" r="16" fill="#ffdca8"/>
+    <polygon points="-56,-30 -37,-6 -71,-6" fill="#ffdca8"/>
+    <polygon points="56,-30 37,-6 71,-6" fill="#ffdca8"/>
+    <polygon points="0,-38 15,-12 -15,-12" fill="#ffdca8"/>
+  </g>
+
+  <text x="130" y="165" fill="#ffe7c3" font-size="42" font-family="Georgia, 'Times New Roman', serif" letter-spacing="7">COMPETITIVE MODE</text>
+
+  <g>
+    <rect x="130" y="200" width="560" height="500" rx="28" fill="#231010" fill-opacity="0.52" stroke="#ffd9a3" stroke-opacity="0.55"/>
+    <text x="185" y="295" fill="#ffe8c8" font-size="56" font-family="Georgia, 'Times New Roman', serif" letter-spacing="5">TRIAD FORMAT</text>
+    <text x="185" y="435" fill="#fff2de" font-size="170" font-family="Georgia, 'Times New Roman', serif" font-weight="700" letter-spacing="8">3X3</text>
+    <rect x="185" y="495" width="340" height="3" fill="#ffd39a" opacity="0.9"/>
+    <text x="185" y="585" fill="#ffd39a" font-size="56" font-family="Georgia, 'Times New Roman', serif" letter-spacing="8">RANKED</text>
+    <text x="185" y="640" fill="#ffe6c5" font-size="24" font-family="Georgia, 'Times New Roman', serif" letter-spacing="2">Win streaks matter  ·  precision over chaos</text>
+  </g>
+
+  <g>
+    <rect x="760" y="180" width="700" height="540" rx="28" fill="#1a0a0c" fill-opacity="0.56" stroke="#ffd9a3" stroke-opacity="0.55"/>
+    <g transform="translate(1094 468) scale(1.34)">
+      <circle cx="0" cy="0" r="220" fill="url(#royalAura)" opacity="0.64"/>
+
+      <g opacity="0.5">
+        <rect x="-9" y="-238" width="18" height="478" rx="9" fill="url(#crownSilver)" stroke="#ffd9a8" stroke-opacity="0.65" stroke-width="1.8"/>
+        <rect x="-57" y="-16" width="114" height="20" rx="10" fill="url(#crownSilver)" stroke="#ffd9a8" stroke-opacity="0.65" stroke-width="1.8"/>
+        <path d="M0 -266c18-26 52-26 70-2 17 23 13 53-12 76L0 -144l-58-48c-25-23-29-53-12-76 18-24 52-24 70 0z" fill="none" stroke="url(#crownSilver)" stroke-width="10"/>
+        <circle cx="0" cy="238" r="19" fill="url(#crownSilver)" stroke="#ffd9a8" stroke-opacity="0.7" stroke-width="1.8"/>
+        <path d="M19 238h22M-19 238h-22M0 219v-20" fill="none" stroke="#ffd9a8" stroke-opacity="0.68" stroke-width="3.5" stroke-linecap="round"/>
+        <path d="M57 4h24M-57 4h-24" fill="none" stroke="#ffd9a8" stroke-opacity="0.65" stroke-width="3.5" stroke-linecap="round"/>
+      </g>
+
+      <path d="M-188 10c-72-62-84 102-16 128" fill="none" stroke="#ffd39a" stroke-width="5" stroke-linecap="round" opacity="0.72"/>
+      <path d="M188 10c72-62 84 102 16 128" fill="none" stroke="#ffd39a" stroke-width="5" stroke-linecap="round" opacity="0.72"/>
+      <path d="M-206 42c-49 18-66 58-74 100" fill="none" stroke="#ffd39a" stroke-width="3" stroke-linecap="round" opacity="0.48"/>
+      <path d="M206 42c49 18 66 58 74 100" fill="none" stroke="#ffd39a" stroke-width="3" stroke-linecap="round" opacity="0.48"/>
+
+      <circle cx="0" cy="0" r="158" fill="#2a0c10" stroke="#ffd39a" stroke-width="3.4"/>
+      <circle cx="0" cy="0" r="132" fill="none" stroke="#ffe4be" stroke-opacity="0.56" stroke-width="2.2"/>
+
+      <path d="M-154 4c-38-26-68-22-95 8M154 4c38-26 68-22 95 8" fill="none" stroke="url(#crownSilver)" stroke-width="9" stroke-linecap="round" opacity="0.88"/>
+      <path d="M-156 46c-40 26-70 22-98-10M156 46c40 26 70 22 98-10" fill="none" stroke="url(#crownSilver)" stroke-width="7" stroke-linecap="round" opacity="0.72"/>
+
+      <g transform="translate(0 -136)" filter="url(#crownGlow)">
+        <polygon points="-84,28 -50,-34 -8,8 8,8 50,-34 84,28 70,88 -70,88" fill="url(#crownGold)" stroke="#ffe9c2" stroke-width="2.6"/>
+        <rect x="-70" y="84" width="140" height="14" rx="6" fill="#a56322"/>
+        <circle cx="-48" cy="-14" r="5.4" fill="#fff2d9"/>
+        <circle cx="0" cy="6" r="7" fill="#ff7890"/>
+        <circle cx="48" cy="-14" r="5.4" fill="#fff2d9"/>
+      </g>
+
+      <path d="M0 -68c26-30 72-28 96 2 23 28 16 64-19 92L0 88l-77-62c-35-28-42-64-19-92 24-30 70-32 96-2z" fill="url(#heartGem)" stroke="url(#crownSilver)" stroke-width="3"/>
+      <circle cx="0" cy="34" r="11" fill="#d7e6f7" stroke="#7b93ad" stroke-width="2"/>
+      <rect x="-8" y="45" width="16" height="47" rx="7" fill="#d7e6f7" stroke="#7b93ad" stroke-width="2"/>
+
+      <polygon points="-8,-186 0,-170 8,-186 24,-194 16,-178 32,-170 16,-162 24,-146 8,-154 0,-138 -8,-154 -24,-146 -16,-162 -32,-170 -16,-178 -24,-194" fill="#fff0d2" opacity="0.92"/>
+      <polygon points="-172,-52 -166,-40 -154,-34 -166,-28 -172,-16 -178,-28 -190,-34 -178,-40" fill="#ffe7c5" opacity="0.78"/>
+      <polygon points="172,-52 178,-40 190,-34 178,-28 172,-16 166,-28 154,-34 166,-40" fill="#ffe7c5" opacity="0.78"/>
+
+      <text x="0" y="150" text-anchor="middle" fill="#ffe8c8" font-size="28" font-family="Georgia, 'Times New Roman', serif" letter-spacing="5">RANKED</text>
+    </g>
+  </g>
+
+  <text x="130" y="785" fill="#ffe4c0" font-size="23" font-family="Georgia, 'Times New Roman', serif" letter-spacing="3">KINGDOM TRIALS // GLORY DEMANDS DISCIPLINE</text>
+</svg>

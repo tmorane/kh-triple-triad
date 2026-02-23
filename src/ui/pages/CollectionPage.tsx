@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useGame } from '../../app/useGame'
 import { cardPool } from '../../domain/cards/cardPool'
-import { getCategoryLabel, getElementLabel } from '../../domain/cards/taxonomy'
-import type { CardDef, CardId, Rarity } from '../../domain/types'
+import { cardTypeIds, getCategoryLabel, getElementLabel, getTypeIdByCategory, getTypeLabel } from '../../domain/cards/taxonomy'
+import type { CardDef, CardId, CardTypeId, Rarity } from '../../domain/types'
+import { SynergyBonusLegend } from '../components/SynergyBonusLegend'
 import { TriadCard } from '../components/TriadCard'
 
 type CollectionDiscoveryFilter = 'all' | 'owned' | 'locked'
@@ -27,6 +28,7 @@ const raritySectionLabels: Record<Rarity, string> = {
 
 type PersistedCollectionFilters = {
   selectedRarities: Rarity[]
+  selectedTypes: CardTypeId[]
   discoveryFilter: CollectionDiscoveryFilter
 }
 
@@ -38,7 +40,14 @@ function isRarity(value: unknown): value is Rarity {
   return typeof value === 'string' && rarityFilterOrder.includes(value as Rarity)
 }
 
-function readPersistedCollectionFilters(availableRarities: Rarity[]): PersistedCollectionFilters | null {
+function isCardType(value: unknown): value is CardTypeId {
+  return typeof value === 'string' && cardTypeIds.includes(value as CardTypeId)
+}
+
+function readPersistedCollectionFilters(
+  availableRarities: Rarity[],
+  availableTypes: CardTypeId[],
+): PersistedCollectionFilters | null {
   if (typeof window === 'undefined') {
     return null
   }
@@ -56,14 +65,20 @@ function readPersistedCollectionFilters(availableRarities: Rarity[]): PersistedC
 
     const discoveryCandidate = (parsedValue as { discoveryFilter?: unknown }).discoveryFilter
     const rarityCandidates = (parsedValue as { selectedRarities?: unknown }).selectedRarities
+    const typeCandidates = (parsedValue as { selectedTypes?: unknown }).selectedTypes
     const selectedRaritySet = new Set(
       Array.isArray(rarityCandidates) ? rarityCandidates.filter((value) => isRarity(value)) : [],
     )
+    const selectedTypeSet = new Set(
+      Array.isArray(typeCandidates) ? typeCandidates.filter((value) => isCardType(value)) : [],
+    )
     const selectedRarities = availableRarities.filter((rarity) => selectedRaritySet.has(rarity))
+    const selectedTypes = availableTypes.filter((typeId) => selectedTypeSet.has(typeId))
 
     return {
       discoveryFilter: isCollectionDiscoveryFilter(discoveryCandidate) ? discoveryCandidate : 'all',
       selectedRarities: selectedRarities.length > 0 ? selectedRarities : availableRarities,
+      selectedTypes: selectedTypes.length > 0 ? selectedTypes : availableTypes,
     }
   } catch {
     return null
@@ -94,17 +109,37 @@ export function CollectionPage() {
     () => rarityFilterOrder.filter((rarity) => cardPool.some((card) => card.rarity === rarity)),
     [],
   )
-  const [initialFilters] = useState<PersistedCollectionFilters | null>(() => readPersistedCollectionFilters(availableRarities))
+  const availableTypes = useMemo(
+    () =>
+      cardTypeIds.filter((typeId) =>
+        cardPool.some((card) => getTypeIdByCategory(card.categoryId) === typeId),
+      ),
+    [],
+  )
+  const [initialFilters] = useState<PersistedCollectionFilters | null>(() =>
+    readPersistedCollectionFilters(availableRarities, availableTypes),
+  )
   const totalCopies = Object.values(profile.cardCopiesById).reduce((sum, copies) => sum + copies, 0)
   const defaultSelectedCardId = cardPool.find((card) => owned.has(card.id))?.id ?? cardPool[0]?.id ?? 'c01'
   const [selectedCardId, setSelectedCardId] = useState<CardId>(defaultSelectedCardId)
   const [selectedRarities, setSelectedRarities] = useState<Rarity[]>(initialFilters?.selectedRarities ?? availableRarities)
+  const [selectedTypes, setSelectedTypes] = useState<CardTypeId[]>(initialFilters?.selectedTypes ?? availableTypes)
   const [discoveryFilter, setDiscoveryFilter] = useState<CollectionDiscoveryFilter>(initialFilters?.discoveryFilter ?? 'all')
+  const selectCardHandlers = useMemo(() => {
+    const handlers = new Map<CardId, () => void>()
+    for (const card of cardPool) {
+      handlers.set(card.id, () => setSelectedCardId(card.id))
+    }
+    return handlers
+  }, [])
 
   const filteredCards = useMemo(
     () =>
       cardPool.filter((card) => {
         if (!selectedRarities.includes(card.rarity)) {
+          return false
+        }
+        if (!selectedTypes.includes(getTypeIdByCategory(card.categoryId))) {
           return false
         }
 
@@ -117,7 +152,7 @@ export function CollectionPage() {
         }
         return true
       }),
-    [discoveryFilter, owned, selectedRarities],
+    [discoveryFilter, owned, selectedRarities, selectedTypes],
   )
 
   const cardsByRarity = useMemo(() => {
@@ -169,15 +204,20 @@ export function CollectionPage() {
   useEffect(() => {
     persistCollectionFilters({
       selectedRarities,
+      selectedTypes,
       discoveryFilter,
     })
-  }, [discoveryFilter, selectedRarities])
+  }, [discoveryFilter, selectedRarities, selectedTypes])
 
   const selectedCard = filteredCards.find((card) => card.id === selectedCardId) ?? filteredCards[0] ?? null
   const selectedOwned = selectedCard ? owned.has(selectedCard.id) : false
   const selectedNew = selectedCard ? recent.has(selectedCard.id) : false
+  const selectedInspectTypeId = selectedCard && selectedOwned ? getTypeIdByCategory(selectedCard.categoryId) : null
 
-  const isDefaultFilterState = discoveryFilter === 'all' && selectedRarities.length === availableRarities.length
+  const isDefaultFilterState =
+    discoveryFilter === 'all' &&
+    selectedRarities.length === availableRarities.length &&
+    selectedTypes.length === availableTypes.length
 
   const toggleRarityFilter = (rarity: Rarity) => {
     setSelectedRarities((current) => {
@@ -193,8 +233,23 @@ export function CollectionPage() {
     })
   }
 
+  const toggleTypeFilter = (typeId: CardTypeId) => {
+    setSelectedTypes((current) => {
+      if (current.includes(typeId)) {
+        if (current.length === 1) {
+          return current
+        }
+        return current.filter((value) => value !== typeId)
+      }
+
+      const next = [...current, typeId]
+      return availableTypes.filter((value) => next.includes(value))
+    })
+  }
+
   const resetFilters = () => {
     setSelectedRarities(availableRarities)
+    setSelectedTypes(availableTypes)
     setDiscoveryFilter('all')
   }
 
@@ -228,6 +283,25 @@ export function CollectionPage() {
                     data-testid={`collection-filter-rarity-${rarity}`}
                   >
                     {formatRarityLabel(rarity)}
+                  </button>
+                )
+              })}
+            </div>
+
+            <div className="collection-filter-row">
+              <span className="collection-filter-label">Type</span>
+              {availableTypes.map((typeId) => {
+                const isActive = selectedTypes.includes(typeId)
+                return (
+                  <button
+                    key={typeId}
+                    type="button"
+                    className={`collection-filter-chip ${isActive ? 'is-active' : ''}`}
+                    aria-pressed={isActive}
+                    onClick={() => toggleTypeFilter(typeId)}
+                    data-testid={`collection-filter-type-${typeId}`}
+                  >
+                    {getTypeLabel(typeId)}
                   </button>
                 )
               })}
@@ -293,7 +367,7 @@ export function CollectionPage() {
                           selected={selectedCardId === card.id}
                           showNew={isNew}
                           interactive
-                          onClick={() => setSelectedCardId(card.id)}
+                          onClick={selectCardHandlers.get(card.id)}
                           testId={`collection-card-${card.id}`}
                         />
                       )
@@ -311,6 +385,7 @@ export function CollectionPage() {
 
         <aside className="collection-inspect" data-testid="collection-inspect">
           <h2>Inspect</h2>
+          <SynergyBonusLegend highlightTypeId={selectedInspectTypeId} isTypeHidden={!selectedOwned} />
           {selectedCard ? (
             <>
               <TriadCard
@@ -353,6 +428,12 @@ export function CollectionPage() {
                   <dt>Copies</dt>
                   <dd data-testid="collection-selected-copies">
                     {selectedOwned ? profile.cardCopiesById[selectedCard.id] ?? 1 : '??'}
+                  </dd>
+                </div>
+                <div className="collection-meta-row">
+                  <dt>Type</dt>
+                  <dd data-testid="collection-selected-type">
+                    {selectedOwned ? getTypeLabel(getTypeIdByCategory(selectedCard.categoryId)) : 'Inconnu'}
                   </dd>
                 </div>
               </dl>

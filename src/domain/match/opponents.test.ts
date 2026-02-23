@@ -1,12 +1,15 @@
 import { describe, expect, test } from 'vitest'
-import { getCard } from '../cards/cardPool'
+import { cardPool, getCard } from '../cards/cardPool'
 import { createDefaultProfile } from '../progression/profile'
 import type { OpponentLevel } from './opponents'
 import {
   buildAutoPlayerDeck,
   buildCpuOpponent,
+  buildCpuOpponentForLevel,
   computeDeckScore,
+  getCpuOpponentPreviewForLevel,
   getOpponentLevelForProfile,
+  getOpponentLevelInfo,
   opponentLevelConfigs,
 } from './opponents'
 
@@ -54,6 +57,44 @@ describe('opponents', () => {
     expect(opponent.deckScore).toBeGreaterThanOrEqual(opponent.scoreRange.min)
     expect(opponent.deckScore).toBeLessThanOrEqual(opponent.scoreRange.max)
     expect(Math.abs(opponent.deckScore - opponent.adaptiveTargetScore)).toBeLessThanOrEqual(3)
+  })
+
+  test('builds CPU opponent for an explicitly selected level', () => {
+    const playerDeck = createDefaultProfile().deckSlots[0].cards
+    const opponent = buildCpuOpponentForLevel(8, playerDeck, 3030)
+
+    expect(opponent.level).toBe(8)
+    expect(opponent.tierId).toBe('master')
+    expect(opponent.aiProfile).toBe('expert')
+    expect(opponent.scoreRange).toEqual({ min: 150, max: 178 })
+    expect(opponent.deck).toHaveLength(5)
+    expect(new Set(opponent.deck).size).toBe(5)
+    expect(opponent.deckScore).toBeGreaterThanOrEqual(opponent.scoreRange.min)
+    expect(opponent.deckScore).toBeLessThanOrEqual(opponent.scoreRange.max)
+  })
+
+  test('returns preview config for an explicitly selected level', () => {
+    const playerDeck = createDefaultProfile().deckSlots[0].cards
+    const preview = getCpuOpponentPreviewForLevel(6, playerDeck)
+
+    expect(preview.level).toBe(6)
+    expect(preview.tierId).toBe('emerald')
+    expect(preview.aiProfile).toBe('expert')
+    expect(preview.scoreRange).toEqual({ min: 104, max: 128 })
+    expect(preview.winGoldBonus).toBe(20)
+    expect(preview.adaptiveTargetScore).toBeGreaterThanOrEqual(preview.scoreRange.min)
+    expect(preview.adaptiveTargetScore).toBeLessThanOrEqual(preview.scoreRange.max)
+  })
+
+  test('returns rich level info for setup chips metadata', () => {
+    const info = getOpponentLevelInfo(7)
+
+    expect(info.level).toBe(7)
+    expect(info.tierId).toBe('diamond')
+    expect(info.aiProfile).toBe('expert')
+    expect(info.scoreRange).toEqual({ min: 132, max: 158 })
+    expect(info.winGoldBonus).toBe(24)
+    expect(info.rarityWeights).toEqual({ epic: 0.65, legendary: 0.35 })
   })
 
   test('only uses allowed rarities for each level config', () => {
@@ -115,14 +156,44 @@ describe('opponents', () => {
       return
     }
 
-    const deckA = buildAutoPlayerDeck(level4Range, 8080)
-    const deckB = buildAutoPlayerDeck(level4Range, 9090)
+    const ownedCardIds = cardPool.map((card) => card.id)
+    const deckA = buildAutoPlayerDeck(level4Range, 8080, '3x3', ownedCardIds)
+    const deckB = buildAutoPlayerDeck(level4Range, 9090, '3x3', ownedCardIds)
     const scoreA = computeDeckScore(deckA)
 
     expect(deckA).toHaveLength(5)
     expect(new Set(deckA).size).toBe(5)
+    expect(deckA.every((cardId) => ownedCardIds.includes(cardId))).toBe(true)
     expect(scoreA).toBeGreaterThanOrEqual(level4Range.min)
     expect(scoreA).toBeLessThanOrEqual(level4Range.max)
     expect(deckA).not.toEqual(deckB)
+  })
+
+  test('buildAutoPlayerDeck stays within owned cards when owned pool is constrained', () => {
+    const level4Range = opponentLevelConfigs.find((entry) => entry.level === 4)?.scoreRange
+    expect(level4Range).toBeTruthy()
+    if (!level4Range) {
+      return
+    }
+
+    const ownedCardIds = createDefaultProfile().ownedCardIds
+    const deck = buildAutoPlayerDeck(level4Range, 8080, '3x3', ownedCardIds)
+
+    expect(deck).toHaveLength(5)
+    expect(new Set(deck).size).toBe(5)
+    expect(deck.every((cardId) => ownedCardIds.includes(cardId))).toBe(true)
+  })
+
+  test('buildAutoPlayerDeck throws when owned collection is smaller than deck size', () => {
+    const level4Range = opponentLevelConfigs.find((entry) => entry.level === 4)?.scoreRange
+    expect(level4Range).toBeTruthy()
+    if (!level4Range) {
+      return
+    }
+
+    const insufficientOwned = createDefaultProfile().ownedCardIds.slice(0, 7)
+    expect(() => buildAutoPlayerDeck(level4Range, 2026, '4x4', insufficientOwned)).toThrow(
+      'Auto Deck requires at least 8 owned cards for 4x4.',
+    )
   })
 })

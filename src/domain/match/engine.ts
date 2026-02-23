@@ -1,8 +1,10 @@
 import { getCard } from '../cards/cardPool'
-import type { Actor, CardId, MatchConfig, MatchResult, Move } from '../types'
+import type { Actor, CardId, MatchConfig, MatchMetrics, MatchResult, MatchTypeSynergyState, Move } from '../types'
+import { getModeSpec } from './modeSpec'
 import type { MatchState } from './types'
 
 type Direction = 'up' | 'right' | 'down' | 'left'
+type DirectionalBonus = Record<Direction, number>
 
 interface AdjacentEnemy {
   directionFromSource: Direction
@@ -31,20 +33,57 @@ const neighborDelta: Record<Direction, [number, number]> = {
   left: [0, -1],
 }
 
+function createEmptyTypeSynergyState(): MatchTypeSynergyState {
+  return {
+    player: { primaryTypeId: null, secondaryTypeId: null },
+    cpu: { primaryTypeId: null, secondaryTypeId: null },
+  }
+}
+
+function cloneTypeSynergyState(typeSynergy: MatchTypeSynergyState | undefined): MatchTypeSynergyState {
+  const source = typeSynergy ?? createEmptyTypeSynergyState()
+  return {
+    player: { ...source.player },
+    cpu: { ...source.cpu },
+  }
+}
+
+function createEmptyMatchMetrics(): MatchMetrics {
+  return {
+    playsByActor: { player: 0, cpu: 0 },
+    samePlusTriggersByActor: { player: 0, cpu: 0 },
+    cornerPlaysByActor: { player: 0, cpu: 0 },
+  }
+}
+
+function cloneMatchMetrics(metrics: MatchMetrics): MatchMetrics {
+  return {
+    playsByActor: { ...metrics.playsByActor },
+    samePlusTriggersByActor: { ...metrics.samePlusTriggersByActor },
+    cornerPlaysByActor: { ...metrics.cornerPlaysByActor },
+  }
+}
+
 export function createMatch(config: MatchConfig): MatchState {
   validateMatchConfig(config)
+  const modeSpec = getModeSpec(config.mode)
+  const typeSynergy = cloneTypeSynergyState(config.typeSynergy)
 
   return {
     config: {
       playerDeck: [...config.playerDeck],
       cpuDeck: [...config.cpuDeck],
+      mode: config.mode,
       rules: { ...config.rules },
       seed: config.seed,
       startingTurn: config.startingTurn,
+      typeSynergy,
     },
     rules: { ...config.rules },
+    typeSynergy,
+    metrics: createEmptyMatchMetrics(),
     turn: config.startingTurn ?? 'player',
-    board: Array.from({ length: 9 }, () => null),
+    board: Array.from({ length: modeSpec.cellCount }, () => null),
     hands: {
       player: [...config.playerDeck],
       cpu: [...config.cpuDeck],
@@ -69,7 +108,7 @@ export function listLegalMoves(state: MatchState): Move[] {
   const legalMoves: Move[] = []
   for (const cardId of state.hands[actor]) {
     for (const cell of emptyCells) {
-      legalMoves.push({ actor, cardId, cell: cell as Move['cell'] })
+      legalMoves.push({ actor, cardId, cell })
     }
   }
 
@@ -91,9 +130,14 @@ export function applyMoveDetailed(state: MatchState, move: Move): MoveResolution
   nextState.hands[actor] = nextState.hands[actor].filter((cardId) => cardId !== move.cardId)
 
   const adjacentEnemies = getAdjacentEnemies(nextState, move.cell, actor)
-  const normalFlipSet = collectNormalFlipSet(move.cardId, adjacentEnemies)
-  const sameFlipSet = nextState.rules.same ? collectSameFlipSet(move.cardId, adjacentEnemies) : new Set<number>()
-  const plusFlipSet = nextState.rules.plus ? collectPlusFlipSet(move.cardId, adjacentEnemies) : new Set<number>()
+  const sourceSideBonuses = getSourceSideBonuses(nextState, move)
+  const normalFlipSet = collectNormalFlipSet(move.cardId, adjacentEnemies, sourceSideBonuses)
+  const sameFlipSet = nextState.rules.same
+    ? collectSameFlipSet(move.cardId, adjacentEnemies, sourceSideBonuses)
+    : new Set<number>()
+  const plusFlipSet = nextState.rules.plus
+    ? collectPlusFlipSet(move.cardId, adjacentEnemies, sourceSideBonuses)
+    : new Set<number>()
 
   const specialFlipSet = unionSets(sameFlipSet, plusFlipSet)
   const wasSpecialRuleTrigger = specialFlipSet.size > 0
@@ -108,6 +152,15 @@ export function applyMoveDetailed(state: MatchState, move: Move): MoveResolution
 
   if (wasSpecialRuleTrigger) {
     runComboChain(nextState, actor, opponent, specialFlipSet)
+  }
+
+  const boardSize = getModeSpec(nextState.config.mode).boardSize
+  nextState.metrics.playsByActor[actor] += 1
+  if (isCornerCell(move.cell, boardSize)) {
+    nextState.metrics.cornerPlaysByActor[actor] += 1
+  }
+  if (wasSpecialRuleTrigger) {
+    nextState.metrics.samePlusTriggersByActor[actor] += 1
   }
 
   nextState.turns += 1
@@ -129,24 +182,30 @@ export function resolveMatchResult(state: MatchState): MatchResult {
   const { playerCount, cpuCount } = countBoardOwners(state)
 
   return {
+    mode: state.config.mode,
     winner: playerCount === cpuCount ? 'draw' : playerCount > cpuCount ? 'player' : 'cpu',
     playerCount,
     cpuCount,
     turns: state.turns,
     rules: { ...state.rules },
+    typeSynergy: cloneTypeSynergyState(state.typeSynergy),
+    metrics: cloneMatchMetrics(state.metrics),
   }
 }
 
 function validateMatchConfig(config: MatchConfig) {
-  if (new Set(config.playerDeck).size !== 5 || config.playerDeck.length !== 5) {
-    throw new Error('Player deck must contain exactly five unique cards.')
+  const modeSpec = getModeSpec(config.mode)
+  if (new Set(config.playerDeck).size !== modeSpec.deckSize || config.playerDeck.length !== modeSpec.deckSize) {
+    throw new Error(`Player deck must contain exactly ${modeSpec.deckSize} unique cards.`)
   }
-  if (new Set(config.cpuDeck).size !== 5 || config.cpuDeck.length !== 5) {
-    throw new Error('CPU deck must contain exactly five unique cards.')
+  if (new Set(config.cpuDeck).size !== modeSpec.deckSize || config.cpuDeck.length !== modeSpec.deckSize) {
+    throw new Error(`CPU deck must contain exactly ${modeSpec.deckSize} unique cards.`)
   }
 }
 
 function assertMoveIsValid(state: MatchState, move: Move) {
+  const modeSpec = getModeSpec(state.config.mode)
+
   if (state.status === 'finished') {
     throw new Error('Cannot play a move on a finished match.')
   }
@@ -155,6 +214,9 @@ function assertMoveIsValid(state: MatchState, move: Move) {
   }
   if (!state.hands[move.actor].includes(move.cardId)) {
     throw new Error(`${move.actor} does not have card ${move.cardId} in hand.`)
+  }
+  if (!Number.isInteger(move.cell) || move.cell < 0 || move.cell >= modeSpec.cellCount) {
+    throw new Error(`Cell ${move.cell} is out of bounds for ${state.config.mode}.`)
   }
   if (state.board[move.cell] !== null) {
     throw new Error(`Cell ${move.cell} is already occupied.`)
@@ -166,11 +228,15 @@ function cloneState(state: MatchState): MatchState {
     config: {
       playerDeck: [...state.config.playerDeck],
       cpuDeck: [...state.config.cpuDeck],
+      mode: state.config.mode,
       rules: { ...state.config.rules },
       seed: state.config.seed,
       startingTurn: state.config.startingTurn,
+      typeSynergy: cloneTypeSynergyState(state.config.typeSynergy),
     },
     rules: { ...state.rules },
+    typeSynergy: cloneTypeSynergyState(state.typeSynergy),
+    metrics: cloneMatchMetrics(state.metrics),
     turn: state.turn,
     board: state.board.map((slot) => (slot ? { ...slot } : null)),
     hands: {
@@ -202,7 +268,7 @@ function countBoardOwners(state: MatchState) {
 }
 
 function isFinished(state: MatchState): boolean {
-  if (state.turns >= 9) {
+  if (state.turns >= getModeSpec(state.config.mode).cellCount) {
     return true
   }
   return state.board.every((slot) => slot !== null)
@@ -210,8 +276,9 @@ function isFinished(state: MatchState): boolean {
 
 function getAdjacentEnemies(state: MatchState, sourceCell: number, sourceOwner: Actor): AdjacentEnemy[] {
   const result: AdjacentEnemy[] = []
+  const boardSize = getModeSpec(state.config.mode).boardSize
 
-  for (const [direction, cell] of getNeighbors(sourceCell)) {
+  for (const [direction, cell] of getNeighbors(sourceCell, boardSize)) {
     const slot = state.board[cell]
     if (!slot || slot.owner === sourceOwner) {
       continue
@@ -227,13 +294,17 @@ function getAdjacentEnemies(state: MatchState, sourceCell: number, sourceOwner: 
   return result
 }
 
-function collectNormalFlipSet(sourceCardId: CardId, adjacentEnemies: AdjacentEnemy[]): Set<number> {
+function collectNormalFlipSet(
+  sourceCardId: CardId,
+  adjacentEnemies: AdjacentEnemy[],
+  sourceSideBonuses: DirectionalBonus,
+): Set<number> {
   const sourceCard = getCard(sourceCardId)
   const result = new Set<number>()
 
   for (const adjacent of adjacentEnemies) {
     const enemyCard = getCard(adjacent.enemyCardId)
-    const attackerValue = getSideValue(sourceCard, adjacent.directionFromSource)
+    const attackerValue = getSideValue(sourceCard, adjacent.directionFromSource) + sourceSideBonuses[adjacent.directionFromSource]
     const defenderValue = getSideValue(enemyCard, oppositeDirection[adjacent.directionFromSource])
 
     if (attackerValue > defenderValue) {
@@ -244,13 +315,17 @@ function collectNormalFlipSet(sourceCardId: CardId, adjacentEnemies: AdjacentEne
   return result
 }
 
-function collectSameFlipSet(sourceCardId: CardId, adjacentEnemies: AdjacentEnemy[]): Set<number> {
+function collectSameFlipSet(
+  sourceCardId: CardId,
+  adjacentEnemies: AdjacentEnemy[],
+  sourceSideBonuses: DirectionalBonus,
+): Set<number> {
   const sourceCard = getCard(sourceCardId)
   const matchingCells: number[] = []
 
   for (const adjacent of adjacentEnemies) {
     const enemyCard = getCard(adjacent.enemyCardId)
-    const sourceValue = getSideValue(sourceCard, adjacent.directionFromSource)
+    const sourceValue = getSideValue(sourceCard, adjacent.directionFromSource) + sourceSideBonuses[adjacent.directionFromSource]
     const enemyValue = getSideValue(enemyCard, oppositeDirection[adjacent.directionFromSource])
 
     if (sourceValue === enemyValue) {
@@ -261,13 +336,17 @@ function collectSameFlipSet(sourceCardId: CardId, adjacentEnemies: AdjacentEnemy
   return matchingCells.length >= 2 ? new Set(matchingCells) : new Set<number>()
 }
 
-function collectPlusFlipSet(sourceCardId: CardId, adjacentEnemies: AdjacentEnemy[]): Set<number> {
+function collectPlusFlipSet(
+  sourceCardId: CardId,
+  adjacentEnemies: AdjacentEnemy[],
+  sourceSideBonuses: DirectionalBonus,
+): Set<number> {
   const sourceCard = getCard(sourceCardId)
   const bySum = new Map<number, number[]>()
 
   for (const adjacent of adjacentEnemies) {
     const enemyCard = getCard(adjacent.enemyCardId)
-    const sourceValue = getSideValue(sourceCard, adjacent.directionFromSource)
+    const sourceValue = getSideValue(sourceCard, adjacent.directionFromSource) + sourceSideBonuses[adjacent.directionFromSource]
     const enemyValue = getSideValue(enemyCard, oppositeDirection[adjacent.directionFromSource])
     const sum = sourceValue + enemyValue
     const cells = bySum.get(sum) ?? []
@@ -287,6 +366,7 @@ function collectPlusFlipSet(sourceCardId: CardId, adjacentEnemies: AdjacentEnemy
 
 function runComboChain(state: MatchState, actor: Actor, opponent: Actor, seedCells: Set<number>) {
   const queue = [...seedCells]
+  const boardSize = getModeSpec(state.config.mode).boardSize
 
   while (queue.length > 0) {
     const sourceCell = queue.shift()!
@@ -297,7 +377,7 @@ function runComboChain(state: MatchState, actor: Actor, opponent: Actor, seedCel
 
     const sourceCard = getCard(sourceSlot.cardId)
 
-    for (const [direction, neighborCell] of getNeighbors(sourceCell)) {
+    for (const [direction, neighborCell] of getNeighbors(sourceCell, boardSize)) {
       const neighborSlot = state.board[neighborCell]
       if (!neighborSlot || neighborSlot.owner !== opponent) {
         continue
@@ -315,23 +395,76 @@ function runComboChain(state: MatchState, actor: Actor, opponent: Actor, seedCel
   }
 }
 
+function getSourceSideBonuses(state: MatchState, move: Move): DirectionalBonus {
+  const bonuses: DirectionalBonus = { up: 0, right: 0, down: 0, left: 0 }
+  const actorSynergy = state.typeSynergy[move.actor]
+  const primaryTypeId = actorSynergy.primaryTypeId
+  if (!primaryTypeId) {
+    return bonuses
+  }
+
+  if (primaryTypeId === 'sans_coeur' && state.metrics.playsByActor[move.actor] === 0) {
+    bonuses.up += 1
+    bonuses.right += 1
+    bonuses.down += 1
+    bonuses.left += 1
+  }
+
+  if (primaryTypeId === 'simili') {
+    const boardSize = getModeSpec(state.config.mode).boardSize
+    for (const direction of getActiveCornerDirections(move.cell, boardSize)) {
+      bonuses[direction] += 1
+    }
+  }
+
+  return bonuses
+}
+
+function getActiveCornerDirections(cell: number, boardSize: number): Direction[] {
+  const topLeft = 0
+  const topRight = boardSize - 1
+  const bottomLeft = boardSize * (boardSize - 1)
+  const bottomRight = boardSize * boardSize - 1
+
+  if (cell === topLeft) {
+    return ['right', 'down']
+  }
+  if (cell === topRight) {
+    return ['left', 'down']
+  }
+  if (cell === bottomLeft) {
+    return ['up', 'right']
+  }
+  if (cell === bottomRight) {
+    return ['up', 'left']
+  }
+  return []
+}
+
+function isCornerCell(cell: number, boardSize: number): boolean {
+  const topRight = boardSize - 1
+  const bottomLeft = boardSize * (boardSize - 1)
+  const bottomRight = boardSize * boardSize - 1
+  return cell === 0 || cell === topRight || cell === bottomLeft || cell === bottomRight
+}
+
 function unionSets<T>(a: Set<T>, b: Set<T>): Set<T> {
   return new Set([...a, ...b])
 }
 
-function getNeighbors(cell: number): Array<[Direction, number]> {
-  const row = Math.floor(cell / 3)
-  const col = cell % 3
+function getNeighbors(cell: number, boardSize: number): Array<[Direction, number]> {
+  const row = Math.floor(cell / boardSize)
+  const col = cell % boardSize
   const neighbors: Array<[Direction, number]> = []
 
   for (const direction of Object.keys(neighborDelta) as Direction[]) {
     const [dr, dc] = neighborDelta[direction]
     const nextRow = row + dr
     const nextCol = col + dc
-    if (nextRow < 0 || nextRow > 2 || nextCol < 0 || nextCol > 2) {
+    if (nextRow < 0 || nextRow >= boardSize || nextCol < 0 || nextCol >= boardSize) {
       continue
     }
-    neighbors.push([direction, nextRow * 3 + nextCol])
+    neighbors.push([direction, nextRow * boardSize + nextCol])
   }
 
   return neighbors

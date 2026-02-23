@@ -160,10 +160,26 @@ function config(overrides?: Partial<MatchConfig>): MatchConfig {
   return {
     playerDeck: ['c20', 'c02', 'c03', 'c04', 'c05'],
     cpuDeck: ['c15', 'c01', 'c06', 'c07', 'c08'],
+    mode: '3x3',
     rules: { open: true, same: false, plus: false },
     seed: 99,
     ...overrides,
   }
+}
+
+function createEmptyTypeSynergy() {
+  return {
+    player: { primaryTypeId: null, secondaryTypeId: null },
+    cpu: { primaryTypeId: null, secondaryTypeId: null },
+  } as const
+}
+
+function createEmptyMetrics() {
+  return {
+    playsByActor: { player: 0, cpu: 0 },
+    samePlusTriggersByActor: { player: 0, cpu: 0 },
+    cornerPlaysByActor: { player: 0, cpu: 0 },
+  } as const
 }
 
 describe('cpu ai', () => {
@@ -181,6 +197,8 @@ describe('cpu ai', () => {
     const customState: MatchState = {
       config: config({ playerDeck: ['c20', 'c02', 'c03', 'c04', 'c05'], cpuDeck: ['c16', 'c01', 'c06', 'c07', 'c08'] }),
       rules: { open: true, same: false, plus: false },
+      typeSynergy: createEmptyTypeSynergy(),
+      metrics: createEmptyMetrics(),
       turn: 'cpu',
       board: [null, { cardId: 'c06', owner: 'player' }, null, null, null, null, null, null, null],
       hands: {
@@ -201,6 +219,8 @@ describe('cpu ai', () => {
     const customState: MatchState = {
       config: config({ playerDeck: ['c20', 'c02', 'c03', 'c04', 'c05'], cpuDeck: ['c16', 'c01', 'c06', 'c07', 'c08'] }),
       rules: { open: true, same: false, plus: false },
+      typeSynergy: createEmptyTypeSynergy(),
+      metrics: createEmptyMetrics(),
       turn: 'cpu',
       board: [null, { cardId: 'c06', owner: 'player' }, null, null, null, null, null, null, null],
       hands: {
@@ -244,6 +264,42 @@ describe('cpu ai', () => {
     })
 
     expect(improvement).toBeTruthy()
+  })
+
+  test('supports 4x4 boards and selects the only legal cell when one remains', () => {
+    const nearlyFullBoard: Array<{ cardId: string; owner: 'player' } | null> = Array.from({ length: 16 }, () => ({
+      cardId: 'c06',
+      owner: 'player' as const,
+    }))
+    nearlyFullBoard[15] = null
+
+    const state: MatchState = {
+      config: {
+        playerDeck: ['c20', 'c02', 'c03', 'c04', 'c05', 'c01', 'c07', 'c08'],
+        cpuDeck: ['c16', 'c06', 'c15', 'c01', 'c02', 'c03', 'c04', 'c05'],
+        mode: '4x4',
+        rules: { open: true, same: false, plus: false },
+        seed: 101,
+      },
+      rules: { open: true, same: false, plus: false },
+      typeSynergy: createEmptyTypeSynergy(),
+      metrics: createEmptyMetrics(),
+      turn: 'cpu',
+      board: nearlyFullBoard,
+      hands: {
+        player: [],
+        cpu: ['c16'],
+      },
+      turns: 15,
+      status: 'active',
+      lastMove: null,
+    }
+
+    const move = selectCpuMove(state)
+
+    expect(move.cell).toBe(15)
+    expect(move.actor).toBe('cpu')
+    expect(move.cardId).toBe('c16')
   })
 })
 

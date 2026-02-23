@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">Mode 3X3 Normal</title>
+  <desc id="desc">Stylized game mode card inspired by JRPG menu aesthetics for 3X3 normal mode.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#091a34"/>
+      <stop offset="45%" stop-color="#10315d"/>
+      <stop offset="100%" stop-color="#1e6fa0"/>
+    </linearGradient>
+    <radialGradient id="mist" cx="70%" cy="35%" r="55%">
+      <stop offset="0%" stop-color="#8fe6ff" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#8fe6ff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="frame" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#d8f4ff"/>
+      <stop offset="50%" stop-color="#8fd8ff"/>
+      <stop offset="100%" stop-color="#e8fbff"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="7" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#bg)"/>
+  <rect width="1600" height="900" fill="url(#mist)"/>
+  <circle cx="1240" cy="210" r="190" fill="#87dbff" opacity="0.16"/>
+  <circle cx="1210" cy="240" r="235" fill="#9ce8ff" opacity="0.08"/>
+
+  <rect x="70" y="70" width="1460" height="760" rx="34" fill="none" stroke="url(#frame)" stroke-width="6"/>
+  <rect x="92" y="92" width="1416" height="716" rx="25" fill="none" stroke="#d0f0ff" stroke-opacity="0.35" stroke-width="2"/>
+
+  <g transform="translate(800 120)" filter="url(#glow)">
+    <path d="M0 18c20-24 58-24 78 0 19 23 15 54-17 80L0 148l-61-50c-32-26-36-57-17-80 20-24 58-24 78 0z" fill="#dff7ff" opacity="0.92"/>
+    <rect x="-10" y="148" width="20" height="48" rx="9" fill="#dff7ff"/>
+    <circle cx="0" cy="212" r="15" fill="#dff7ff"/>
+    <polygon points="-54,-28 -35,-4 -69,-4" fill="#dff7ff"/>
+    <polygon points="54,-28 35,-4 69,-4" fill="#dff7ff"/>
+    <polygon points="0,-36 15,-10 -15,-10" fill="#dff7ff"/>
+  </g>
+
+  <text x="130" y="165" fill="#dff8ff" font-size="42" font-family="Georgia, 'Times New Roman', serif" letter-spacing="7">GAME MODE</text>
+
+  <g>
+    <rect x="130" y="200" width="560" height="500" rx="28" fill="#0a1f3e" fill-opacity="0.42" stroke="#d0f0ff" stroke-opacity="0.45"/>
+    <text x="185" y="295" fill="#d9f7ff" font-size="56" font-family="Georgia, 'Times New Roman', serif" letter-spacing="5">TRIAD FORMAT</text>
+    <text x="185" y="435" fill="#ffffff" font-size="170" font-family="Georgia, 'Times New Roman', serif" font-weight="700" letter-spacing="8">3X3</text>
+    <rect x="185" y="495" width="340" height="3" fill="#b7ebff" opacity="0.8"/>
+    <text x="185" y="585" fill="#b7ebff" font-size="56" font-family="Georgia, 'Times New Roman', serif" letter-spacing="8">NORMAL</text>
+    <text x="185" y="640" fill="#d5efff" font-size="24" font-family="Georgia, 'Times New Roman', serif" letter-spacing="2">5 cards per side  ·  9 tactical cells</text>
+  </g>
+
+  <g>
+    <rect x="760" y="180" width="700" height="540" rx="28" fill="#041227" fill-opacity="0.44" stroke="#d0f0ff" stroke-opacity="0.45"/>
+    <text x="820" y="260" fill="#d9f8ff" font-size="42" font-family="Georgia, 'Times New Roman', serif" letter-spacing="6">BOARD PREVIEW</text>
+    <g transform="translate(885 305)">
+      <rect x="0" y="0" width="120" height="120" rx="18" fill="#0f2f5d" stroke="#9fe7ff"/>
+      <rect x="140" y="0" width="120" height="120" rx="18" fill="#0f2f5d" stroke="#9fe7ff"/>
+      <rect x="280" y="0" width="120" height="120" rx="18" fill="#0f2f5d" stroke="#9fe7ff"/>
+      <rect x="0" y="140" width="120" height="120" rx="18" fill="#0f2f5d" stroke="#9fe7ff"/>
+      <rect x="140" y="140" width="120" height="120" rx="18" fill="#11376a" stroke="#b7f0ff" stroke-width="2"/>
+      <rect x="280" y="140" width="120" height="120" rx="18" fill="#0f2f5d" stroke="#9fe7ff"/>
+      <rect x="0" y="280" width="120" height="120" rx="18" fill="#0f2f5d" stroke="#9fe7ff"/>
+      <rect x="140" y="280" width="120" height="120" rx="18" fill="#0f2f5d" stroke="#9fe7ff"/>
+      <rect x="280" y="280" width="120" height="120" rx="18" fill="#0f2f5d" stroke="#9fe7ff"/>
+    </g>
+  </g>
+
+  <text x="130" y="785" fill="#d3f1ff" font-size="23" font-family="Georgia, 'Times New Roman', serif" letter-spacing="3">KINGDOM TRIALS // SELECT YOUR DESTINY</text>
+</svg>

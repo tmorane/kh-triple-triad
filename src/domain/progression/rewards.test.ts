@@ -8,6 +8,7 @@ const cpuDeck = ['c41', 'c42', 'c43', 'c44', 'c45']
 
 function makeResult(winner: MatchResult['winner']): MatchResult {
   return {
+    mode: '3x3',
     winner,
     playerCount: winner === 'player' ? 6 : winner === 'cpu' ? 3 : 5,
     cpuCount: winner === 'player' ? 3 : winner === 'cpu' ? 6 : 5,
@@ -18,10 +19,22 @@ function makeResult(winner: MatchResult['winner']): MatchResult {
 
 function makeCriticalWinResult(): MatchResult {
   return {
+    mode: '3x3',
     winner: 'player',
     playerCount: 9,
     cpuCount: 0,
     turns: 9,
+    rules: { open: true, same: false, plus: false },
+  }
+}
+
+function makeCriticalWinResult4x4(): MatchResult {
+  return {
+    mode: '4x4',
+    winner: 'player',
+    playerCount: 16,
+    cpuCount: 0,
+    turns: 16,
     rules: { open: true, same: false, plus: false },
   }
 }
@@ -76,13 +89,23 @@ describe('match rewards difficulty bonus', () => {
     expect(result.profile.gold).toBe(100 + expectedTotal)
   })
 
-  test('flags critical victory only for 9-0 player wins', () => {
+  test('flags critical victory for 9-0 in 3x3 and 16-0 in 4x4 only', () => {
     const critical = applyMatchRewards(createDefaultProfile(), makeCriticalWinResult(), cpuDeck, 88, 8)
+    const critical4x4 = applyMatchRewards(createDefaultProfile(), makeCriticalWinResult4x4(), cpuDeck, 88, 8)
+    const nonCritical4x4 = applyMatchRewards(
+      createDefaultProfile(),
+      { ...makeCriticalWinResult4x4(), playerCount: 15, cpuCount: 1 },
+      cpuDeck,
+      88,
+      8,
+    )
     const regular = applyMatchRewards(createDefaultProfile(), makeResult('player'), cpuDeck, 88, 8)
     const draw = applyMatchRewards(createDefaultProfile(), makeResult('draw'), cpuDeck, 88, 8)
     const loss = applyMatchRewards(createDefaultProfile(), makeResult('cpu'), cpuDeck, 88, 8)
 
     expect(critical.rewards.criticalVictory).toBe(true)
+    expect(critical4x4.rewards.criticalVictory).toBe(true)
+    expect(nonCritical4x4.rewards.criticalVictory).toBe(false)
     expect(regular.rewards.criticalVictory).toBe(false)
     expect(draw.rewards.criticalVictory).toBe(false)
     expect(loss.rewards.criticalVictory).toBe(false)
@@ -164,5 +187,76 @@ describe('match rewards difficulty bonus', () => {
     expect(() => applyMatchRewards(profile, makeResult('player'), cpuDeck, 107, 8, 1, 'c99')).toThrow(
       'Claimed card must belong to the CPU deck.',
     )
+  })
+
+  test('applies R7 combo bounty at +3 per Same/Plus trigger with +12 cap', () => {
+    const profile = createDefaultProfile()
+    const result = applyMatchRewards(
+      profile,
+      {
+        ...makeResult('player'),
+        playerCount: 5,
+        cpuCount: 4,
+        typeSynergy: {
+          player: { primaryTypeId: 'nescient', secondaryTypeId: null },
+          cpu: { primaryTypeId: null, secondaryTypeId: null },
+        },
+        metrics: {
+          playsByActor: { player: 5, cpu: 4 },
+          samePlusTriggersByActor: { player: 6, cpu: 0 },
+          cornerPlaysByActor: { player: 0, cpu: 0 },
+        },
+      },
+      cpuDeck,
+      111,
+      1,
+    )
+
+    expect(result.rewards.bonusGoldFromComboBounty).toBe(12)
+    expect(result.profile.gold).toBe(100 + 60 + 12)
+  })
+
+  test('applies R8 clean victory bonus when player wins by margin >= 2', () => {
+    const profile = createDefaultProfile()
+    const result = applyMatchRewards(
+      profile,
+      {
+        ...makeResult('player'),
+        playerCount: 7,
+        cpuCount: 2,
+        typeSynergy: {
+          player: { primaryTypeId: 'humain', secondaryTypeId: null },
+          cpu: { primaryTypeId: null, secondaryTypeId: null },
+        },
+      },
+      cpuDeck,
+      113,
+      1,
+    )
+
+    expect(result.rewards.bonusGoldFromCleanVictory).toBe(10)
+    expect(result.profile.gold).toBe(100 + 60 + 10)
+  })
+
+  test('applies secondary synergy economy bonus of +5 once on player victory', () => {
+    const profile = createDefaultProfile()
+    const result = applyMatchRewards(
+      profile,
+      {
+        ...makeResult('player'),
+        playerCount: 5,
+        cpuCount: 4,
+        typeSynergy: {
+          player: { primaryTypeId: null, secondaryTypeId: 'simili' },
+          cpu: { primaryTypeId: null, secondaryTypeId: null },
+        },
+      },
+      cpuDeck,
+      115,
+      1,
+    )
+
+    expect(result.rewards.bonusGoldFromSecondarySynergy).toBe(5)
+    expect(result.profile.gold).toBe(100 + 60 + 5)
   })
 })
