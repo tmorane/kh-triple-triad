@@ -1,4 +1,5 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import type { ComponentProps } from 'react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
@@ -32,6 +33,24 @@ function makeFinishedState(ownerByCell: Array<'player' | 'cpu'>): MatchState {
     turns: 9,
     status: 'finished',
     lastMove: null,
+  }
+}
+
+function makeActiveCpuTurnState(): MatchState {
+  return {
+    config: {
+      playerDeck: [...baseDeck],
+      cpuDeck: ['c71', 'c72', 'c73', 'c74', 'c75'],
+      rules: { open: true, same: false, plus: false },
+      seed: 42,
+    },
+    rules: { open: true, same: false, plus: false },
+    turn: 'cpu',
+    board: [{ owner: 'player', cardId: 'c41' }, null, null, null, null, null, null, null, null],
+    hands: { player: ['c42', 'c43', 'c44', 'c45'], cpu: ['c71', 'c72', 'c73', 'c74', 'c75'] },
+    turns: 1,
+    status: 'active',
+    lastMove: { actor: 'player', cardId: 'c41', cell: 0 },
   }
 }
 
@@ -150,6 +169,44 @@ describe('MatchPage ranked preview', () => {
   })
 })
 
+describe('MatchPage finish header', () => {
+  test('shows score header and WIN outcome while hiding legacy sections', async () => {
+    const state = makeFinishedState(['player', 'player', 'player', 'player', 'player', 'player', 'player', 'player', 'player'])
+
+    renderMatchPageWithContext(buildContextValue(state, 'normal'))
+
+    await waitFor(() => expect(screen.getByTestId('match-finish-modal')).toBeInTheDocument())
+
+    expect(screen.getByTestId('match-finish-player-score')).toHaveTextContent('9')
+    expect(screen.getByTestId('match-finish-cpu-score')).toHaveTextContent('0')
+    expect(screen.getByTestId('match-finish-outcome')).toHaveTextContent('WIN')
+    expect(screen.queryByText('Match Finished')).not.toBeInTheDocument()
+    expect(screen.queryByText(/^Winner:/)).not.toBeInTheDocument()
+    expect(screen.queryByText('Achievements')).not.toBeInTheDocument()
+    expect(screen.queryByText('New Cards')).not.toBeInTheDocument()
+  })
+
+  test('shows LOSE outcome when cpu wins', async () => {
+    const state = makeFinishedState(['cpu', 'cpu', 'cpu', 'cpu', 'cpu', 'cpu', 'player', 'player', 'player'])
+
+    renderMatchPageWithContext(buildContextValue(state, 'normal'))
+
+    await waitFor(() => expect(screen.getByTestId('match-finish-modal')).toBeInTheDocument())
+
+    expect(screen.getByTestId('match-finish-outcome')).toHaveTextContent('LOSE')
+  })
+
+  test('shows DRAW outcome on tie result', async () => {
+    const state = makeFinishedState(['player', 'player', 'player', 'player', 'cpu', 'cpu', 'cpu', 'cpu'])
+
+    renderMatchPageWithContext(buildContextValue(state, 'normal'))
+
+    await waitFor(() => expect(screen.getByTestId('match-finish-modal')).toBeInTheDocument())
+
+    expect(screen.getByTestId('match-finish-outcome')).toHaveTextContent('DRAW')
+  })
+})
+
 describe('MatchPage critical victory', () => {
   test('shows critical victory badge, details, and plays sound once', async () => {
     const state = makeFinishedState(['player', 'player', 'player', 'player', 'player', 'player', 'player', 'player', 'player'])
@@ -187,6 +244,7 @@ describe('MatchPage critical victory', () => {
 
 describe('MatchPage claimed card selection', () => {
   test('victory requires selecting one cpu card before continuing and passes selected card to finalize', async () => {
+    const user = userEvent.setup()
     const finalizeMock = vi.fn()
     const state = makeFinishedState(['player', 'player', 'player', 'player', 'player', 'player', 'player', 'player', 'cpu'])
     const contextValue = buildContextValue(state, 'normal', 8, {
@@ -201,14 +259,10 @@ describe('MatchPage claimed card selection', () => {
     expect(screen.getAllByTestId(/^match-claim-card-/)).toHaveLength(5)
     expect(screen.getByTestId('finish-match-button')).toBeDisabled()
 
-    await waitFor(() => {
-      expect(screen.getByTestId('match-claim-card-c71')).toBeInTheDocument()
-    })
-    screen.getByTestId('match-claim-card-c71').click()
+    await user.click(screen.getByTestId('match-claim-card-c71'))
+    await waitFor(() => expect(screen.getByTestId('finish-match-button')).toBeEnabled())
 
-    expect(screen.getByTestId('finish-match-button')).toBeEnabled()
-
-    screen.getByTestId('finish-match-button').click()
+    await user.click(screen.getByTestId('finish-match-button'))
     expect(finalizeMock).toHaveBeenCalledTimes(1)
     expect(finalizeMock).toHaveBeenCalledWith('c71')
   })
@@ -222,5 +276,55 @@ describe('MatchPage claimed card selection', () => {
     expect(screen.queryByText('Choose 1 opponent card to claim')).not.toBeInTheDocument()
     expect(screen.queryAllByTestId(/^match-claim-card-/)).toHaveLength(0)
     expect(screen.getByTestId('finish-match-button')).toBeEnabled()
+  })
+
+  test('marks claim cards with a star and plus when they are not owned yet', async () => {
+    const state = makeFinishedState(['player', 'player', 'player', 'player', 'player', 'player', 'player', 'player', 'cpu'])
+    renderMatchPageWithContext(buildContextValue(state, 'normal', 8))
+
+    await waitFor(() => expect(screen.getByTestId('match-finish-modal')).toBeInTheDocument())
+
+    const firstClaimCard = screen.getByTestId('match-claim-card-c71')
+    const marker = within(firstClaimCard).getByTestId('triad-card-claim-new-marker')
+    expect(within(marker).getByText('★')).toBeInTheDocument()
+    expect(within(marker).getByText('+')).toBeInTheDocument()
+  })
+
+  test('does not mark already owned claim cards as NEW', async () => {
+    const state = makeFinishedState(['player', 'player', 'player', 'player', 'player', 'player', 'player', 'player', 'cpu'])
+    const contextValue = buildContextValue(state, 'normal', 8)
+    contextValue.profile.ownedCardIds.push('c71')
+    contextValue.profile.cardCopiesById.c71 = 1
+
+    renderMatchPageWithContext(contextValue)
+
+    await waitFor(() => expect(screen.getByTestId('match-finish-modal')).toBeInTheDocument())
+
+    const firstClaimCard = screen.getByTestId('match-claim-card-c71')
+    expect(within(firstClaimCard).queryByTestId('triad-card-claim-new-marker')).not.toBeInTheDocument()
+  })
+})
+
+describe('MatchPage cpu pacing', () => {
+  test('does not replay starter roll after turn 0 and keeps cpu move responsive', async () => {
+    vi.useFakeTimers()
+
+    try {
+      const updateCurrentMatch = vi.fn()
+      const state = makeActiveCpuTurnState()
+      renderMatchPageWithContext(
+        buildContextValue(state, 'normal', 8, {
+          updateCurrentMatch: updateCurrentMatch as unknown as GameContextValue['updateCurrentMatch'],
+        }),
+      )
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(400)
+      })
+
+      expect(updateCurrentMatch).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

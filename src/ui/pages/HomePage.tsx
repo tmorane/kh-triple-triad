@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react'
-import { useEffect, useState } from 'react'
+import { useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useGame } from '../../app/useGame'
 import { cardPool } from '../../domain/cards/cardPool'
@@ -58,11 +58,9 @@ export function HomePage() {
   const { profile, currentMatch, renamePlayer, resetProfile } = useGame()
   const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false)
   const [playerNameDraft, setPlayerNameDraft] = useState(profile.playerName)
+  const [isEditingPlayerName, setIsEditingPlayerName] = useState(false)
   const [playerNameError, setPlayerNameError] = useState<string | null>(null)
-
-  useEffect(() => {
-    setPlayerNameDraft(profile.playerName)
-  }, [profile.playerName])
+  const playerNameInputRef = useRef<HTMLInputElement | null>(null)
 
   const played = profile.stats.played
   const wins = profile.stats.won
@@ -150,15 +148,30 @@ export function HomePage() {
     },
   ]
 
-  const handlePlayerNameChange = (name: string) => {
-    setPlayerNameDraft(name)
-    const result = renamePlayer(name)
+  const startPlayerNameEdit = () => {
+    setPlayerNameDraft(profile.playerName)
+    setPlayerNameError(null)
+    setIsEditingPlayerName(true)
+  }
+
+  const cancelPlayerNameEdit = () => {
+    setPlayerNameDraft(profile.playerName)
+    setPlayerNameError(null)
+    setIsEditingPlayerName(false)
+  }
+
+  const savePlayerName = () => {
+    const result = renamePlayer(playerNameDraft)
     if (!result.valid) {
       setPlayerNameError(result.reason ?? 'Invalid player name.')
+      requestAnimationFrame(() => {
+        playerNameInputRef.current?.focus()
+      })
       return
     }
 
     setPlayerNameError(null)
+    setIsEditingPlayerName(false)
   }
 
   return (
@@ -185,17 +198,42 @@ export function HomePage() {
           </div>
 
           <div className="home-identity-copy">
-            <h1>{profile.playerName}</h1>
-            <div className="home-player-name-field">
-              <label htmlFor="home-player-name-input">Player Name</label>
-              <input
-                id="home-player-name-input"
-                type="text"
-                value={playerNameDraft}
-                onChange={(event) => handlePlayerNameChange(event.target.value)}
-                data-testid="home-player-name-input"
-              />
-            </div>
+            <h1>
+              {isEditingPlayerName ? (
+                <input
+                  id="home-player-name-input"
+                  ref={playerNameInputRef}
+                  className="home-player-name-input"
+                  type="text"
+                  value={playerNameDraft}
+                  aria-label="Player Name"
+                  onChange={(event) => setPlayerNameDraft(event.target.value)}
+                  onBlur={savePlayerName}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault()
+                      savePlayerName()
+                    }
+
+                    if (event.key === 'Escape') {
+                      event.preventDefault()
+                      cancelPlayerNameEdit()
+                    }
+                  }}
+                  data-testid="home-player-name-input"
+                  autoFocus
+                />
+              ) : (
+                <button
+                  type="button"
+                  className="home-player-name-trigger"
+                  data-testid="home-player-name-trigger"
+                  onClick={startPlayerNameEdit}
+                >
+                  {profile.playerName}
+                </button>
+              )}
+            </h1>
             {playerNameError ? (
               <p className="error" role="alert">
                 {playerNameError}

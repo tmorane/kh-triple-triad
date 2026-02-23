@@ -7,4 +7,16 @@ describe('getCardArtCandidates', () => {
 
     expect(candidates[0]).toBe('/splashart/Ombre.webp')
   })
+
+  test('includes known alias for Minute Bombe splashart filename', () => {
+    const candidates = getCardArtCandidates('Minute Bombe')
+
+    expect(candidates).toContain('/splashart/Bombe%20Minute.png')
+  })
+
+  test('includes known alias for Surveillant splashart filename', () => {
+    const candidates = getCardArtCandidates('Surveillant')
+
+    expect(candidates).toContain('/splashart/Robot%20de%20Surveillance.png')
+  })
 })

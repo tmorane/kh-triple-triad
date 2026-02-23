@@ -65,7 +65,7 @@ interface GameContextValue {
   toggleDeckSlotCard(slotId: DeckSlotId, cardId: CardId): void
   setDeckSlotRules(slotId: DeckSlotId, rules: { same: boolean; plus: boolean }): void
   updateCurrentMatch(state: MatchState): void
-  finalizeCurrentMatch(): LastMatchSummary
+  finalizeCurrentMatch(claimedCpuCardId?: CardId): LastMatchSummary
   clearLastMatchSummary(): void
   purchaseShopPack(packId: ShopPackId): ShopPurchaseReceipt
   openOwnedPack(packId: ShopPackId): OpenedPackResult
@@ -253,7 +253,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           return { ...existing, state }
         })
       },
-      finalizeCurrentMatch: () => {
+      finalizeCurrentMatch: (claimedCpuCardId) => {
         if (!currentMatch) {
           throw new Error('No active match to finalize.')
         }
@@ -266,6 +266,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           currentMatch.seed + currentMatch.state.turns,
           currentMatch.opponent.level,
           currentMatch.rewardMultiplier,
+          claimedCpuCardId,
         )
 
         let nextProfile = progression.profile

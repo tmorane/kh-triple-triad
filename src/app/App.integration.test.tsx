@@ -250,13 +250,17 @@ describe('app integration', () => {
 
     expect(screen.getByRole('link', { name: 'Joueur' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Joueur' })).toBeInTheDocument()
+    expect(screen.queryByTestId('home-player-name-input')).not.toBeInTheDocument()
 
-    const playerNameInput = screen.getByTestId('home-player-name-input')
+    await user.click(screen.getByTestId('home-player-name-trigger'))
+
+    const playerNameInput = await screen.findByTestId('home-player-name-input')
     await user.clear(playerNameInput)
-    await user.type(playerNameInput, 'Terra')
+    await user.type(playerNameInput, 'Terra{Enter}')
 
     expect(screen.getByRole('link', { name: 'Terra' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Terra' })).toBeInTheDocument()
+    expect(screen.queryByTestId('home-player-name-input')).not.toBeInTheDocument()
 
     const saved = JSON.parse(localStorage.getItem(PROFILE_STORAGE_KEY) ?? '{}') as { playerName?: string }
     expect(saved.playerName).toBe('Terra')
@@ -322,6 +326,20 @@ describe('app integration', () => {
     expect(screen.getByLabelText('Player hand').children).toHaveLength(5)
   })
 
+  test('setup queue tabs toggle the start button mode', async () => {
+    const user = userEvent.setup()
+    renderApp('/setup')
+
+    const startButton = screen.getByTestId('start-match-button')
+    expect(startButton).toHaveTextContent('Start Normal')
+    expect(screen.getByTestId('setup-queue-tab-normal')).toHaveAttribute('aria-selected', 'true')
+
+    await user.click(screen.getByTestId('setup-queue-tab-ranked'))
+
+    expect(screen.getByTestId('setup-queue-tab-ranked')).toHaveAttribute('aria-selected', 'true')
+    expect(startButton).toHaveTextContent('Start Ranked')
+  })
+
   test('setup keeps per-slot rule presets when switching slots', async () => {
     const user = userEvent.setup()
     renderApp('/setup')
@@ -346,23 +364,10 @@ describe('app integration', () => {
     expect(screen.getByLabelText('Enable Plus')).toBeChecked()
   })
 
-  test('setup deck names persist per slot and show validation error for invalid names', async () => {
-    const user = userEvent.setup()
+  test('setup no longer renders deck name input', () => {
     renderApp('/setup')
 
-    const deckNameInput = screen.getByTestId('deck-name-input')
-    await user.clear(deckNameInput)
-    await user.type(deckNameInput, 'Boss Rush')
-    expect(screen.getByTestId('deck-slot-slot-1')).toHaveTextContent('Boss Rush')
-
-    await user.click(screen.getByTestId('deck-slot-slot-2'))
-    await user.click(screen.getByTestId('deck-slot-slot-1'))
-    expect(screen.getByTestId('deck-name-input')).toHaveValue('Boss Rush')
-
-    await user.clear(screen.getByTestId('deck-name-input'))
-    await user.type(screen.getByTestId('deck-name-input'), '   ')
-    expect(screen.getByText('Deck name must be between 1 and 20 characters.')).toBeInTheDocument()
-    expect(screen.getByTestId('deck-slot-slot-1')).toHaveTextContent('Boss Rush')
+    expect(screen.queryByTestId('deck-name-input')).not.toBeInTheDocument()
   })
 
   test('setup filters keep start flow intact', async () => {
@@ -470,7 +475,7 @@ describe('app integration', () => {
     expect(continueButton).toBeEnabled()
 
     await user.click(continueButton)
-    expect(await screen.findByRole('heading', { name: 'Results' })).toBeInTheDocument()
+    expect(await screen.findByTestId('results-outcome')).toHaveTextContent('WIN')
     expect(screen.getByText(`Claimed card: ${firstClaimCardId.toUpperCase()}`)).toBeInTheDocument()
 
     const afterRaw = localStorage.getItem(PROFILE_STORAGE_KEY)

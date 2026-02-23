@@ -288,7 +288,10 @@ describe('profile persistence', () => {
 
   test('migrates a v6 profile without playerName and keeps existing progression data', () => {
     const base = createDefaultProfile()
-    const { playerName: _playerName, ...legacyV6 } = base
+    const legacyV6 = Object.fromEntries(Object.entries(base).filter(([key]) => key !== 'playerName')) as Omit<
+      typeof base,
+      'playerName'
+    >
     legacyV6.gold = 333
     legacyV6.stats.played = 4
     legacyV6.stats.won = 3

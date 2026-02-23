@@ -84,10 +84,42 @@ describe('SetupPage', () => {
     renderSetup()
 
     expect(screen.getByTestId('setup-opponent-level')).toHaveTextContent('L1')
-    expect(screen.getByTestId('setup-opponent-score-range')).toHaveTextContent('45-50')
+    expect(screen.getByTestId('setup-opponent-score-range')).toHaveTextContent('34-40')
     expect(screen.getByTestId('setup-opponent-bonus')).toHaveTextContent('+0')
     expect(screen.getByTestId('setup-ranked-note')).toHaveTextContent('Ranked uses Open only')
-    expect(screen.getByTestId('start-ranked-match-button')).toBeInTheDocument()
+    expect(screen.getByTestId('setup-queue-tab-ranked')).toBeInTheDocument()
+    expect(screen.getByTestId('start-match-button')).toBeInTheDocument()
+  })
+
+  test('renders launch actions before selected cards in builder flow', () => {
+    renderSetup()
+
+    const launchBar = screen.getByTestId('setup-launch-bar')
+    const selectedCards = screen.getByTestId('setup-selected-cards')
+
+    expect(launchBar.compareDocumentPosition(selectedCards) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+    expect(within(launchBar).getByTestId('setup-queue-tab-normal')).toBeInTheDocument()
+    expect(within(launchBar).getByTestId('setup-queue-tab-ranked')).toBeInTheDocument()
+    expect(within(launchBar).getByTestId('start-match-button')).toBeInTheDocument()
+  })
+
+  test('queue tabs switch between normal and ranked start modes', async () => {
+    const user = userEvent.setup()
+    renderSetup()
+
+    const normalTab = screen.getByTestId('setup-queue-tab-normal')
+    const rankedTab = screen.getByTestId('setup-queue-tab-ranked')
+    const startButton = screen.getByTestId('start-match-button')
+
+    expect(normalTab).toHaveAttribute('aria-selected', 'true')
+    expect(rankedTab).toHaveAttribute('aria-selected', 'false')
+    expect(startButton).toHaveTextContent('Start Normal')
+
+    await user.click(rankedTab)
+
+    expect(normalTab).toHaveAttribute('aria-selected', 'false')
+    expect(rankedTab).toHaveAttribute('aria-selected', 'true')
+    expect(startButton).toHaveTextContent('Start Ranked')
   })
 
   test('shows five selected cards in preview strip for active deck slot', () => {
@@ -172,6 +204,10 @@ describe('SetupPage', () => {
     renderSetup(profile)
 
     const sortSelect = screen.getByTestId('setup-sort-select')
+    const expectedFirstByPower = sortByPower(cardPool)[0]
+    expect(getVisibleSetupCards()[0]).toHaveAttribute('data-testid', `setup-card-${expectedFirstByPower.id}`)
+
+    await user.selectOptions(sortSelect, 'selected-first')
     const cardsAtSelectedFirst = getVisibleSetupCards()
     expect(cardsAtSelectedFirst[0]).toHaveAttribute('aria-pressed', 'true')
 
@@ -180,7 +216,28 @@ describe('SetupPage', () => {
     expect(getVisibleSetupCards()[0]).toHaveAttribute('data-testid', `setup-card-${expectedFirstByName.id}`)
 
     await user.selectOptions(sortSelect, 'power-desc')
-    const expectedFirstByPower = sortByPower(cardPool)[0]
     expect(getVisibleSetupCards()[0]).toHaveAttribute('data-testid', `setup-card-${expectedFirstByPower.id}`)
+  })
+
+  test('selecting a card keeps its position in right-side choices with default sort', async () => {
+    const user = userEvent.setup()
+    renderSetup()
+
+    const preview = screen.getByTestId('setup-selected-cards')
+    await user.click(within(preview).getAllByTestId(/^setup-selected-card-/)[0])
+
+    const cardsBefore = getVisibleSetupCards()
+    const targetIndex = 6
+    const targetCard = cardsBefore[targetIndex]
+    const targetCardId = targetCard.getAttribute('data-testid')
+    expect(targetCardId).toBeTruthy()
+
+    await user.click(targetCard)
+
+    const cardsAfter = getVisibleSetupCards()
+    expect(cardsAfter[targetIndex]).toHaveAttribute('data-testid', targetCardId ?? '')
+    if (targetCardId) {
+      expect(screen.getByTestId(targetCardId)).toHaveAttribute('aria-pressed', 'true')
+    }
   })
 })

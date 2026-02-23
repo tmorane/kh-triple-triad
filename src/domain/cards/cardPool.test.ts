@@ -15,11 +15,11 @@ describe('card pool integrity', () => {
       return acc
     }, {})
 
-    expect(counts.common).toBe(45)
-    expect(counts.uncommon).toBe(35)
+    expect(counts.common).toBe(50)
+    expect(counts.uncommon).toBe(40)
     expect(counts.rare).toBe(30)
-    expect(counts.epic).toBe(25)
-    expect(counts.legendary).toBe(15)
+    expect(counts.epic).toBe(20)
+    expect(counts.legendary).toBe(10)
   })
 
   test('uses side values between 1 and 10', () => {
@@ -43,5 +43,55 @@ describe('card pool integrity', () => {
       expect(categoryIdSet.has(card.categoryId)).toBe(true)
       expect(elementIdSet.has(card.elementId)).toBe(true)
     }
+  })
+
+  test('maps key cards from the spreadsheet to stable ids', () => {
+    expect(cardPool.find((card) => card.id === 'c01')).toMatchObject({
+      id: 'c01',
+      name: 'Abu',
+      rarity: 'common',
+      top: 2,
+      right: 2,
+      bottom: 1,
+      left: 2,
+      categoryId: 'disney',
+      elementId: 'neutre',
+    })
+
+    expect(cardPool.find((card) => card.id === 'c75')).toMatchObject({
+      id: 'c75',
+      name: 'Gros Ventre',
+      rarity: 'uncommon',
+      top: 4,
+      right: 2,
+      bottom: 4,
+      left: 2,
+      categoryId: 'sans_coeur',
+      elementId: 'neutre',
+    })
+
+    expect(cardPool.find((card) => card.id === 'c148')).toMatchObject({
+      id: 'c148',
+      name: 'Roi Mickey',
+      rarity: 'legendary',
+      top: 9,
+      right: 7,
+      bottom: 8,
+      left: 9,
+      categoryId: 'heros',
+      elementId: 'lumiere',
+    })
+
+    expect(cardPool.find((card) => card.id === 'c150')).toMatchObject({
+      id: 'c150',
+      name: 'Sora',
+      rarity: 'legendary',
+      top: 9,
+      right: 8,
+      bottom: 8,
+      left: 9,
+      categoryId: 'heros',
+      elementId: 'lumiere',
+    })
   })
 })

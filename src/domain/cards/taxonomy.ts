@@ -18,6 +18,9 @@ export const cardCategoryIds: CardCategoryId[] = [
   'pnj',
   'allie_twewy',
   'alliee',
+  'disney',
+  'heros',
+  'boss_kh',
 ]
 
 export const cardElementIds: CardElementId[] = [
@@ -37,6 +40,8 @@ export const cardElementIds: CardElementId[] = [
   'espace',
   'illusion',
   'soin',
+  'poison',
+  'aube',
   'neutre',
 ]
 
@@ -58,6 +63,9 @@ export const cardCategoryLabelById: Record<CardCategoryId, string> = {
   pnj: 'PNJ',
   allie_twewy: 'Allié TWEWY',
   alliee: 'Alliée',
+  disney: 'Disney',
+  heros: 'Héros',
+  boss_kh: 'Boss KH',
 }
 
 export const cardElementLabelById: Record<CardElementId, string> = {
@@ -77,6 +85,8 @@ export const cardElementLabelById: Record<CardElementId, string> = {
   espace: 'Espace',
   illusion: 'Illusion',
   soin: 'Soin',
+  poison: 'Poison',
+  aube: 'Aube',
   neutre: '—',
 }
 

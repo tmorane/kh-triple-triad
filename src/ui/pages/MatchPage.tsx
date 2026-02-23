@@ -4,7 +4,6 @@ import { useGame } from '../../app/useGame'
 import { getCard } from '../../domain/cards/cardPool'
 import { selectCpuMove } from '../../domain/match/ai'
 import { applyMove, listLegalMoves, resolveMatchResult } from '../../domain/match/engine'
-import { getAchievementDefinition } from '../../domain/progression/achievements'
 import { applyMatchRewards } from '../../domain/progression/rewards'
 import { applyRankedMatchResult } from '../../domain/progression/ranked'
 import type { Actor, CardId } from '../../domain/types'
@@ -39,10 +38,21 @@ const STARTER_SPIN_DURATION_MS = 1600
 const STARTER_REVEAL_HOLD_MS = 340
 const STARTER_BASE_TURNS = 6
 
+function getOutcomeLabel(winner: 'player' | 'cpu' | 'draw'): 'WIN' | 'LOSE' | 'DRAW' {
+  if (winner === 'player') {
+    return 'WIN'
+  }
+  if (winner === 'cpu') {
+    return 'LOSE'
+  }
+  return 'DRAW'
+}
+
 export function MatchPage() {
   const navigate = useNavigate()
   const { profile, currentMatch, startMatch, updateCurrentMatch, finalizeCurrentMatch } = useGame()
   const [selectedCard, setSelectedCard] = useState<CardId | null>(null)
+  const [selectedClaimCardId, setSelectedClaimCardId] = useState<CardId | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isFinishing, setIsFinishing] = useState(false)
   const [starterNeedleAngleDeg, setStarterNeedleAngleDeg] = useState(0)
@@ -90,6 +100,7 @@ export function MatchPage() {
     }
 
     const result = resolveMatchResult(state)
+    const claimedCpuCardId = result.winner === 'player' ? (selectedClaimCardId ?? undefined) : undefined
     const progression = applyMatchRewards(
       profile,
       result,
@@ -97,6 +108,7 @@ export function MatchPage() {
       currentMatch.seed + state.turns,
       currentMatch.opponent.level,
       currentMatch.rewardMultiplier,
+      claimedCpuCardId,
     )
     const rankedUpdate =
       currentMatch.queue === 'ranked' ? applyRankedMatchResult(progression.profile.ranked, result.winner) : null
@@ -105,11 +117,10 @@ export function MatchPage() {
       queue: currentMatch.queue,
       result,
       rewards: progression.rewards,
-      newlyOwnedCards: progression.newlyOwnedCards,
       opponent: currentMatch.opponent,
       rankedUpdate,
     }
-  }, [currentMatch, profile, state])
+  }, [currentMatch, profile, selectedClaimCardId, state])
 
   const matchSeed = currentMatch?.seed ?? null
   const matchStatus = state?.status ?? null
@@ -137,6 +148,10 @@ export function MatchPage() {
     if (matchSeed === null || matchStatus === null || matchStatus === 'finished') {
       setStarterNeedleAngleDeg(0)
       setStarterSpinSettled(false)
+      setStarterRevealComplete(true)
+      return
+    }
+    if (state?.turns !== 0) {
       setStarterRevealComplete(true)
       return
     }
@@ -190,12 +205,18 @@ export function MatchPage() {
         window.clearTimeout(revealTimer)
       }
     }
-  }, [matchSeed, matchStatus, state?.turn])
+  }, [matchSeed, matchStatus, state?.turn, state?.turns])
 
   const isStarterRollActive =
     !!currentMatch && !!state && state.status === 'active' && state.turns === 0 && !starterRevealComplete
   const isStarterRollSpinning = isStarterRollActive && !starterSpinSettled
   const displayedStarter: Actor = state?.turn ?? 'player'
+
+  useEffect(() => {
+    if (!currentMatch || state?.status !== 'finished') {
+      setSelectedClaimCardId(null)
+    }
+  }, [currentMatch, state?.status])
 
   useEffect(() => {
     if (!starterRevealComplete || !currentMatch || !state || state.turn !== 'cpu' || state.status === 'finished') {
@@ -247,8 +268,14 @@ export function MatchPage() {
   }
 
   const handleFinish = () => {
+    const isPlayerVictory = finishPreview?.result.winner === 'player'
+    if (isPlayerVictory && !selectedClaimCardId) {
+      setError('Choose one opponent card to claim before continuing.')
+      return
+    }
+
     setIsFinishing(true)
-    finalizeCurrentMatch()
+    finalizeCurrentMatch(selectedClaimCardId ?? undefined)
     navigate('/results')
   }
 
@@ -263,9 +290,10 @@ export function MatchPage() {
     setIsFinishing(true)
 
     try {
-      finalizeCurrentMatch()
+      finalizeCurrentMatch(selectedClaimCardId ?? undefined)
       startMatch(currentMatch.queue, rematchDeck, rematchRules)
       setSelectedCard(null)
+      setSelectedClaimCardId(null)
       setError(null)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unable to start rematch.'
@@ -389,10 +417,27 @@ export function MatchPage() {
             aria-labelledby="match-finish-title"
             data-testid="match-finish-modal"
           >
-            <h2 id="match-finish-title">Match Finished</h2>
-            <p className="lead">
-              Winner: {finishPreview.result.winner === 'draw' ? 'Draw' : finishPreview.result.winner === 'player' ? 'Player' : 'CPU'}
-            </p>
+            <header className="finish-score-header finish-score-header--modal">
+              <div className="finish-score finish-score--player">
+                <span className="finish-score__label">YOU</span>
+                <strong className="finish-score__value" data-testid="match-finish-player-score">
+                  {finishPreview.result.playerCount}
+                </strong>
+              </div>
+              <div className="finish-score finish-score--cpu">
+                <span className="finish-score__label">CPU</span>
+                <strong className="finish-score__value" data-testid="match-finish-cpu-score">
+                  {finishPreview.result.cpuCount}
+                </strong>
+              </div>
+              <h2
+                id="match-finish-title"
+                className={`finish-outcome finish-outcome--${finishPreview.result.winner}`}
+                data-testid="match-finish-outcome"
+              >
+                {getOutcomeLabel(finishPreview.result.winner)}
+              </h2>
+            </header>
             {finishPreview.rewards.criticalVictory ? <p className="small">Critical Victory</p> : null}
             <p className="small">Queue: {finishPreview.queue === 'ranked' ? 'Ranked' : 'Normal'}</p>
 
@@ -411,29 +456,40 @@ export function MatchPage() {
               </strong>
             </div>
 
-            <div className="result-block">
-              <h2>Drops</h2>
-              <p>
-                {finishPreview.rewards.droppedCardId
-                  ? finishPreview.rewards.duplicateConverted
-                    ? `${finishPreview.rewards.droppedCardId.toUpperCase()} converted to gold.`
-                    : `New card: ${finishPreview.rewards.droppedCardId.toUpperCase()}`
-                  : 'No card drop this match.'}
-              </p>
-            </div>
-
-            <div className="result-block">
-              <h2>Achievements</h2>
-              {finishPreview.rewards.newlyUnlockedAchievements.length > 0 ? (
-                <ul>
-                  {finishPreview.rewards.newlyUnlockedAchievements.map((id) => (
-                    <li key={id}>{getAchievementDefinition(id).title}</li>
-                  ))}
-                </ul>
-              ) : (
-                <p>No new achievements.</p>
-              )}
-            </div>
+            {finishPreview.result.winner === 'player' ? (
+              <div className="result-block">
+                <h2>Claimed Card</h2>
+                <p className="small">Choose 1 opponent card to claim</p>
+                <div className="match-claim-grid" aria-label="Claim card selection">
+                  {currentMatch.cpuDeck.map((cardId) => {
+                    const card = getCard(cardId)
+                    return (
+                      <TriadCard
+                        key={`claim-${cardId}`}
+                        card={card}
+                        context="setup"
+                        className="match-claim-card"
+                        selected={selectedClaimCardId === cardId}
+                        showNew={!profile.ownedCardIds.includes(cardId)}
+                        newBadgeVariant="claim"
+                        interactive
+                        onClick={() => {
+                          setSelectedClaimCardId(cardId)
+                          setError(null)
+                        }}
+                        testId={`match-claim-card-${cardId}`}
+                      />
+                    )
+                  })}
+                </div>
+                <p>{selectedClaimCardId ? `Selected: ${selectedClaimCardId.toUpperCase()}` : 'Select one card to continue.'}</p>
+              </div>
+            ) : (
+              <div className="result-block">
+                <h2>Claimed Card</h2>
+                <p>No card claimed this match.</p>
+              </div>
+            )}
 
             {finishPreview.rankedUpdate ? (
               <div className="result-block">
@@ -450,13 +506,6 @@ export function MatchPage() {
               </div>
             ) : null}
 
-            {finishPreview.newlyOwnedCards.length > 0 && (
-              <div className="result-block">
-                <h2>New Cards</h2>
-                <p>{finishPreview.newlyOwnedCards.map((cardId) => cardId.toUpperCase()).join(', ')}</p>
-              </div>
-            )}
-
             <div className="actions">
               <button
                 type="button"
@@ -471,6 +520,7 @@ export function MatchPage() {
                 className="button button-primary"
                 onClick={handleFinish}
                 data-testid="finish-match-button"
+                disabled={finishPreview.result.winner === 'player' && !selectedClaimCardId}
               >
                 Continue
               </button>

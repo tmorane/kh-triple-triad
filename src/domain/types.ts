@@ -20,6 +20,9 @@ export type CardCategoryId =
   | 'pnj'
   | 'allie_twewy'
   | 'alliee'
+  | 'disney'
+  | 'heros'
+  | 'boss_kh'
 
 export type CardElementId =
   | 'lumiere'
@@ -38,6 +41,8 @@ export type CardElementId =
   | 'espace'
   | 'illusion'
   | 'soin'
+  | 'poison'
+  | 'aube'
   | 'neutre'
 
 export type DeckSlotId = 'slot-1' | 'slot-2' | 'slot-3'

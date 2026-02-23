@@ -1,6 +1,5 @@
 import { Link, Navigate } from 'react-router-dom'
 import { useGame } from '../../app/useGame'
-import { getAchievementDefinition } from '../../domain/progression/achievements'
 
 function formatGoldBonusDetails(rewards: {
   bonusGoldFromDuplicate: number
@@ -24,6 +23,16 @@ function formatGoldBonusDetails(rewards: {
   return parts.length > 0 ? ` (${parts.join(', ')})` : ''
 }
 
+function getOutcomeLabel(winner: 'player' | 'cpu' | 'draw'): 'WIN' | 'LOSE' | 'DRAW' {
+  if (winner === 'player') {
+    return 'WIN'
+  }
+  if (winner === 'cpu') {
+    return 'LOSE'
+  }
+  return 'DRAW'
+}
+
 export function ResultsPage() {
   const { lastMatchSummary } = useGame()
 
@@ -31,23 +40,29 @@ export function ResultsPage() {
     return <Navigate to="/" replace />
   }
 
-  const { queue, result, rewards, newlyOwnedCards, opponent, rankedUpdate } = lastMatchSummary
+  const { queue, result, rewards, opponent, rankedUpdate } = lastMatchSummary
 
   return (
     <section className="panel">
-      <h1>Results</h1>
-      <p className="lead">Winner: {result.winner === 'draw' ? 'Draw' : result.winner === 'player' ? 'Player' : 'CPU'}</p>
+      <header className="finish-score-header">
+        <div className="finish-score finish-score--player">
+          <span className="finish-score__label">YOU</span>
+          <strong className="finish-score__value" data-testid="results-player-score">
+            {result.playerCount}
+          </strong>
+        </div>
+        <div className="finish-score finish-score--cpu">
+          <span className="finish-score__label">CPU</span>
+          <strong className="finish-score__value" data-testid="results-cpu-score">
+            {result.cpuCount}
+          </strong>
+        </div>
+        <h1 className={`finish-outcome finish-outcome--${result.winner}`} data-testid="results-outcome">
+          {getOutcomeLabel(result.winner)}
+        </h1>
+      </header>
       {rewards.criticalVictory ? <p className="small">Critical Victory</p> : null}
       <p className="small">Queue: {queue === 'ranked' ? 'Ranked' : 'Normal'}</p>
-
-      <div className="stat-row">
-        <span>Player Cards</span>
-        <strong>{result.playerCount}</strong>
-      </div>
-      <div className="stat-row">
-        <span>CPU Cards</span>
-        <strong>{result.cpuCount}</strong>
-      </div>
       <div className="stat-row">
         <span>Gold Earned</span>
         <strong>
@@ -63,27 +78,12 @@ export function ResultsPage() {
       </div>
 
       <div className="result-block">
-        <h2>Drops</h2>
+        <h2>Claimed Card</h2>
         <p>
           {rewards.droppedCardId
-            ? rewards.duplicateConverted
-              ? `${rewards.droppedCardId.toUpperCase()} converted to gold.`
-              : `New card: ${rewards.droppedCardId.toUpperCase()}`
-            : 'No card drop this match.'}
+            ? `Claimed card: ${rewards.droppedCardId.toUpperCase()}`
+          : 'No card claimed this match.'}
         </p>
-      </div>
-
-      <div className="result-block">
-        <h2>Achievements</h2>
-        {rewards.newlyUnlockedAchievements.length > 0 ? (
-          <ul>
-            {rewards.newlyUnlockedAchievements.map((id) => (
-              <li key={id}>{getAchievementDefinition(id).title}</li>
-            ))}
-          </ul>
-        ) : (
-          <p>No new achievements.</p>
-        )}
       </div>
 
       {rankedUpdate ? (
@@ -100,13 +100,6 @@ export function ResultsPage() {
           </p>
         </div>
       ) : null}
-
-      {newlyOwnedCards.length > 0 && (
-        <div className="result-block">
-          <h2>New Cards</h2>
-          <p>{newlyOwnedCards.map((cardId) => cardId.toUpperCase()).join(', ')}</p>
-        </div>
-      )}
 
       <div className="actions">
         <Link className="button button-primary" to="/setup" data-testid="play-again-button">

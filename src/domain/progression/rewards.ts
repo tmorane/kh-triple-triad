@@ -28,6 +28,7 @@ export function applyMatchRewards(
   seed: number,
   opponentLevel: OpponentLevel = 1,
   rewardMultiplier = 1,
+  claimedCpuCardId?: CardId,
 ): MatchProgressionResult {
   const rng = createSeededRng(seed)
 
@@ -69,30 +70,15 @@ export function applyMatchRewards(
   const newlyOwnedCards: CardId[] = []
 
   if (result.winner === 'player') {
-    const drop = chooseWinDrop(updatedProfile.ownedCardIds, cpuDeck, rng.nextInt(cpuDeck.length))
-    droppedCardId = drop.cardId
-    if (drop.isDuplicate) {
-      bonusGoldFromDuplicate += 15
-      duplicateConverted = true
-    } else {
-      updatedProfile.ownedCardIds.push(drop.cardId)
-      updatedProfile.cardCopiesById[drop.cardId] = (updatedProfile.cardCopiesById[drop.cardId] ?? 0) + 1
-      newlyOwnedCards.push(drop.cardId)
+    const capturedCardId = resolveCapturedCardId(updatedProfile.ownedCardIds, cpuDeck, rng, claimedCpuCardId)
+    droppedCardId = capturedCardId
+
+    if (!updatedProfile.ownedCardIds.includes(capturedCardId)) {
+      updatedProfile.ownedCardIds.push(capturedCardId)
+      newlyOwnedCards.push(capturedCardId)
     }
-  } else if (result.winner === 'draw') {
-    const shouldDrop = rng.next() < 0.2
-    if (shouldDrop) {
-      const cardId = cpuDeck[rng.nextInt(cpuDeck.length)]
-      droppedCardId = cardId
-      if (updatedProfile.ownedCardIds.includes(cardId)) {
-        bonusGoldFromDuplicate += 15
-        duplicateConverted = true
-      } else {
-        updatedProfile.ownedCardIds.push(cardId)
-        updatedProfile.cardCopiesById[cardId] = (updatedProfile.cardCopiesById[cardId] ?? 0) + 1
-        newlyOwnedCards.push(cardId)
-      }
-    }
+
+    updatedProfile.cardCopiesById[capturedCardId] = (updatedProfile.cardCopiesById[capturedCardId] ?? 0) + 1
   }
 
   const criticalVictory = result.winner === 'player' && result.playerCount === 9 && result.cpuCount === 0
@@ -133,4 +119,21 @@ function chooseWinDrop(ownedCardIds: CardId[], cpuDeck: CardId[], roll: number):
 
   const cardId = cpuDeck[roll % cpuDeck.length]
   return { cardId, isDuplicate: true }
+}
+
+function resolveCapturedCardId(
+  ownedCardIds: CardId[],
+  cpuDeck: CardId[],
+  rng: ReturnType<typeof createSeededRng>,
+  claimedCpuCardId?: CardId,
+): CardId {
+  if (claimedCpuCardId !== undefined) {
+    if (!cpuDeck.includes(claimedCpuCardId)) {
+      throw new Error('Claimed card must belong to the CPU deck.')
+    }
+    return claimedCpuCardId
+  }
+
+  const fallback = chooseWinDrop(ownedCardIds, cpuDeck, rng.nextInt(cpuDeck.length))
+  return fallback.cardId
 }

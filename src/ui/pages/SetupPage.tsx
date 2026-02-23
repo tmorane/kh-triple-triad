@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { useGame } from '../../app/useGame'
 import { getCard } from '../../domain/cards/cardPool'
 import { getSelectedDeckSlot, hasExactlyFiveUniqueCards } from '../../domain/cards/decks'
@@ -14,8 +14,8 @@ type SetupDeckMode = 'manual' | 'auto'
 const rarityFilterOrder: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary']
 
 const setupSortOptions: Array<{ value: SetupSortMode; label: string }> = [
-  { value: 'selected-first', label: 'Selected First' },
   { value: 'power-desc', label: 'Power (High to Low)' },
+  { value: 'selected-first', label: 'Selected First' },
   { value: 'name-asc', label: 'Name (A-Z)' },
 ]
 
@@ -41,11 +41,9 @@ function compareByPower(left: CardDef, right: CardDef): number {
 
 export function SetupPage() {
   const navigate = useNavigate()
-  const { profile, startMatch, selectDeckSlot, renameDeckSlot, toggleDeckSlotCard, setDeckSlotRules } = useGame()
+  const { profile, startMatch, selectDeckSlot, toggleDeckSlotCard, setDeckSlotRules } = useGame()
   const selectedSlot = getSelectedDeckSlot(profile)
 
-  const [deckNameDraft, setDeckNameDraft] = useState(selectedSlot.name)
-  const [nameError, setNameError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const ownedCards = useMemo(
@@ -60,8 +58,9 @@ export function SetupPage() {
 
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedRarities, setSelectedRarities] = useState<Rarity[]>(availableRarities)
-  const [sortMode, setSortMode] = useState<SetupSortMode>('selected-first')
+  const [sortMode, setSortMode] = useState<SetupSortMode>('power-desc')
   const [deckMode, setDeckMode] = useState<SetupDeckMode>('manual')
+  const [matchQueue, setMatchQueue] = useState<MatchQueue>('normal')
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -129,19 +128,9 @@ export function SetupPage() {
 
   const isDefaultFilterState =
     normalizedSearch.length === 0 &&
-    sortMode === 'selected-first' &&
+    sortMode === 'power-desc' &&
     selectedRarities.length === availableRarities.length &&
     availableRarities.every((rarity) => selectedRaritySet.has(rarity))
-
-  const handleDeckNameChange = (name: string) => {
-    setDeckNameDraft(name)
-    const result = renameDeckSlot(selectedSlot.id, name)
-    if (!result.valid) {
-      setNameError(result.reason ?? 'Invalid deck name.')
-      return
-    }
-    setNameError(null)
-  }
 
   const handleStart = (queue: MatchQueue) => {
     if (!canStart) {
@@ -190,7 +179,7 @@ export function SetupPage() {
   const handleResetFilters = () => {
     setSearchTerm('')
     setSelectedRarities(availableRarities)
-    setSortMode('selected-first')
+    setSortMode('power-desc')
   }
 
   return (
@@ -207,8 +196,6 @@ export function SetupPage() {
                 className={`setup-slot-button ${slot.id === selectedSlot.id ? 'is-selected' : ''}`}
                 onClick={() => {
                   setError(null)
-                  setNameError(null)
-                  setDeckNameDraft(slot.name)
                   selectDeckSlot(slot.id)
                 }}
                 data-testid={`deck-slot-${slot.id}`}
@@ -218,23 +205,6 @@ export function SetupPage() {
               </button>
             ))}
           </div>
-
-          <div className="setup-deck-name-field">
-            <label htmlFor="setup-deck-name-input">Deck Name</label>
-            <input
-              id="setup-deck-name-input"
-              type="text"
-              value={deckNameDraft}
-              onChange={(event) => handleDeckNameChange(event.target.value)}
-              data-testid="deck-name-input"
-            />
-          </div>
-
-          {nameError && (
-            <p className="error" role="alert">
-              {nameError}
-            </p>
-          )}
 
           <fieldset className="setup-rule-block">
             <legend>Rules</legend>
@@ -272,8 +242,8 @@ export function SetupPage() {
 
           <fieldset className="setup-rule-block">
             <legend>Deck Mode</legend>
-            <div className="rule-toggle-group">
-              <label className="setup-rule-toggle">
+            <div className="rule-toggle-group setup-deck-mode-group">
+              <label className="setup-rule-toggle setup-rule-toggle--deck-mode">
                 <input
                   type="radio"
                   name="setup-deck-mode"
@@ -283,7 +253,7 @@ export function SetupPage() {
                 />
                 <span>Use My Deck</span>
               </label>
-              <label className="setup-rule-toggle">
+              <label className="setup-rule-toggle setup-rule-toggle--deck-mode">
                 <input
                   type="radio"
                   name="setup-deck-mode"
@@ -300,17 +270,63 @@ export function SetupPage() {
             Ranked uses Open only (Same/Plus disabled).
           </p>
 
+          <div className="setup-launch-bar" data-testid="setup-launch-bar">
+            <div className="setup-queue-tabs" role="tablist" aria-label="Match queue">
+              <button
+                type="button"
+                role="tab"
+                className={`setup-queue-tab ${matchQueue === 'normal' ? 'is-active' : ''}`}
+                aria-selected={matchQueue === 'normal'}
+                onClick={() => {
+                  setError(null)
+                  setMatchQueue('normal')
+                }}
+                data-testid="setup-queue-tab-normal"
+              >
+                Normal
+              </button>
+              <button
+                type="button"
+                role="tab"
+                className={`setup-queue-tab ${matchQueue === 'ranked' ? 'is-active' : ''}`}
+                aria-selected={matchQueue === 'ranked'}
+                onClick={() => {
+                  setError(null)
+                  setMatchQueue('ranked')
+                }}
+                data-testid="setup-queue-tab-ranked"
+              >
+                Ranked
+              </button>
+            </div>
+
+            <div className="actions setup-launch-actions">
+              <button
+                type="button"
+                className="button button-primary"
+                onClick={() => handleStart(matchQueue)}
+                disabled={!canStart}
+                data-testid="start-match-button"
+              >
+                {matchQueue === 'ranked' ? 'Start Ranked' : 'Start Normal'}
+              </button>
+            </div>
+            {error && <p className="error setup-launch-error">{error}</p>}
+          </div>
+
           <section className="setup-opponent-preview" aria-label="Opponent preview">
             <h2>Next Opponent</h2>
-            <p className="small" data-testid="setup-opponent-level">
-              CPU L{opponentPreview.level} ({opponentPreview.aiProfile})
-            </p>
-            <p className="small" data-testid="setup-opponent-score-range">
-              Deck score range: {opponentPreview.scoreRange.min}-{opponentPreview.scoreRange.max}
-            </p>
-            <p className="small" data-testid="setup-opponent-bonus">
-              Win bonus: +{opponentPreview.winGoldBonus}
-            </p>
+            <div className="setup-opponent-inline">
+              <p className="small setup-opponent-pill" data-testid="setup-opponent-level">
+                CPU L{opponentPreview.level} ({opponentPreview.aiProfile})
+              </p>
+              <p className="small setup-opponent-pill" data-testid="setup-opponent-score-range">
+                Deck score range: {opponentPreview.scoreRange.min}-{opponentPreview.scoreRange.max}
+              </p>
+              <p className="small setup-opponent-pill" data-testid="setup-opponent-bonus">
+                Win bonus: +{opponentPreview.winGoldBonus}
+              </p>
+            </div>
           </section>
 
           <p className="small setup-deck-count">Deck: {selectedSlot.cards.length}/5 selected</p>
@@ -340,32 +356,6 @@ export function SetupPage() {
                 />
               )
             })}
-          </div>
-
-          {error && <p className="error">{error}</p>}
-
-          <div className="actions">
-            <button
-              type="button"
-              className="button button-primary"
-              onClick={() => handleStart('normal')}
-              disabled={!canStart}
-              data-testid="start-match-button"
-            >
-              Start Normal
-            </button>
-            <button
-              type="button"
-              className="button button-primary"
-              onClick={() => handleStart('ranked')}
-              disabled={!canStart}
-              data-testid="start-ranked-match-button"
-            >
-              Start Ranked
-            </button>
-            <Link className="button" to="/">
-              Home
-            </Link>
           </div>
         </aside>
 

@@ -49,7 +49,7 @@ export const opponentLevelConfigs: ReadonlyArray<OpponentLevelConfig> = [
   {
     level: 1,
     tierId: 'iron',
-    scoreRange: { min: 45, max: 50 },
+    scoreRange: { min: 34, max: 40 },
     rarityWeights: { common: 1 },
     aiProfile: 'novice',
     winGoldBonus: 0,
@@ -57,7 +57,7 @@ export const opponentLevelConfigs: ReadonlyArray<OpponentLevelConfig> = [
   {
     level: 2,
     tierId: 'bronze',
-    scoreRange: { min: 50, max: 62 },
+    scoreRange: { min: 38, max: 52 },
     rarityWeights: { common: 0.75, uncommon: 0.25 },
     aiProfile: 'novice',
     winGoldBonus: 4,
@@ -65,7 +65,7 @@ export const opponentLevelConfigs: ReadonlyArray<OpponentLevelConfig> = [
   {
     level: 3,
     tierId: 'silver',
-    scoreRange: { min: 75, max: 88 },
+    scoreRange: { min: 62, max: 78 },
     rarityWeights: { uncommon: 0.7, rare: 0.3 },
     aiProfile: 'standard',
     winGoldBonus: 8,
@@ -73,7 +73,7 @@ export const opponentLevelConfigs: ReadonlyArray<OpponentLevelConfig> = [
   {
     level: 4,
     tierId: 'gold',
-    scoreRange: { min: 86, max: 104 },
+    scoreRange: { min: 72, max: 90 },
     rarityWeights: { uncommon: 0.45, rare: 0.55 },
     aiProfile: 'standard',
     winGoldBonus: 12,
@@ -81,7 +81,7 @@ export const opponentLevelConfigs: ReadonlyArray<OpponentLevelConfig> = [
   {
     level: 5,
     tierId: 'platinum',
-    scoreRange: { min: 110, max: 128 },
+    scoreRange: { min: 94, max: 116 },
     rarityWeights: { rare: 0.7, epic: 0.3 },
     aiProfile: 'standard',
     winGoldBonus: 16,
@@ -89,7 +89,7 @@ export const opponentLevelConfigs: ReadonlyArray<OpponentLevelConfig> = [
   {
     level: 6,
     tierId: 'emerald',
-    scoreRange: { min: 124, max: 146 },
+    scoreRange: { min: 104, max: 128 },
     rarityWeights: { rare: 0.45, epic: 0.55 },
     aiProfile: 'expert',
     winGoldBonus: 20,
@@ -97,7 +97,7 @@ export const opponentLevelConfigs: ReadonlyArray<OpponentLevelConfig> = [
   {
     level: 7,
     tierId: 'diamond',
-    scoreRange: { min: 140, max: 164 },
+    scoreRange: { min: 132, max: 158 },
     rarityWeights: { epic: 0.65, legendary: 0.35 },
     aiProfile: 'expert',
     winGoldBonus: 24,
@@ -105,7 +105,7 @@ export const opponentLevelConfigs: ReadonlyArray<OpponentLevelConfig> = [
   {
     level: 8,
     tierId: 'master',
-    scoreRange: { min: 156, max: 183 },
+    scoreRange: { min: 150, max: 178 },
     rarityWeights: { epic: 0.25, legendary: 0.75 },
     aiProfile: 'expert',
     winGoldBonus: 28,

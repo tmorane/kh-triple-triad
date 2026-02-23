@@ -205,8 +205,13 @@ describe('CollectionPage', () => {
     profile.cardCopiesById.c11 = 2
     renderCollection({ profile })
 
-    await user.click(screen.getByTestId('collection-card-c11'))
-    expect(screen.getByTestId('collection-selected-id')).toHaveTextContent('C11')
+    const filteredOutCandidate = cardPool.find((card) => card.rarity !== 'common' && !profile.ownedCardIds.includes(card.id))
+    expect(filteredOutCandidate).toBeTruthy()
+    if (!filteredOutCandidate) {
+      return
+    }
+
+    await user.click(screen.getByTestId(`collection-card-${filteredOutCandidate.id}`))
 
     await user.click(screen.getByTestId('collection-filter-discovery-owned'))
     for (const rarity of ['uncommon', 'rare', 'epic', 'legendary'] as const) {
@@ -267,15 +272,17 @@ describe('CollectionPage', () => {
     expect(getVisibleCollectionCards()).toHaveLength(0)
   })
 
-  test('shows copy counts in inspect panel for owned cards', () => {
+  test('shows copy counts in inspect panel for owned cards', async () => {
+    const user = userEvent.setup()
     renderCollection()
 
+    const selectedCard = screen.getByTestId('collection-card-c11')
+    await user.click(selectedCard)
     expect(screen.getByTestId('collection-selected-copies')).toHaveTextContent('2')
     expect(screen.getByText('Total copies: 12')).toBeInTheDocument()
     expect(screen.getByTestId('collection-selected-category')).not.toHaveTextContent('Inconnu')
     expect(screen.getByTestId('collection-selected-element')).not.toHaveTextContent('Inconnu')
 
-    const card = screen.getByTestId('collection-card-c11')
-    expect(within(card).getByText('x2')).toBeInTheDocument()
+    expect(within(selectedCard).getByText('x2')).toBeInTheDocument()
   })
 })

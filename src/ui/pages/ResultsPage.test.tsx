@@ -162,6 +162,60 @@ function buildContextWithoutClaimedCard(): GameContextValue {
   }
 }
 
+function buildContextWithOutcome(
+  winner: 'player' | 'cpu' | 'draw',
+  playerCount: number,
+  cpuCount: number,
+): GameContextValue {
+  const context = buildContext('normal')
+  if (!context.lastMatchSummary) {
+    throw new Error('Expected lastMatchSummary in test fixture.')
+  }
+
+  return {
+    ...context,
+    lastMatchSummary: {
+      ...context.lastMatchSummary,
+      result: {
+        ...context.lastMatchSummary.result,
+        winner,
+        playerCount,
+        cpuCount,
+      },
+      rewards: {
+        ...context.lastMatchSummary.rewards,
+        droppedCardId: winner === 'player' ? context.lastMatchSummary.rewards.droppedCardId : null,
+      },
+      newlyOwnedCards: winner === 'player' ? context.lastMatchSummary.newlyOwnedCards : [],
+    },
+  }
+}
+
+describe('ResultsPage finish header', () => {
+  test('shows score header and WIN outcome while hiding legacy sections', () => {
+    renderResults(buildContextWithOutcome('player', 6, 3))
+
+    expect(screen.getByTestId('results-player-score')).toHaveTextContent('6')
+    expect(screen.getByTestId('results-cpu-score')).toHaveTextContent('3')
+    expect(screen.getByTestId('results-outcome')).toHaveTextContent('WIN')
+    expect(screen.queryByText(/^Winner:/)).not.toBeInTheDocument()
+    expect(screen.queryByText('Achievements')).not.toBeInTheDocument()
+    expect(screen.queryByText('New Cards')).not.toBeInTheDocument()
+  })
+
+  test('shows LOSE outcome when cpu wins', () => {
+    renderResults(buildContextWithOutcome('cpu', 3, 6))
+
+    expect(screen.getByTestId('results-outcome')).toHaveTextContent('LOSE')
+  })
+
+  test('shows DRAW outcome on tie result', () => {
+    renderResults(buildContextWithOutcome('draw', 4, 4))
+
+    expect(screen.getByTestId('results-outcome')).toHaveTextContent('DRAW')
+  })
+})
+
 describe('ResultsPage ranked section', () => {
   test('shows ranked LP block for ranked queue', () => {
     renderResults(buildContext('ranked'))

@@ -3,7 +3,7 @@ import type { CardDef } from '../../domain/types'
 import { getCardArtCandidates } from './cardArt'
 
 export type TriadCardContext = 'collection-list' | 'collection-detail' | 'setup' | 'hand-player' | 'hand-cpu'
-export type NewBadgeVariant = 'default' | 'reveal'
+export type NewBadgeVariant = 'default' | 'reveal' | 'claim'
 
 export interface TriadCardProps {
   card: CardDef
@@ -95,7 +95,24 @@ export function TriadCard({
 
   const content = (
     <>
-      {showNew && owned ? <span className={`triad-card__new-pill triad-card__new-pill--${newBadgeVariant}`}>NEW</span> : null}
+      {showNew && owned ? (
+        newBadgeVariant === 'claim' ? (
+          <span
+            className="triad-card__new-pill triad-card__new-pill--claim"
+            data-testid="triad-card-claim-new-marker"
+            aria-label="New claim card"
+          >
+            <span className="triad-card__claim-star" aria-hidden="true">
+              ★
+            </span>
+            <span className="triad-card__claim-plus" aria-hidden="true">
+              +
+            </span>
+          </span>
+        ) : (
+          <span className={`triad-card__new-pill triad-card__new-pill--${newBadgeVariant}`}>NEW</span>
+        )
+      ) : null}
       {owned && copies > 1 ? <span className="triad-card__copies-pill">x{copies}</span> : null}
       <div className="triad-card__frame">
         <div className="triad-card__face">

@@ -1,5 +1,9 @@
 const SPLASHART_BASE_PATH = '/splashart'
 const ART_EXTENSIONS = ['webp', 'png', 'jpg', 'jpeg'] as const
+const CARD_ART_NAME_ALIASES: Record<string, string[]> = {
+  'Minute Bombe': ['Bombe Minute'],
+  Surveillant: ['Robot de Surveillance'],
+}
 
 function stripDiacritics(value: string): string {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -43,6 +47,14 @@ export function getCardArtCandidates(cardName: string): string[] {
   const kebabName = toKebabCase(normalizedName)
   const snakeName = kebabName.replace(/-/g, '_')
 
+  const aliasNameVariants = (CARD_ART_NAME_ALIASES[trimmedName] ?? []).flatMap((alias) => {
+    const asciiAlias = stripDiacritics(alias)
+    const normalizedAlias = normalizeSeparators(asciiAlias)
+    const kebabAlias = toKebabCase(normalizedAlias)
+
+    return [alias, asciiAlias, normalizedAlias, normalizedAlias.toLowerCase(), kebabAlias, kebabAlias.replace(/-/g, '_')]
+  })
+
   const filenameVariants = unique([
     trimmedName,
     asciiName,
@@ -50,6 +62,7 @@ export function getCardArtCandidates(cardName: string): string[] {
     normalizedName.toLowerCase(),
     kebabName,
     snakeName,
+    ...aliasNameVariants,
   ])
 
   const candidates: string[] = []
