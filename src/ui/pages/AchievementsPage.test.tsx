@@ -38,6 +38,9 @@ function renderAchievements(valueOverrides: Partial<GameContextValue> = {}) {
     renamePlayer: () => {
       throw new Error('Not implemented in test.')
     },
+    setAudioEnabled: () => {
+      throw new Error('Not implemented in test.')
+    },
     renameDeckSlot: () => {
       throw new Error('Not implemented in test.')
     },

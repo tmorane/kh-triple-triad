@@ -37,6 +37,9 @@ function createContextValue(overrides: Partial<GameContextValue> = {}): GameCont
     renamePlayer: () => {
       throw new Error('Not implemented in test.')
     },
+    setAudioEnabled: () => {
+      throw new Error('Not implemented in test.')
+    },
     renameDeckSlot: () => {
       throw new Error('Not implemented in test.')
     },

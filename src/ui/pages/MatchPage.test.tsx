@@ -352,6 +352,11 @@ function buildContextValue(
       throw new Error('Not implemented in test.')
     },
     ...overrides,
+    setAudioEnabled:
+      overrides.setAudioEnabled ??
+      (() => {
+        throw new Error('Not implemented in test.')
+      }),
     storedProfiles: overrides.storedProfiles ?? {
       activeProfileId: 'profile-1',
       profiles: [

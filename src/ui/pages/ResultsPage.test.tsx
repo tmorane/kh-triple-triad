@@ -173,6 +173,9 @@ function buildContext(queue: 'normal' | 'ranked' | 'tower'): GameContextValue {
     renamePlayer: () => {
       throw new Error('Not implemented in test.')
     },
+    setAudioEnabled: () => {
+      throw new Error('Not implemented in test.')
+    },
     renameDeckSlot: () => {
       throw new Error('Not implemented in test.')
     },
