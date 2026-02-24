@@ -108,7 +108,7 @@ const PACK_DROP_RATES: Readonly<Record<ShopPackId, PackDropRates>> = {
   uncommon: { common: 35, uncommon: 40, rare: 15, epic: 7, legendary: 3 },
   rare: { common: 15, uncommon: 25, rare: 35, epic: 20, legendary: 5 },
   epic: { common: 0, uncommon: 0, rare: 0, epic: 100, legendary: 0 },
-  legendary: { common: 5, uncommon: 10, rare: 20, epic: 55, legendary: 10 },
+  legendary: { common: 11, uncommon: 22, rare: 44, epic: 20, legendary: 3 },
 }
 
 const SPECIAL_BASE_RATES: PackDropRates = {
@@ -335,9 +335,15 @@ function cloneProfile(profile: PlayerProfile): PlayerProfile {
       m2_combo_practitioner: { ...profile.missions.m2_combo_practitioner },
       m3_corner_tactician: { ...profile.missions.m3_corner_tactician },
     },
-    ranked: {
-      ...profile.ranked,
-      resultStreak: { ...profile.ranked.resultStreak },
+    rankedByMode: {
+      '3x3': {
+        ...profile.rankedByMode['3x3'],
+        resultStreak: { ...profile.rankedByMode['3x3'].resultStreak },
+      },
+      '4x4': {
+        ...profile.rankedByMode['4x4'],
+        resultStreak: { ...profile.rankedByMode['4x4'].resultStreak },
+      },
     },
     settings: { ...profile.settings },
   }

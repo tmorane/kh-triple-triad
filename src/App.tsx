@@ -121,8 +121,8 @@ function App() {
           <NavLink to="/decks" data-testid="topbar-link-decks">
             Decks
           </NavLink>
-          <NavLink to="/collection" data-testid="topbar-link-collection">
-            Collection
+          <NavLink to="/pokedex" data-testid="topbar-link-collection">
+            Pokédex
           </NavLink>
           <NavLink to="/shop" data-testid="topbar-link-shop">
             Shop
@@ -202,7 +202,8 @@ function App() {
           <Route path="/packs" element={<PacksPage />} />
           <Route path="/match" element={<MatchPage />} />
           <Route path="/results" element={<ResultsPage />} />
-          <Route path="/collection" element={<CollectionPage />} />
+          <Route path="/pokedex" element={<CollectionPage />} />
+          <Route path="/collection" element={<Navigate to="/pokedex" replace />} />
           <Route path="/achievements" element={<AchievementsPage />} />
           <Route path="/missions" element={<MissionsPage />} />
           <Route path="/ranks" element={<RanksPage />} />
@@ -218,8 +219,8 @@ function App() {
         <NavLink to="/decks" className="mobile-main-nav__item">
           Decks
         </NavLink>
-        <NavLink to="/collection" className="mobile-main-nav__item">
-          Collection
+        <NavLink to="/pokedex" className="mobile-main-nav__item">
+          Pokédex
         </NavLink>
         <NavLink to="/shop" className="mobile-main-nav__item">
           Shop

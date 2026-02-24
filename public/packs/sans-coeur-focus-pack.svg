@@ -1,62 +1,78 @@
 <svg width="640" height="900" viewBox="0 0 640 900" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
-  <title id="title">Sans-coeur Focus Pack</title>
-  <desc id="desc">A dark crimson focus pack themed around Sans-coeur units.</desc>
+  <title id="title">Obscur Theme Booster</title>
+  <desc id="desc">Pokemon-style dark booster pack with bold outlines, energy bursts, and a monster emblem.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#0b1320"/>
-      <stop offset="52%" stop-color="#182139"/>
-      <stop offset="100%" stop-color="#37202f"/>
+      <stop offset="0%" stop-color="#1a1233"/>
+      <stop offset="42%" stop-color="#39206a"/>
+      <stop offset="78%" stop-color="#6f2d73"/>
+      <stop offset="100%" stop-color="#2b1638"/>
     </linearGradient>
-    <linearGradient id="foil" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#ffd7d1"/>
-      <stop offset="58%" stop-color="#e8a1a1"/>
-      <stop offset="100%" stop-color="#a95767"/>
+    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffe99a"/>
+      <stop offset="52%" stop-color="#ffc65d"/>
+      <stop offset="100%" stop-color="#ff9438"/>
     </linearGradient>
-    <linearGradient id="heartFoil" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#171216"/>
-      <stop offset="100%" stop-color="#09090d"/>
+    <linearGradient id="seal" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#6f2a8d"/>
+      <stop offset="100%" stop-color="#2a1b45"/>
     </linearGradient>
-    <radialGradient id="shine" cx="32%" cy="18%" r="72%">
-      <stop offset="0%" stop-color="#ffd8d4" stop-opacity="0.78"/>
-      <stop offset="100%" stop-color="#ffd8d4" stop-opacity="0"/>
+    <radialGradient id="glow" cx="32%" cy="14%" r="78%">
+      <stop offset="0%" stop-color="#ffdff6" stop-opacity="0.68"/>
+      <stop offset="100%" stop-color="#ffdff6" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="core" cx="50%" cy="50%" r="62%">
+      <stop offset="0%" stop-color="#37245b"/>
+      <stop offset="72%" stop-color="#22163d"/>
+      <stop offset="100%" stop-color="#170f2d"/>
     </radialGradient>
   </defs>
 
-  <rect x="0" y="0" width="640" height="900" rx="36" fill="url(#bg)"/>
-  <rect x="24" y="24" width="592" height="852" rx="28" fill="none" stroke="#f1b4bc" stroke-opacity="0.64" stroke-width="4"/>
-  <ellipse cx="180" cy="165" rx="220" ry="182" fill="url(#shine)"/>
+  <rect x="56" y="34" width="528" height="832" rx="42" fill="url(#bg)" stroke="#ffd971" stroke-opacity="0.72" stroke-width="5"/>
+  <rect x="72" y="50" width="496" height="800" rx="30" fill="none" stroke="#fff4be" stroke-opacity="0.35" stroke-width="2"/>
+  <ellipse cx="194" cy="154" rx="222" ry="184" fill="url(#glow)"/>
 
-  <g fill="none" stroke="#ffe0dc" stroke-opacity="0.75" stroke-width="6">
-    <path d="M120 180 L320 100 L520 180 L520 420 L320 500 L120 420 Z"/>
-    <path d="M165 250 L320 190 L475 250 L475 380 L320 440 L165 380 Z" stroke-opacity="0.48"/>
+  <path d="M84 116 L100 102 L116 116 L132 102 L148 116 L164 102 L180 116 L196 102 L212 116 L228 102 L244 116 L260 102 L276 116 L292 102 L308 116 L324 102 L340 116 L356 102 L372 116 L388 102 L404 116 L420 102 L436 116 L452 102 L468 116 L484 102 L500 116 L516 102 L532 116 L548 102 L556 116 L556 170 L84 170 Z" fill="url(#seal)" stroke="#ffe28f" stroke-opacity="0.56" stroke-width="2"/>
+  <path d="M84 726 L100 740 L116 726 L132 740 L148 726 L164 740 L180 726 L196 740 L212 726 L228 740 L244 726 L260 740 L276 726 L292 740 L308 726 L324 740 L340 726 L356 740 L372 726 L388 740 L404 726 L420 740 L436 726 L452 740 L468 726 L484 740 L500 726 L516 740 L532 726 L548 740 L556 726 L556 780 L84 780 Z" fill="url(#seal)" stroke="#ffe28f" stroke-opacity="0.56" stroke-width="2"/>
+
+  <g fill="#ffffff" fill-opacity="0.17">
+    <circle cx="134" cy="236" r="5"/>
+    <circle cx="164" cy="220" r="4"/>
+    <circle cx="504" cy="222" r="5"/>
+    <circle cx="476" cy="238" r="4"/>
+    <circle cx="116" cy="670" r="5"/>
+    <circle cx="518" cy="676" r="5"/>
   </g>
 
-  <g transform="translate(320 320)">
-    <circle r="84" fill="none" stroke="#efb2b8" stroke-opacity="0.62" stroke-width="5"/>
-    <path d="M0 -62 C20 -98 58 -102 72 -58 C83 -27 62 2 0 68 C-62 2 -83 -27 -72 -58 C-58 -102 -20 -98 0 -62 Z" fill="url(#heartFoil)" stroke="#f0b8bf" stroke-opacity="0.4" stroke-width="4"/>
-    <path d="M-52 -102 C-46 -124 -30 -140 -8 -150" fill="none" stroke="url(#foil)" stroke-width="8" stroke-linecap="round"/>
-    <path d="M52 -102 C46 -124 30 -140 8 -150" fill="none" stroke="url(#foil)" stroke-width="8" stroke-linecap="round"/>
-    <ellipse cx="-22" cy="-26" rx="15" ry="7" fill="#ffe8c5" transform="rotate(-12 -22 -26)"/>
-    <ellipse cx="22" cy="-26" rx="15" ry="7" fill="#ffe8c5" transform="rotate(12 22 -26)"/>
-    <circle cx="-22" cy="-26" r="3" fill="#0b0a0f"/>
-    <circle cx="22" cy="-26" r="3" fill="#0b0a0f"/>
-    <path d="M-20 8 C-10 18 10 18 20 8" fill="none" stroke="#f3bdc4" stroke-width="4" stroke-linecap="round"/>
+  <rect x="130" y="188" width="380" height="46" rx="23" fill="#22173e" stroke="#ffe07e" stroke-width="2"/>
+  <text x="320" y="218" fill="#ffeebc" font-family="Rajdhani, sans-serif" font-size="24" font-weight="700" text-anchor="middle" letter-spacing="3">
+    MONSTER BOOSTER PACK
+  </text>
+
+  <g transform="translate(320 408)">
+    <circle r="124" fill="url(#core)" stroke="url(#rim)" stroke-width="5"/>
+    <circle r="98" fill="none" stroke="#ffe6a2" stroke-opacity="0.48" stroke-width="2"/>
+    <path d="M-104 -12 L-66 -24 L-58 -58 L-34 -30 L6 -34 L-20 -4 L-8 34 L-46 20 L-76 48 L-74 10 Z" fill="#ffcb5e" fill-opacity="0.18"/>
+    <path d="M104 -12 L66 -24 L58 -58 L34 -30 L-6 -34 L20 -4 L8 34 L46 20 L76 48 L74 10 Z" fill="#ffcb5e" fill-opacity="0.18"/>
+
+    <path d="M0 -80 C34 -118 96 -106 96 -42 C96 18 40 58 0 108 C-40 58 -96 18 -96 -42 C-96 -106 -34 -118 0 -80 Z" fill="#130d23" stroke="#ffe49b" stroke-width="6"/>
+    <path d="M-46 -16 C-32 -26 -12 -24 0 -10 C12 -24 32 -26 46 -16 C36 0 16 8 0 8 C-16 8 -36 0 -46 -16 Z" fill="#2e1f45"/>
+    <ellipse cx="-24" cy="-34" rx="17" ry="9" fill="#ffe38d"/>
+    <ellipse cx="24" cy="-34" rx="17" ry="9" fill="#ffe38d"/>
+    <circle cx="-24" cy="-34" r="3.5" fill="#0f0b16"/>
+    <circle cx="24" cy="-34" r="3.5" fill="#0f0b16"/>
+    <path d="M-22 16 C-12 28 12 28 22 16" fill="none" stroke="#ffcf64" stroke-width="5" stroke-linecap="round"/>
   </g>
 
-  <g fill="#ffe8e2">
-    <circle cx="252" cy="236" r="4"/>
-    <circle cx="280" cy="220" r="4"/>
-    <circle cx="320" cy="214" r="4"/>
-    <circle cx="360" cy="220" r="4"/>
-    <circle cx="388" cy="236" r="4"/>
+  <path d="M110 298 C148 274 212 260 320 260 C428 260 492 274 530 298" fill="none" stroke="#ffd97a" stroke-opacity="0.38" stroke-width="2"/>
+  <path d="M110 518 C148 542 212 556 320 556 C428 556 492 542 530 518" fill="none" stroke="#ffd97a" stroke-opacity="0.38" stroke-width="2"/>
+
+  <path d="M90 62 L276 62 L480 848 L294 848 Z" fill="#ffffff" fill-opacity="0.12"/>
+
+  <g fill="#fff2be" text-anchor="middle">
+    <text x="320" y="642" font-family="Rajdhani, sans-serif" font-size="78" font-weight="800" letter-spacing="8">OBSCUR</text>
+    <text x="320" y="700" font-family="Rajdhani, sans-serif" font-size="44" font-weight="700" letter-spacing="6">THEME BOOSTER</text>
+    <text x="320" y="748" font-family="Rajdhani, sans-serif" font-size="34" font-weight="600" letter-spacing="5">TRIPLE TRIAD</text>
   </g>
 
-  <g fill="#fff0eb" font-family="Rajdhani, sans-serif" text-anchor="middle">
-    <text x="320" y="640" font-size="64" font-weight="700" letter-spacing="7">SANS-COEUR</text>
-    <text x="320" y="704" font-size="52" font-weight="700" letter-spacing="6">FOCUS PACK</text>
-    <text x="320" y="758" font-size="34" font-weight="600" letter-spacing="6">TRIPLE TRIAD</text>
-  </g>
-
-  <circle cx="320" cy="556" r="28" fill="#fee8e2" fill-opacity="0.95"/>
-  <path d="M320 542 C328 528 344 528 350 542 C355 554 347 565 320 585 C293 565 285 554 290 542 C296 528 312 528 320 542 Z" fill="#a65467"/>
 </svg>

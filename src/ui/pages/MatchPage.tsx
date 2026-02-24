@@ -205,15 +205,20 @@ export function MatchPage() {
       currentMatch.opponent.level,
       currentMatch.rewardMultiplier,
       claimedCpuCardId,
+      { disableCardCapture: currentMatch.queue === 'tower' },
     )
+    const rankedMode = currentMatch.queue === 'ranked' ? currentMatch.state.config.mode : null
     const rankedUpdate =
-      currentMatch.queue === 'ranked' ? applyRankedMatchResult(progression.profile.ranked, result.winner) : null
+      currentMatch.queue === 'ranked' && rankedMode
+        ? applyRankedMatchResult(progression.profile.rankedByMode[rankedMode], result.winner)
+        : null
 
     return {
       queue: currentMatch.queue,
       result,
       rewards: progression.rewards,
       opponent: currentMatch.opponent,
+      rankedMode,
       rankedUpdate,
     }
   }, [currentMatch, profile, selectedClaimCardId, state])
@@ -464,8 +469,9 @@ export function MatchPage() {
   const focusedCell = isKeyboardControlEnabled && selectedCard ? keyboardTargetCell : null
 
   const handleFinish = () => {
+    const isTowerQueue = currentMatch.queue === 'tower'
     const isPlayerVictory = finishPreview?.result.winner === 'player'
-    if (isPlayerVictory && !selectedClaimCardId) {
+    if (!isTowerQueue && isPlayerVictory && !selectedClaimCardId) {
       setError('Choose one opponent card to claim before continuing.')
       return
     }
@@ -477,6 +483,10 @@ export function MatchPage() {
 
   const handleRematch = () => {
     if (!currentMatch) {
+      return
+    }
+    if (currentMatch.queue === 'tower') {
+      setError('Tower matches cannot be rematched. Continue the ascent from results.')
       return
     }
 
@@ -507,7 +517,10 @@ export function MatchPage() {
       <div className="match-arena">
         <aside className="match-lane match-lane--cpu" data-testid="match-lane-cpu">
           <h2>CPU Hand (Open)</h2>
-          <div className={`hand-row hand-row--cpu ${isFourByFourMatch ? 'hand-row--two-columns' : ''}`} aria-label="CPU hand">
+          <div
+            className={`hand-row hand-row--cpu ${isFourByFourMatch ? 'hand-row--two-columns' : 'hand-row--cpu-3x3'}`}
+            aria-label="CPU hand"
+          >
             {state.hands.cpu.map((cardId) => {
               const card = getCard(cardId)
               return <TriadCard key={cardId} card={card} context="hand-cpu" />
@@ -531,6 +544,19 @@ export function MatchPage() {
             <p className="small" data-testid="match-opponent-badge">
               CPU L{currentMatch.opponent.level} • Score {currentMatch.opponent.deckScore}
             </p>
+            {currentMatch.queue === 'tower' && currentMatch.tower ? (
+              <>
+                <p className="small" data-testid="match-tower-floor">
+                  Tower Floor {currentMatch.tower.floor} · Checkpoint {currentMatch.tower.checkpointFloor}
+                </p>
+                <p className="small" data-testid="match-tower-boss">
+                  {currentMatch.tower.boss ? 'Boss Floor' : 'Normal Floor'}
+                </p>
+                <p className="small" data-testid="match-tower-relics">
+                  Relics {Object.values(currentMatch.tower.relics).reduce((sum, count) => sum + count, 0)}
+                </p>
+              </>
+            ) : null}
             <RuleBadges rules={state.rules} />
           </div>
           <PixiBoard
@@ -647,7 +673,9 @@ export function MatchPage() {
               </h2>
             </header>
             {finishPreview.rewards.criticalVictory ? <p className="small">Critical Victory</p> : null}
-            <p className="small">Queue: {finishPreview.queue === 'ranked' ? 'Ranked' : 'Normal'}</p>
+            <p className="small">
+              Queue: {finishPreview.queue === 'ranked' ? 'Ranked' : finishPreview.queue === 'tower' ? 'Tower' : 'Normal'}
+            </p>
 
             <div className="stat-row">
               <span>Gold Earned</span>
@@ -664,11 +692,11 @@ export function MatchPage() {
               </strong>
             </div>
 
-            {finishPreview.result.winner === 'player' ? (
+            {finishPreview.result.winner === 'player' && currentMatch.queue !== 'tower' ? (
               <div className="result-block">
                 <h2>Claimed Card</h2>
                 <p className="small">Choose 1 opponent card to claim</p>
-                <div className="match-claim-grid" aria-label="Claim card selection">
+                <div className="setup-selected-cards match-claim-grid" aria-label="Claim card selection">
                   {currentMatch.cpuDeck.map((cardId) => {
                     const card = getCard(cardId)
                     return (
@@ -676,7 +704,7 @@ export function MatchPage() {
                         key={`claim-${cardId}`}
                         card={card}
                         context="setup"
-                        className="match-claim-card"
+                        className="setup-preview-card match-claim-card"
                         selected={selectedClaimCardId === cardId}
                         showNew={!profile.ownedCardIds.includes(cardId)}
                         newBadgeVariant="claim"
@@ -695,31 +723,37 @@ export function MatchPage() {
             ) : (
               <div className="result-block">
                 <h2>Claimed Card</h2>
-                <p>No card claimed this match.</p>
+                <p>{currentMatch.queue === 'tower' ? 'Tower mode does not grant claimed cards.' : 'No card claimed this match.'}</p>
               </div>
             )}
 
-            {finishPreview.rankedUpdate ? (
-              <RankedLpRecap update={finishPreview.rankedUpdate} animated context="modal" testIdPrefix="match-ranked" />
+            {finishPreview.rankedUpdate && finishPreview.rankedMode ? (
+              <RankedLpRecap mode={finishPreview.rankedMode} update={finishPreview.rankedUpdate} animated context="modal" testIdPrefix="match-ranked" />
             ) : null}
 
             <div className="actions">
-              <button
-                type="button"
-                className="button"
-                onClick={handleRematch}
-                data-testid="restart-match-button"
-              >
-                Rematch
-              </button>
+              {currentMatch.queue !== 'tower' ? (
+                <button
+                  type="button"
+                  className="button"
+                  onClick={handleRematch}
+                  data-testid="restart-match-button"
+                >
+                  Rematch
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="button button-primary"
                 onClick={handleFinish}
                 data-testid="finish-match-button"
-                disabled={finishPreview.result.winner === 'player' && !selectedClaimCardId}
+                disabled={currentMatch.queue !== 'tower' && finishPreview.result.winner === 'player' && !selectedClaimCardId}
               >
-                Continue
+                {currentMatch.queue === 'tower'
+                  ? finishPreview.result.winner === 'player'
+                    ? 'Continue Ascension'
+                    : 'End Run'
+                  : 'Continue'}
               </button>
             </div>
           </div>

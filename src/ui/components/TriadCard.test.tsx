@@ -39,13 +39,25 @@ const longNameCard: CardDef = {
   elementId: 'illusion',
 }
 
+const aboCard: CardDef = {
+  id: 'c11',
+  name: 'Abo',
+  top: 2,
+  right: 1,
+  bottom: 2,
+  left: 3,
+  rarity: 'common',
+  categoryId: 'sans_coeur',
+  elementId: 'poison',
+}
+
 describe('TriadCard splashart', () => {
   test('renders splashart image for an owned card', () => {
     const { container } = render(<TriadCard card={ombreCard} context="collection-list" owned />)
 
     const image = container.querySelector<HTMLImageElement>('.triad-card__art-image')
     expect(image).not.toBeNull()
-    expect(image?.getAttribute('src')).toContain('/splashart/Ombre.webp')
+    expect(image?.getAttribute('src')).toContain('/splashart/Ombre.png')
   })
 
   test('renders type logo badge for owned card', () => {
@@ -106,5 +118,13 @@ describe('TriadCard splashart', () => {
     expect(name).not.toBeNull()
     expect(name).toHaveClass('triad-card__name--compact')
     expect(name).toHaveTextContent('Hypnomade')
+  })
+
+  test('renders real pokedex number instead of internal card id', () => {
+    const { container } = render(<TriadCard card={aboCard} context="collection-list" owned />)
+
+    const id = container.querySelector('.triad-card__id')
+    expect(id).not.toBeNull()
+    expect(id).toHaveTextContent('#023')
   })
 })

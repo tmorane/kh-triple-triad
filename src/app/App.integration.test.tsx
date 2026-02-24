@@ -138,7 +138,7 @@ function RewardsHarness() {
 
       <span data-testid="has-match">{currentMatch ? 'yes' : 'no'}</span>
       <span data-testid="played">{profile.stats.played}</span>
-      <span data-testid="ranked-played">{profile.ranked.matchesPlayed}</span>
+      <span data-testid="ranked-played">{profile.rankedByMode['4x4'].matchesPlayed}</span>
       <span data-testid="gold">{profile.gold}</span>
       <span data-testid="current-opponent-level">{currentMatch?.opponent?.level ?? '-'}</span>
       <span data-testid="last-opponent-level">{lastMatchSummary?.opponent?.level ?? '-'}</span>
@@ -460,25 +460,25 @@ describe('app integration', () => {
   test('setup normal queue uses the selected opponent level in match', async () => {
     const user = userEvent.setup()
     const profile = createDefaultProfile()
-    profile.ranked.tier = 'gold'
-    profile.ranked.division = 'IV'
+    profile.rankedByMode['4x4'].tier = 'gold'
+    profile.rankedByMode['4x4'].division = 'IV'
     localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile))
 
     renderApp('/setup')
 
     await selectPlayPreset(user, 'setup-mode-4x4')
-    await user.click(screen.getByTestId('setup-opponent-level-option-2'))
+    await user.click(screen.getByTestId('setup-opponent-level-option-10'))
     await user.click(screen.getByTestId('start-match-button'))
     await waitForStarterAnimation()
 
-    expect(screen.getByTestId('match-opponent-badge')).toHaveTextContent('CPU L2')
+    expect(screen.getByTestId('match-opponent-badge')).toHaveTextContent('CPU L10')
   })
 
   test('setup ranked preset ignores normal-level selection and uses ranked-level opponent', async () => {
     const user = userEvent.setup()
     const profile = createDefaultProfile()
-    profile.ranked.tier = 'gold'
-    profile.ranked.division = 'IV'
+    profile.rankedByMode['4x4'].tier = 'gold'
+    profile.rankedByMode['4x4'].division = 'IV'
     localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile))
 
     renderApp('/setup')
@@ -728,7 +728,8 @@ describe('app integration', () => {
     expect(screen.getByTestId('shop-gold-value')).toHaveTextContent('Gold: 1100')
     await user.click(screen.getByRole('link', { name: 'Joueur' }))
     expect(screen.getByTestId('gold-value').textContent?.replaceAll(',', '')).toContain('1100')
-    expect(screen.getByTestId('home-ranked-tier')).toHaveTextContent('Iron IV (Division 4)')
+    expect(screen.getByTestId('home-ranked-tier-3x3')).toHaveTextContent('Iron IV (Division 4)')
+    expect(screen.getByTestId('home-ranked-tier-4x4')).toHaveTextContent('Iron IV (Division 4)')
 
     const saved = localStorage.getItem(PROFILE_STORAGE_KEY)
     expect(saved).toBeTruthy()
@@ -757,7 +758,7 @@ describe('app integration', () => {
     expect(screen.getByTestId('shop-pack-rates-common')).toHaveTextContent('Legendary 1%')
     expect(screen.getByTestId('shop-pack-rates-rare')).toHaveTextContent('Legendary 5%')
     expect(screen.getByTestId('shop-pack-rates-legendary')).toHaveTextContent(/Legendary [0-9]+%/)
-    expect(screen.getByTestId('shop-pack-rates-legendary')).toHaveTextContent('Common 5%')
+    expect(screen.getByTestId('shop-pack-rates-legendary')).toHaveTextContent('Common 11%')
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
 
     await user.click(screen.getByTestId('toggle-pack-cards-common'))
@@ -1050,15 +1051,15 @@ describe('app integration', () => {
     const mobileNav = screen.getByTestId('mobile-main-nav')
     expect(within(mobileNav).getByText('Play')).toHaveAttribute('href', '/setup')
     expect(within(mobileNav).getByText('Decks')).toHaveAttribute('href', '/decks')
-    expect(within(mobileNav).getByText('Collection')).toHaveAttribute('href', '/collection')
+    expect(within(mobileNav).getByText('Pokédex')).toHaveAttribute('href', '/pokedex')
     expect(within(mobileNav).getByText('Shop')).toHaveAttribute('href', '/shop')
     expect(within(mobileNav).getByText('Packs')).toHaveAttribute('href', '/packs')
     expect(within(mobileNav).getByTestId('mobile-main-nav-more-toggle')).toBeInTheDocument()
   })
 
-  test('collection selects first card by default and updates inspect panel on selection', async () => {
+  test('pokedex selects first card by default and updates detail panel on selection', async () => {
     const user = userEvent.setup()
-    renderApp('/collection')
+    renderApp('/pokedex')
 
     const firstOwnedCardId = starterOwnedCardIds[0]
     const firstOwnedCard = cardPool.find((card) => card.id === firstOwnedCardId)
@@ -1069,40 +1070,39 @@ describe('app integration', () => {
     expect(secondOwnedCard).toBeTruthy()
 
     expect(screen.getByTestId('collection-selected-name')).toHaveTextContent(firstOwnedCard!.name)
-    expect(screen.getByTestId('collection-selected-id')).toHaveTextContent(firstOwnedCardId.toUpperCase())
+    expect(screen.getByTestId('collection-selected-id')).toHaveTextContent('#001')
 
     await user.click(screen.getByTestId(`collection-card-${secondOwnedCardId}`))
 
     expect(screen.getByTestId('collection-selected-name')).toHaveTextContent(secondOwnedCard!.name)
-    expect(screen.getByTestId('collection-selected-id')).toHaveTextContent(secondOwnedCardId.toUpperCase())
+    expect(screen.getByTestId('collection-selected-id')).toHaveTextContent('#004')
   })
 
-  test('collection masks locked card details in inspect panel', async () => {
+  test('pokedex masks locked card details in detail panel', async () => {
     const user = userEvent.setup()
-    renderApp('/collection')
+    renderApp('/pokedex')
     const lockedCardId = cardPool.find((card) => !starterOwnedCardIds.includes(card.id))?.id
 
     expect(lockedCardId).toBeTruthy()
     await user.click(screen.getByTestId(`collection-card-${lockedCardId}`))
 
-    expect(screen.getByTestId('collection-selected-name')).toHaveTextContent('Unknown')
+    expect(screen.getByTestId('collection-selected-name')).toHaveTextContent('Inconnu')
     expect(screen.getByTestId('collection-selected-id')).toHaveTextContent('????')
-    expect(screen.getByTestId('collection-selected-rarity')).toHaveTextContent('Unknown')
+    expect(screen.getByTestId('collection-selected-rarity')).toHaveTextContent('Inconnu')
     expect(screen.getByTestId('collection-selected-category')).toHaveTextContent('Inconnu')
     expect(screen.getByTestId('collection-selected-element')).toHaveTextContent('Inconnu')
     expect(screen.getByTestId('collection-lock-hint')).toBeInTheDocument()
   })
 
-  test('collection filter controls update visible cards and keep inspect selection valid', async () => {
+  test('pokedex filter controls update visible cards and keep selection valid', async () => {
     const user = userEvent.setup()
-    renderApp('/collection')
+    renderApp('/pokedex')
 
-    const firstOwnedCardId = starterOwnedCardIds[0]
     const lockedCardId = cardPool.find((card) => !starterOwnedCardIds.includes(card.id))?.id
     expect(lockedCardId).toBeTruthy()
 
     expect(screen.getByTestId('collection-filter-result-count')).toHaveTextContent(
-      `${cardPool.length} cards shown / ${cardPool.length} total`,
+      `${cardPool.length} entrées affichées / ${cardPool.length} au total`,
     )
 
     await user.click(screen.getByTestId(`collection-card-${lockedCardId}`))
@@ -1111,17 +1111,25 @@ describe('app integration', () => {
     await user.click(screen.getByTestId('collection-filter-discovery-owned'))
 
     expect(screen.getByTestId('collection-filter-result-count')).toHaveTextContent(
-      `${starterOwnedCardIds.length} cards shown / ${cardPool.length} total`,
+      `${starterOwnedCardIds.length} entrées affichées / ${cardPool.length} au total`,
     )
-    expect(screen.getByTestId('collection-selected-id')).toHaveTextContent(firstOwnedCardId.toUpperCase())
+    expect(screen.getByTestId('collection-selected-id')).toHaveTextContent('#001')
 
     await user.click(screen.getByTestId('collection-filter-reset'))
     expect(screen.getByTestId('collection-filter-result-count')).toHaveTextContent(
-      `${cardPool.length} cards shown / ${cardPool.length} total`,
+      `${cardPool.length} entrées affichées / ${cardPool.length} au total`,
     )
 
-    expect(screen.getByTestId('collection-rarity-title-common')).toBeInTheDocument()
-    expect(screen.getByTestId('collection-rarity-title-legendary')).toBeInTheDocument()
+    expect(screen.getByTestId('collection-status-title-owned')).toBeInTheDocument()
+    expect(screen.getByTestId('collection-status-title-locked')).toBeInTheDocument()
+  })
+
+  test('legacy /collection route redirects to /pokedex and keeps pokedex nav active', () => {
+    renderApp('/collection')
+
+    expect(screen.getByRole('heading', { name: 'Pokédex' })).toBeInTheDocument()
+    expect(screen.getByTestId('topbar-link-collection')).toHaveAttribute('href', '/pokedex')
+    expect(screen.getByTestId('topbar-link-collection')).toHaveClass('active')
   })
 
   test('finalizing a simulated match updates rewards and persisted profile', async () => {
@@ -1158,9 +1166,9 @@ describe('app integration', () => {
 
     const saved = localStorage.getItem(PROFILE_STORAGE_KEY)
     expect(saved).toBeTruthy()
-    const parsed = JSON.parse(saved!) as { stats: { played: number }; ranked: { matchesPlayed: number } }
+    const parsed = JSON.parse(saved!) as { stats: { played: number }; rankedByMode: { '4x4': { matchesPlayed: number } } }
     expect(parsed.stats.played).toBe(1)
-    expect(parsed.ranked.matchesPlayed).toBe(0)
+    expect(parsed.rankedByMode['4x4'].matchesPlayed).toBe(0)
   })
 
   test('forced player victory updates mission progression', async () => {

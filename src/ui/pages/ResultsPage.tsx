@@ -1,5 +1,7 @@
-import { Link, Navigate } from 'react-router-dom'
+import { useState } from 'react'
+import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { useGame } from '../../app/useGame'
+import type { CardId } from '../../domain/types'
 import { RankedLpRecap } from '../components/RankedLpRecap'
 
 function formatGoldBonusDetails(rewards: {
@@ -47,13 +49,51 @@ function getOutcomeLabel(winner: 'player' | 'cpu' | 'draw'): 'WIN' | 'LOSE' | 'D
 }
 
 export function ResultsPage() {
-  const { lastMatchSummary } = useGame()
+  const navigate = useNavigate()
+  const { lastMatchSummary, towerRun, selectTowerReward, continueTowerRun } = useGame()
+  const [towerError, setTowerError] = useState<string | null>(null)
+  const [swapOutCardId, setSwapOutCardId] = useState<CardId | null>(towerRun?.deck[0] ?? null)
 
   if (!lastMatchSummary) {
     return <Navigate to="/" replace />
   }
 
-  const { queue, result, rewards, opponent, rankedUpdate } = lastMatchSummary
+  const { queue, result, rewards, opponent, rankedMode, rankedUpdate, tower } = lastMatchSummary
+  const isTowerQueue = queue === 'tower' && tower
+  const pendingReward = tower?.pendingReward ?? null
+  const effectiveSwapOutCardId =
+    swapOutCardId && (towerRun?.deck ?? []).includes(swapOutCardId) ? swapOutCardId : (towerRun?.deck[0] ?? null)
+
+  const handleTowerChoice = (choiceId: string) => {
+    if (!tower || !pendingReward || !selectTowerReward) {
+      return
+    }
+
+    try {
+      if (pendingReward.kind === 'swap') {
+        selectTowerReward(choiceId, effectiveSwapOutCardId ?? undefined)
+      } else {
+        selectTowerReward(choiceId)
+      }
+      setTowerError(null)
+    } catch (error) {
+      setTowerError(error instanceof Error ? error.message : 'Unable to select tower reward.')
+    }
+  }
+
+  const handleTowerNextFloor = () => {
+    if (!continueTowerRun) {
+      return
+    }
+
+    try {
+      continueTowerRun()
+      setTowerError(null)
+      navigate('/match')
+    } catch (error) {
+      setTowerError(error instanceof Error ? error.message : 'Unable to continue tower run.')
+    }
+  }
 
   return (
     <section className="panel">
@@ -75,7 +115,7 @@ export function ResultsPage() {
         </h1>
       </header>
       {rewards.criticalVictory ? <p className="small">Critical Victory</p> : null}
-      <p className="small">Queue: {queue === 'ranked' ? 'Ranked' : 'Normal'}</p>
+      <p className="small">Queue: {queue === 'ranked' ? 'Ranked' : queue === 'tower' ? 'Tower' : 'Normal'}</p>
       <div className="stat-row">
         <span>Gold Earned</span>
         <strong>
@@ -93,22 +133,95 @@ export function ResultsPage() {
       <div className="result-block">
         <h2>Claimed Card</h2>
         <p>
-          {rewards.droppedCardId
-            ? `Claimed card: ${rewards.droppedCardId.toUpperCase()}`
-          : 'No card claimed this match.'}
+          {queue === 'tower'
+            ? 'Tower mode does not grant claimed cards.'
+            : rewards.droppedCardId
+              ? `Claimed card: ${rewards.droppedCardId.toUpperCase()}`
+              : 'No card claimed this match.'}
         </p>
       </div>
 
-      {rankedUpdate ? (
-        <RankedLpRecap update={rankedUpdate} animated={false} context="results" testIdPrefix="results-ranked" />
+      {isTowerQueue ? (
+        <div className="result-block" data-testid="results-tower-summary">
+          <h2>Tower Progress</h2>
+          <p className="small" data-testid="results-tower-floor">
+            Floor {tower.floor} · Checkpoint {tower.checkpointFloor}
+          </p>
+          <p className="small" data-testid="results-tower-status">
+            {tower.status === 'continue' ? 'Run active' : tower.status === 'cleared' ? 'Tower cleared' : 'Run failed'}
+          </p>
+
+          {pendingReward ? (
+            <div className="result-block" data-testid="results-tower-reward-offer">
+              <h2>{pendingReward.kind === 'relic' ? 'Choose a Relic' : 'Choose a Swap'}</h2>
+
+              {pendingReward.kind === 'swap' ? (
+                <div className="result-block">
+                  <p className="small">Select a card to replace</p>
+                  <div className="actions">
+                    {(towerRun?.deck ?? []).map((cardId) => (
+                      <button
+                        key={`swap-out-${cardId}`}
+                        type="button"
+                        className={`button ${effectiveSwapOutCardId === cardId ? 'button-primary' : ''}`}
+                        onClick={() => setSwapOutCardId(cardId)}
+                        data-testid={`results-tower-swap-out-${cardId}`}
+                      >
+                        {cardId.toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="actions">
+                {pendingReward.kind === 'relic'
+                  ? pendingReward.choices.map((choice) => (
+                      <button
+                        key={`tower-choice-${choice.id}`}
+                        type="button"
+                        className="button"
+                        onClick={() => handleTowerChoice(choice.id)}
+                        data-testid={`results-tower-choice-${choice.id}`}
+                      >
+                        {choice.title}
+                      </button>
+                    ))
+                  : pendingReward.choices.map((choice) => (
+                      <button
+                        key={`tower-choice-${choice.cardId}`}
+                        type="button"
+                        className="button"
+                        onClick={() => handleTowerChoice(choice.cardId)}
+                        data-testid={`results-tower-choice-${choice.cardId}`}
+                      >
+                        {choice.title} ({choice.cardId.toUpperCase()})
+                      </button>
+                    ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {towerError ? <p className="error">{towerError}</p> : null}
+
+      {rankedUpdate && rankedMode ? (
+        <RankedLpRecap mode={rankedMode} update={rankedUpdate} animated={false} context="results" testIdPrefix="results-ranked" />
       ) : null}
 
       <div className="actions">
-        <Link className="button button-primary" to="/setup" data-testid="play-again-button">
-          Play Again
-        </Link>
-        <Link className="button" to="/collection">
-          Collection
+        {isTowerQueue && tower.status === 'continue' && !tower.pendingReward ? (
+          <button type="button" className="button button-primary" onClick={handleTowerNextFloor} data-testid="results-tower-next-floor">
+            Next Floor
+          </button>
+        ) : (
+          <Link className="button button-primary" to="/setup" data-testid="play-again-button">
+            Play Again
+          </Link>
+        )}
+        <Link className="button" to="/pokedex">
+          Pokédex
         </Link>
         <Link className="button" to="/">
           Home

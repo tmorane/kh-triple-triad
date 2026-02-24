@@ -151,7 +151,7 @@ export const cardPool: CardDef[] = [
   { id: 'c147', name: 'Électhor', top: 9, right: 8, bottom: 7, left: 8, rarity: 'legendary', categoryId: 'nescient', elementId: 'foudre' },
   { id: 'c148', name: 'Sulfura', top: 8, right: 9, bottom: 7, left: 8, rarity: 'legendary', categoryId: 'nescient', elementId: 'feu' },
   { id: 'c149', name: 'Dracolosse', top: 8, right: 8, bottom: 8, left: 9, rarity: 'legendary', categoryId: 'simili', elementId: 'neant' },
-  { id: 'c150', name: 'Mewtwo', top: 9, right: 10, bottom: 7, left: 9, rarity: 'legendary', categoryId: 'simili', elementId: 'illusion' },
+  { id: 'c150', name: 'Mewtwo', top: 9, right: 10, bottom: 7, left: 9, rarity: 'legendary', categoryId: 'sans_coeur', elementId: 'illusion' },
   { id: 'c151', name: 'Mew', top: 8, right: 8, bottom: 8, left: 8, rarity: 'legendary', categoryId: 'simili', elementId: 'illusion' },
 ]
 

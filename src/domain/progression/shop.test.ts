@@ -28,9 +28,15 @@ function cloneProfile(profile: PlayerProfile): PlayerProfile {
     })) as PlayerProfile['deckSlots'],
     stats: { ...profile.stats },
     achievements: [...profile.achievements],
-    ranked: {
-      ...profile.ranked,
-      resultStreak: { ...profile.ranked.resultStreak },
+    rankedByMode: {
+      '3x3': {
+        ...profile.rankedByMode['3x3'],
+        resultStreak: { ...profile.rankedByMode['3x3'].resultStreak },
+      },
+      '4x4': {
+        ...profile.rankedByMode['4x4'],
+        resultStreak: { ...profile.rankedByMode['4x4'].resultStreak },
+      },
     },
     settings: { ...profile.settings },
   }
@@ -125,11 +131,11 @@ describe('shop progression', () => {
       legendary: 5,
     })
     expect(getPackDropRates('legendary')).toEqual({
-      common: 5,
-      uncommon: 10,
-      rare: 20,
-      epic: 55,
-      legendary: 10,
+      common: 11,
+      uncommon: 22,
+      rare: 44,
+      epic: 20,
+      legendary: 3,
     })
   })
 
@@ -273,6 +279,21 @@ describe('shop progression', () => {
       const card = cardPool.find((entry) => entry.id === pull.cardId)
       expect(card?.categoryId).toBe('sans_coeur')
     }
+  })
+
+  test('sans_coeur_focus can roll a 1% legendary Obscur pull', () => {
+    const profile = createDefaultProfile()
+    profile.gold = 2000
+
+    const result = purchaseAndOpenSpecialPack(
+      profile,
+      { packId: 'sans_coeur_focus' },
+      createFixedIntRng([99, 0, 0, 0, 0, 0]),
+    )
+
+    expect(result.opened.pulls[0].rarity).toBe('legendary')
+    const firstPullCard = cardPool.find((entry) => entry.id === result.opened.pulls[0].cardId)
+    expect(firstPullCard?.categoryId).toBe('sans_coeur')
   })
 
   test('simili_focus pulls only Psy cards and never unsupported rarities', () => {

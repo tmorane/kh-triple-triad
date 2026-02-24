@@ -58,8 +58,12 @@ describe('RanksPage', () => {
   test('renders ranked LP rules summary', () => {
     renderRanksPage()
 
-    expect(screen.getByTestId('ranks-rules')).toHaveTextContent('+20 / +25 / +30 LP')
+    expect(screen.getByTestId('ranks-rules')).toHaveTextContent('+60 / +65 / +70 LP')
+    expect(screen.getByTestId('ranks-rules')).toHaveTextContent('IV +0, III +1, II +2, I +3 LP')
+    expect(screen.getByTestId('ranks-rules')).toHaveTextContent('Master +0, Grandmaster +1, Challenger +2 LP')
     expect(screen.getByTestId('ranks-rules')).toHaveTextContent('-20 / -25 / -30 LP')
+    expect(screen.getByTestId('ranks-rules')).toHaveTextContent('IV +0, III +2, II +4, I +6 score')
+    expect(screen.getByTestId('ranks-rules')).toHaveTextContent('Master +0, Grandmaster +3, Challenger +6 score')
     expect(screen.getByTestId('ranks-rules')).toHaveTextContent('Draw: 0 LP')
     expect(screen.getByTestId('ranks-rules')).toHaveTextContent('Promotion at 100 LP with carry')
     expect(screen.getByTestId('ranks-rules')).toHaveTextContent('Demotion shield: 3 losses after promotion')
@@ -105,6 +109,7 @@ describe('RanksPage', () => {
 
     expect(screen.getByTestId('ranks-owned-ladder')).toHaveTextContent('Alice')
     expect(screen.getByTestId('ranks-owned-ladder')).toHaveTextContent('120')
-    expect(screen.getByTestId('ranks-peak-ladder')).toHaveTextContent('Diamond II')
+    expect(screen.getByTestId('ranks-peak-ladder-3x3')).toHaveTextContent('Diamond II')
+    expect(screen.getByTestId('ranks-peak-ladder-4x4')).toHaveTextContent('Diamond II')
   })
 })

@@ -357,8 +357,8 @@ export function PacksPage() {
         <Link className="button button-primary" to="/shop">
           Shop
         </Link>
-        <Link className="button" to="/collection">
-          Collection
+        <Link className="button" to="/pokedex">
+          Pokédex
         </Link>
         <Link className="button" to="/">
           Home

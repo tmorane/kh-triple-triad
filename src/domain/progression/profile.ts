@@ -8,6 +8,7 @@ import type {
   MissionId,
   PlayerProfile,
   RankedDivision,
+  RankedState,
   RankedTierId,
   Rarity,
 } from '../types'
@@ -143,7 +144,7 @@ interface PlayerProfileV6Legacy {
   selectedDeckSlotId: DeckSlotId
   stats: { played: number; won: number; streak: number; bestStreak: number }
   achievements: AchievementUnlock[]
-  ranked: PlayerProfile['ranked']
+  ranked: RankedState
   settings: { audioEnabled: false }
 }
 
@@ -152,6 +153,16 @@ interface PlayerProfileV6WithoutCards4x4Legacy extends Omit<PlayerProfileV6Legac
 }
 
 type PlayerProfileV6WithoutPlayerNameLegacy = Omit<PlayerProfileV6WithoutCards4x4Legacy, 'playerName'>
+
+interface PlayerProfileV7Legacy extends Omit<PlayerProfile, 'version' | 'rankedByMode'> {
+  version: 7
+  ranked: RankedState
+}
+
+interface PlayerProfileV8Legacy extends Omit<PlayerProfile, 'version' | 'settings'> {
+  version: 8
+  settings: { audioEnabled: false }
+}
 
 interface StoredProfileEntryV1 {
   id: string
@@ -179,7 +190,10 @@ export interface StoredProfileLadderEntry {
   id: string
   playerName: string
   ownedCardsCount: number
-  ranked: Pick<PlayerProfile['ranked'], 'tier' | 'division' | 'lp'>
+  rankedByMode: {
+    '3x3': Pick<RankedState, 'tier' | 'division' | 'lp'>
+    '4x4': Pick<RankedState, 'tier' | 'division' | 'lp'>
+  }
   updatedAt: string
 }
 
@@ -228,9 +242,10 @@ export function createResetProfile(): PlayerProfile {
 
 function createProfileFromStarterCards(initialOwnedCardIds: CardId[], initialDeck: CardId[]): PlayerProfile {
   const ownedCardIds = [...initialOwnedCardIds]
+  const initialRanked = createInitialRankedState()
 
   return {
-    version: 7,
+    version: 9,
     playerName: DEFAULT_PLAYER_NAME,
     gold: 100,
     ownedCardIds,
@@ -253,9 +268,12 @@ function createProfileFromStarterCards(initialOwnedCardIds: CardId[], initialDec
     specialPackPity: {
       legendaryFocusChancePercent: LEGENDARY_FOCUS_PITY_BASE_CHANCE_PERCENT,
     },
-    ranked: createInitialRankedState(),
+    rankedByMode: {
+      '3x3': { ...initialRanked, resultStreak: { ...initialRanked.resultStreak } },
+      '4x4': { ...initialRanked, resultStreak: { ...initialRanked.resultStreak } },
+    },
     settings: {
-      audioEnabled: false,
+      audioEnabled: true,
     },
   }
 }
@@ -320,10 +338,17 @@ export function listStoredProfilesForLadder(): StoredProfileLadderEntry[] {
     id: entry.id,
     playerName: entry.profile.playerName,
     ownedCardsCount: entry.profile.ownedCardIds.length,
-    ranked: {
-      tier: entry.profile.ranked.tier,
-      division: entry.profile.ranked.division,
-      lp: entry.profile.ranked.lp,
+    rankedByMode: {
+      '3x3': {
+        tier: entry.profile.rankedByMode['3x3'].tier,
+        division: entry.profile.rankedByMode['3x3'].division,
+        lp: entry.profile.rankedByMode['3x3'].lp,
+      },
+      '4x4': {
+        tier: entry.profile.rankedByMode['4x4'].tier,
+        division: entry.profile.rankedByMode['4x4'].division,
+        lp: entry.profile.rankedByMode['4x4'].lp,
+      },
     },
     updatedAt: entry.updatedAt,
   }))
@@ -582,40 +607,48 @@ function parseProfileCandidate(value: unknown): PlayerProfile | null {
     return value
   }
 
+  if (isPlayerProfileV8Legacy(value)) {
+    return migrateProfileV8ToV9(value)
+  }
+
+  if (isPlayerProfileV7Legacy(value)) {
+    return migrateProfileV8ToV9(migrateProfileV7ToV8(value))
+  }
+
   if (isPlayerProfileV6WithoutCards4x4Legacy(value)) {
-    return migrateProfileV6WithoutCards4x4ToV7(value)
+    return migrateProfileV8ToV9(migrateProfileV7ToV8(migrateProfileV6WithoutCards4x4ToV7(value)))
   }
 
   if (isPlayerProfileV6WithoutPlayerNameLegacy(value)) {
-    return migrateProfileV6WithoutPlayerNameToV7(value)
+    return migrateProfileV8ToV9(migrateProfileV7ToV8(migrateProfileV6WithoutPlayerNameToV7(value)))
   }
 
   if (isPlayerProfileV6Legacy(value)) {
-    return migrateProfileV6ToV7(value)
+    return migrateProfileV8ToV9(migrateProfileV7ToV8(migrateProfileV6ToV7(value)))
   }
 
   if (isPlayerProfileV5Legacy(value)) {
-    return migrateProfileV5ToV7(value)
+    return migrateProfileV8ToV9(migrateProfileV7ToV8(migrateProfileV5ToV7(value)))
   }
 
   if (isPlayerProfileV4Legacy(value)) {
-    return migrateProfileV5ToV7(migrateProfileV4ToV5(value))
+    return migrateProfileV8ToV9(migrateProfileV7ToV8(migrateProfileV5ToV7(migrateProfileV4ToV5(value))))
   }
 
   if (isPlayerProfileV4WithoutPacksLegacy(value)) {
-    return migrateProfileV5ToV7(migrateProfileV4WithoutPacksToV5(value))
+    return migrateProfileV8ToV9(migrateProfileV7ToV8(migrateProfileV5ToV7(migrateProfileV4WithoutPacksToV5(value))))
   }
 
   if (isPlayerProfileV3Legacy(value)) {
-    return migrateProfileV5ToV7(migrateProfileV3ToV5(value))
+    return migrateProfileV8ToV9(migrateProfileV7ToV8(migrateProfileV5ToV7(migrateProfileV3ToV5(value))))
   }
 
   if (isPlayerProfileV2Legacy(value)) {
-    return migrateProfileV5ToV7(migrateProfileV2ToV5(value))
+    return migrateProfileV8ToV9(migrateProfileV7ToV8(migrateProfileV5ToV7(migrateProfileV2ToV5(value))))
   }
 
   if (isPlayerProfileV1Legacy(value)) {
-    return migrateProfileV5ToV7(migrateProfileV1ToV5(value))
+    return migrateProfileV8ToV9(migrateProfileV7ToV8(migrateProfileV5ToV7(migrateProfileV1ToV5(value))))
   }
 
   return null
@@ -825,7 +858,7 @@ function migrateProfileV4WithoutPacksToV5(profile: PlayerProfileV4WithoutPacksLe
   }
 }
 
-function migrateProfileV5ToV7(profile: PlayerProfileV5Legacy): PlayerProfile {
+function migrateProfileV5ToV7(profile: PlayerProfileV5Legacy): PlayerProfileV7Legacy {
   return migrateProfileV6ToV7({
     version: 6,
     playerName: DEFAULT_PLAYER_NAME,
@@ -842,7 +875,7 @@ function migrateProfileV5ToV7(profile: PlayerProfileV5Legacy): PlayerProfile {
   })
 }
 
-function migrateProfileV6ToV7(profile: PlayerProfileV6Legacy): PlayerProfile {
+function migrateProfileV6ToV7(profile: PlayerProfileV6Legacy): PlayerProfileV7Legacy {
   return {
     ...profile,
     version: 7,
@@ -853,18 +886,45 @@ function migrateProfileV6ToV7(profile: PlayerProfileV6Legacy): PlayerProfile {
   }
 }
 
-function migrateProfileV6WithoutCards4x4ToV7(profile: PlayerProfileV6WithoutCards4x4Legacy): PlayerProfile {
+function migrateProfileV6WithoutCards4x4ToV7(profile: PlayerProfileV6WithoutCards4x4Legacy): PlayerProfileV7Legacy {
   return migrateProfileV6ToV7({
     ...profile,
     deckSlots: migrateLegacyDeckSlotsToCurrent(profile.deckSlots, profile.ownedCardIds),
   })
 }
 
-function migrateProfileV6WithoutPlayerNameToV7(profile: PlayerProfileV6WithoutPlayerNameLegacy): PlayerProfile {
+function migrateProfileV6WithoutPlayerNameToV7(profile: PlayerProfileV6WithoutPlayerNameLegacy): PlayerProfileV7Legacy {
   return migrateProfileV6WithoutCards4x4ToV7({
     ...profile,
     playerName: DEFAULT_PLAYER_NAME,
   })
+}
+
+function migrateProfileV7ToV8(profile: PlayerProfileV7Legacy): PlayerProfileV8Legacy {
+  const ranked3x3 = cloneRankedState(profile.ranked)
+  const ranked4x4 = cloneRankedState(profile.ranked)
+
+  return {
+    ...profile,
+    version: 8,
+    rankedByMode: {
+      '3x3': ranked3x3,
+      '4x4': ranked4x4,
+    },
+    settings: {
+      audioEnabled: false,
+    },
+  }
+}
+
+function migrateProfileV8ToV9(profile: PlayerProfileV8Legacy): PlayerProfile {
+  return {
+    ...profile,
+    version: 9,
+    settings: {
+      audioEnabled: true,
+    },
+  }
 }
 
 function migrateLegacyDeckSlotsToCurrent(
@@ -1059,10 +1119,14 @@ function migrateAchievementsToV4(profile: PlayerProfileV5Legacy, legacyAchieveme
     (entry) => isAchievementId(entry.id) && !legacyCollectionAchievementIds.has(entry.id),
   ) as AchievementUnlock[]
 
-  const withPreservedOnly = migrateProfileV5ToV7({
-    ...profile,
-    achievements: preserved,
-  })
+  const withPreservedOnly = migrateProfileV8ToV9(
+    migrateProfileV7ToV8(
+      migrateProfileV5ToV7({
+        ...profile,
+        achievements: preserved,
+      }),
+    ),
+  )
 
   const collectionUnlocks = evaluateAchievements(withPreservedOnly)
   return [...preserved, ...collectionUnlocks]
@@ -1098,6 +1162,66 @@ function isPlayerProfile(value: unknown): value is PlayerProfile {
   }
 
   const candidate = value as Partial<PlayerProfile>
+
+  return (
+    candidate.version === 9 &&
+    typeof candidate.playerName === 'string' &&
+    isPlayerNameValid(candidate.playerName).valid &&
+    typeof candidate.gold === 'number' &&
+    Array.isArray(candidate.ownedCardIds) &&
+    candidate.ownedCardIds.every((card) => typeof card === 'string') &&
+    isCardCopiesById(candidate.cardCopiesById) &&
+    isPackInventoryByRarity(candidate.packInventoryByRarity) &&
+    doesOwnershipMatchCopies(candidate.ownedCardIds, candidate.cardCopiesById) &&
+    isDeckSlotsLegacy(candidate.deckSlots) &&
+    isDeckSlotId(candidate.selectedDeckSlotId) &&
+    typeof candidate.stats?.played === 'number' &&
+    typeof candidate.stats?.won === 'number' &&
+    typeof candidate.stats?.streak === 'number' &&
+    typeof candidate.stats?.bestStreak === 'number' &&
+    isAchievementUnlocks(candidate.achievements) &&
+    isMissionProgressMap(candidate.missions) &&
+    isRankedByMode(candidate.rankedByMode) &&
+    typeof candidate.settings?.audioEnabled === 'boolean'
+  )
+}
+
+function isPlayerProfileV8Legacy(value: unknown): value is PlayerProfileV8Legacy {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+
+  const candidate = value as Partial<PlayerProfileV8Legacy>
+
+  return (
+    candidate.version === 8 &&
+    typeof candidate.playerName === 'string' &&
+    isPlayerNameValid(candidate.playerName).valid &&
+    typeof candidate.gold === 'number' &&
+    Array.isArray(candidate.ownedCardIds) &&
+    candidate.ownedCardIds.every((card) => typeof card === 'string') &&
+    isCardCopiesById(candidate.cardCopiesById) &&
+    isPackInventoryByRarity(candidate.packInventoryByRarity) &&
+    doesOwnershipMatchCopies(candidate.ownedCardIds, candidate.cardCopiesById) &&
+    isDeckSlotsLegacy(candidate.deckSlots) &&
+    isDeckSlotId(candidate.selectedDeckSlotId) &&
+    typeof candidate.stats?.played === 'number' &&
+    typeof candidate.stats?.won === 'number' &&
+    typeof candidate.stats?.streak === 'number' &&
+    typeof candidate.stats?.bestStreak === 'number' &&
+    isAchievementUnlocks(candidate.achievements) &&
+    isMissionProgressMap(candidate.missions) &&
+    isRankedByMode(candidate.rankedByMode) &&
+    candidate.settings?.audioEnabled === false
+  )
+}
+
+function isPlayerProfileV7Legacy(value: unknown): value is PlayerProfileV7Legacy {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+
+  const candidate = value as Partial<PlayerProfileV7Legacy>
 
   return (
     candidate.version === 7 &&
@@ -1391,12 +1515,21 @@ function isLegacyRankRewardsClaimed(value: unknown): value is string[] {
   return value.every((rankId) => legacyRankIds.has(rankId))
 }
 
-function isRankedState(value: unknown): value is PlayerProfile['ranked'] {
+function isRankedByMode(value: unknown): value is PlayerProfile['rankedByMode'] {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return false
   }
 
-  const candidate = value as Partial<PlayerProfile['ranked']>
+  const candidate = value as Partial<PlayerProfile['rankedByMode']>
+  return isRankedState(candidate['3x3']) && isRankedState(candidate['4x4'])
+}
+
+function isRankedState(value: unknown): value is RankedState {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false
+  }
+
+  const candidate = value as Partial<RankedState>
 
   if (!candidate.tier || !rankedTierIds.has(candidate.tier as RankedTierId)) {
     return false
@@ -1431,6 +1564,13 @@ function isRankedState(value: unknown): value is PlayerProfile['ranked'] {
     Number.isInteger(candidate.demotionShieldLosses) &&
     Number(candidate.demotionShieldLosses) >= 0
   )
+}
+
+function cloneRankedState(state: RankedState): RankedState {
+  return {
+    ...state,
+    resultStreak: { ...state.resultStreak },
+  }
 }
 
 function isCardCopiesById(value: unknown): value is Record<CardId, number> {

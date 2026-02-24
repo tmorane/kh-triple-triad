@@ -1,4 +1,5 @@
 import type { RankedDivision, RankedState, RankedTierId } from '../types'
+import { getRankedWinLpBonus } from './rankedBonuses'
 
 export type RankedStreakType = RankedState['resultStreak']['type']
 
@@ -15,7 +16,8 @@ interface RankedSlot {
   division: RankedDivision | null
 }
 
-const LP_PER_RESULT = 20
+const WIN_LP_PER_RESULT = 60
+const LOSS_LP_PER_RESULT = 20
 const STREAK_STEP = 5
 const STREAK_CAP = 10
 const MAX_LP = 99
@@ -93,7 +95,8 @@ export function applyRankedMatchResult(
   }
 
   const streakBonus = Math.min(Math.max(next.resultStreak.count - 1, 0) * STREAK_STEP, STREAK_CAP)
-  const deltaLp = isWin ? LP_PER_RESULT + streakBonus : -(LP_PER_RESULT + streakBonus)
+  const rankedWinBonus = isWin ? getRankedWinLpBonus(next.tier, next.division) : 0
+  const deltaLp = isWin ? WIN_LP_PER_RESULT + streakBonus + rankedWinBonus : -(LOSS_LP_PER_RESULT + streakBonus)
 
   let promoted = false
   let demoted = false

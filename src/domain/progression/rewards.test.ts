@@ -52,16 +52,16 @@ describe('match rewards difficulty bonus', () => {
     expect(draw.rewards.bonusGoldFromDifficulty).toBe(0)
   })
 
-  test('scales by +4 per level from L1 to L8', () => {
+  test('scales by +4 per level from L1 to L10', () => {
     const bonuses: number[] = []
 
-    for (let level = 1 as OpponentLevel; level <= 8; level = (level + 1) as OpponentLevel) {
+    for (let level = 1 as OpponentLevel; level <= 10; level = (level + 1) as OpponentLevel) {
       const profile = createDefaultProfile()
       const rewards = applyMatchRewards(profile, makeResult('player'), cpuDeck, 77, level).rewards
       bonuses.push(rewards.bonusGoldFromDifficulty)
     }
 
-    expect(bonuses).toEqual([0, 4, 8, 12, 16, 20, 24, 28])
+    expect(bonuses).toEqual([0, 4, 8, 12, 16, 20, 24, 28, 32, 36])
   })
 
   test('applies base + duplicate + difficulty to profile gold total when winning', () => {
@@ -179,6 +179,20 @@ describe('match rewards difficulty bonus', () => {
     expect(loss.rewards.droppedCardId).toBeNull()
     expect(loss.rewards.duplicateConverted).toBe(false)
     expect(loss.rewards.bonusGoldFromDuplicate).toBe(0)
+  })
+
+  test('tower mode can disable card capture while keeping victory gold', () => {
+    const profile = createDefaultProfile()
+    const cpuDeckForClaim = ['c71', 'c72', 'c73', 'c74', 'c75']
+
+    const result = applyMatchRewards(profile, makeResult('player'), cpuDeckForClaim, 131, 8, 1, undefined, {
+      disableCardCapture: true,
+    })
+
+    expect(result.rewards.droppedCardId).toBeNull()
+    expect(result.newlyOwnedCards).toEqual([])
+    expect(result.profile.ownedCardIds).not.toContain('c71')
+    expect(result.profile.gold).toBeGreaterThan(profile.gold)
   })
 
   test('throws when selected claimed card is not part of cpu deck', () => {

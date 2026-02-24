@@ -11,7 +11,10 @@ interface LocalProfileLadderEntryMock {
   id: string
   playerName: string
   ownedCardsCount: number
-  ranked: { tier: string; division: string | null; lp: number }
+  rankedByMode: {
+    '3x3': { tier: string; division: string | null; lp: number }
+    '4x4': { tier: string; division: string | null; lp: number }
+  }
   updatedAt: string
 }
 
@@ -32,8 +35,10 @@ interface LadderRow {
   user_id: string
   player_name: string
   owned_cards_count: number
-  peak_rank_score: number
-  peak_rank_label: string
+  peak_rank_score_3x3: number
+  peak_rank_label_3x3: string
+  peak_rank_score_4x4: number
+  peak_rank_label_4x4: string
   updated_at: string
 }
 
@@ -60,7 +65,7 @@ function createClient(rowsBySort: {
           if (field === 'owned_cards_count') {
             return ownedQuery
           }
-          if (field === 'peak_rank_score') {
+          if (field === 'peak_rank_score_3x3' || field === 'peak_rank_score_4x4') {
             return peakQuery
           }
           return ownedQuery
@@ -90,7 +95,10 @@ describe('cloudLadderStore mock ladder', () => {
         id: 'local-1',
         playerName: 'LocalHero',
         ownedCardsCount: 44,
-        ranked: { tier: 'silver', division: 'I', lp: 22 },
+        rankedByMode: {
+          '3x3': { tier: 'silver', division: 'I', lp: 22 },
+          '4x4': { tier: 'silver', division: 'I', lp: 22 },
+        },
         updatedAt: '2026-02-20T08:00:00.000Z',
       },
     ])
@@ -105,20 +113,26 @@ describe('cloudLadderStore mock ladder', () => {
         id: 'local-1',
         playerName: 'LocalHero',
         ownedCardsCount: 44,
-        ranked: { tier: 'silver', division: 'I', lp: 22 },
+        rankedByMode: {
+          '3x3': { tier: 'silver', division: 'I', lp: 22 },
+          '4x4': { tier: 'silver', division: 'I', lp: 22 },
+        },
         updatedAt: '2026-02-20T08:00:00.000Z',
       },
       {
         id: 'local-2',
         playerName: 'LocalLegend',
         ownedCardsCount: 67,
-        ranked: { tier: 'gold', division: 'II', lp: 75 },
+        rankedByMode: {
+          '3x3': { tier: 'gold', division: 'II', lp: 75 },
+          '4x4': { tier: 'gold', division: 'II', lp: 75 },
+        },
         updatedAt: '2026-02-21T08:00:00.000Z',
       },
     ])
 
     const owned = await fetchOwnedCardsLadder(50)
-    const peak = await fetchPeakRankLadder(50)
+    const peak = await fetchPeakRankLadder('4x4', 50)
 
     expect(owned).toHaveLength(2)
     expect(owned[0]?.playerName).toBe('LocalLegend')
@@ -132,7 +146,10 @@ describe('cloudLadderStore mock ladder', () => {
         id: 'local-1',
         playerName: 'LocalHero',
         ownedCardsCount: 44,
-        ranked: { tier: 'silver', division: 'I', lp: 22 },
+        rankedByMode: {
+          '3x3': { tier: 'silver', division: 'I', lp: 22 },
+          '4x4': { tier: 'silver', division: 'I', lp: 22 },
+        },
         updatedAt: '2026-02-20T08:00:00.000Z',
       },
     ])
@@ -144,8 +161,10 @@ describe('cloudLadderStore mock ladder', () => {
             user_id: 'real-u01',
             player_name: 'CloudPlayer',
             owned_cards_count: 140,
-            peak_rank_score: 4000,
-            peak_rank_label: 'Platinum III',
+            peak_rank_score_3x3: 4000,
+            peak_rank_label_3x3: 'Platinum III',
+            peak_rank_score_4x4: 4000,
+            peak_rank_label_4x4: 'Platinum III',
             updated_at: '2026-02-24T12:00:00.000Z',
           },
         ],
@@ -154,8 +173,10 @@ describe('cloudLadderStore mock ladder', () => {
             user_id: 'real-u01',
             player_name: 'CloudPlayer',
             owned_cards_count: 140,
-            peak_rank_score: 4000,
-            peak_rank_label: 'Platinum III',
+            peak_rank_score_3x3: 4000,
+            peak_rank_label_3x3: 'Platinum III',
+            peak_rank_score_4x4: 4000,
+            peak_rank_label_4x4: 'Platinum III',
             updated_at: '2026-02-24T12:00:00.000Z',
           },
         ],
@@ -163,7 +184,7 @@ describe('cloudLadderStore mock ladder', () => {
     )
 
     const owned = await fetchOwnedCardsLadder(50)
-    const peak = await fetchPeakRankLadder(50)
+    const peak = await fetchPeakRankLadder('4x4', 50)
 
     expect(owned).toHaveLength(2)
     expect(owned[0]?.playerName).toBe('CloudPlayer')
@@ -182,7 +203,7 @@ describe('cloudLadderStore mock ladder', () => {
     vi.stubEnv('VITE_ENABLE_MOCK_LADDER', 'true')
 
     const owned = await fetchOwnedCardsLadder(50)
-    const peak = await fetchPeakRankLadder(50)
+    const peak = await fetchPeakRankLadder('4x4', 50)
 
     expect(owned).toHaveLength(10)
     expect(peak).toHaveLength(10)
@@ -200,8 +221,10 @@ describe('cloudLadderStore mock ladder', () => {
             user_id: 'real-u01',
             player_name: 'CloudPlayer',
             owned_cards_count: 200,
-            peak_rank_score: 4000,
-            peak_rank_label: 'Platinum III',
+            peak_rank_score_3x3: 4000,
+            peak_rank_label_3x3: 'Platinum III',
+            peak_rank_score_4x4: 4000,
+            peak_rank_label_4x4: 'Platinum III',
             updated_at: '2026-02-24T12:00:00.000Z',
           },
         ],
@@ -210,8 +233,10 @@ describe('cloudLadderStore mock ladder', () => {
             user_id: 'real-u02',
             player_name: 'RankBoss',
             owned_cards_count: 80,
-            peak_rank_score: 9099,
-            peak_rank_label: 'Challenger',
+            peak_rank_score_3x3: 9099,
+            peak_rank_label_3x3: 'Challenger',
+            peak_rank_score_4x4: 9099,
+            peak_rank_label_4x4: 'Challenger',
             updated_at: '2026-02-24T12:00:00.000Z',
           },
         ],
@@ -219,7 +244,7 @@ describe('cloudLadderStore mock ladder', () => {
     )
 
     const owned = await fetchOwnedCardsLadder(50)
-    const peak = await fetchPeakRankLadder(50)
+    const peak = await fetchPeakRankLadder('4x4', 50)
 
     expect(owned).toHaveLength(11)
     expect(owned[0]?.playerName).toBe('CloudPlayer')
@@ -243,7 +268,7 @@ describe('cloudLadderStore mock ladder', () => {
     )
 
     const owned = await fetchOwnedCardsLadder(50)
-    const peak = await fetchPeakRankLadder(50)
+    const peak = await fetchPeakRankLadder('4x4', 50)
 
     expect(owned).toHaveLength(10)
     expect(peak).toHaveLength(10)
@@ -261,8 +286,10 @@ describe('cloudLadderStore mock ladder', () => {
             user_id: 'real-u01',
             player_name: 'CloudPlayer',
             owned_cards_count: 220,
-            peak_rank_score: 3800,
-            peak_rank_label: 'Gold I',
+            peak_rank_score_3x3: 3800,
+            peak_rank_label_3x3: 'Gold I',
+            peak_rank_score_4x4: 3800,
+            peak_rank_label_4x4: 'Gold I',
             updated_at: '2026-02-24T12:00:00.000Z',
           },
         ],
@@ -271,8 +298,10 @@ describe('cloudLadderStore mock ladder', () => {
             user_id: 'real-u02',
             player_name: 'PeakOne',
             owned_cards_count: 90,
-            peak_rank_score: 9099,
-            peak_rank_label: 'Challenger',
+            peak_rank_score_3x3: 9099,
+            peak_rank_label_3x3: 'Challenger',
+            peak_rank_score_4x4: 9099,
+            peak_rank_label_4x4: 'Challenger',
             updated_at: '2026-02-24T12:00:00.000Z',
           },
         ],
@@ -280,7 +309,7 @@ describe('cloudLadderStore mock ladder', () => {
     )
 
     const owned = await fetchOwnedCardsLadder(3)
-    const peak = await fetchPeakRankLadder(3)
+    const peak = await fetchPeakRankLadder('4x4', 3)
 
     expect(owned).toHaveLength(3)
     expect(owned[0]?.playerName).toBe('CloudPlayer')

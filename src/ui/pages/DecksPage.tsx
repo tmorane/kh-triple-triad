@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { getCard } from '../../domain/cards/cardPool'
 import { getDeckForMode, getSelectedDeckSlot } from '../../domain/cards/decks'
-import { cardTypeIds, getTypeLabel } from '../../domain/cards/taxonomy'
 import { resolveDeckTypeSynergy } from '../../domain/cards/typeSynergy'
 import { cardPool } from '../../domain/cards/cardPool'
 import { DEFAULT_MATCH_MODE, getModeSpec } from '../../domain/match/modeSpec'
 import type { CardDef, CardId, MatchMode, Rarity } from '../../domain/types'
 import { useGame } from '../../app/useGame'
+import { DeckSynergyGuide } from '../components/DeckSynergyGuide'
 import { TriadCard } from '../components/TriadCard'
 
 type DecksSortMode = 'selected-first' | 'power-desc' | 'name-asc'
@@ -66,15 +66,9 @@ export function DecksPage() {
   const [currentPage, setCurrentPage] = useState(1)
 
   const modeSpec = useMemo(() => getModeSpec(editMode), [editMode])
+  const selectedDeckPreviewColumns = modeSpec.deckSize === 8 ? 4 : modeSpec.deckSize
   const selectedDeck = useMemo(() => getDeckForMode(selectedSlot, editMode), [editMode, selectedSlot])
   const selectedDeckSynergy = useMemo(() => resolveDeckTypeSynergy(selectedDeck), [selectedDeck])
-  const selectedDeckTypeCounts = useMemo(
-    () =>
-      cardTypeIds
-        .map((typeId) => ({ typeId, count: selectedDeckSynergy.countsByType[typeId] }))
-        .filter((entry) => entry.count > 0),
-    [selectedDeckSynergy],
-  )
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -294,27 +288,18 @@ export function DecksPage() {
           <p className="small setup-deck-count">
             Deck: {selectedDeck.length}/{modeSpec.deckSize} selected
           </p>
-          <section className="setup-synergy-summary" data-testid="setup-synergy-summary">
-            <p className="small" data-testid="setup-synergy-primary">
-              Primary: {selectedDeckSynergy.primaryTypeId ? getTypeLabel(selectedDeckSynergy.primaryTypeId) : 'None'}
-            </p>
-            <p className="small" data-testid="setup-synergy-secondary">
-              Secondary: {selectedDeckSynergy.secondaryTypeId ? getTypeLabel(selectedDeckSynergy.secondaryTypeId) : 'None'}
-            </p>
-            <div className="setup-synergy-counts">
-              {selectedDeckTypeCounts.map((entry) => (
-                <span key={entry.typeId} className="setup-synergy-chip">
-                  {getTypeLabel(entry.typeId)} x{entry.count}
-                </span>
-              ))}
-            </div>
-          </section>
+          <DeckSynergyGuide
+            countsByType={selectedDeckSynergy.countsByType}
+            primaryTypeId={selectedDeckSynergy.primaryTypeId}
+            secondaryTypeId={selectedDeckSynergy.secondaryTypeId}
+            testIdPrefix="decks-synergy"
+          />
 
           <div
             className="setup-selected-cards"
             data-testid="setup-selected-cards"
             aria-label="Selected cards"
-            style={{ '--setup-selected-columns': `${modeSpec.deckSize}` } as CSSProperties}
+            style={{ '--setup-selected-columns': `${selectedDeckPreviewColumns}` } as CSSProperties}
           >
             {Array.from({ length: modeSpec.deckSize }, (_, index) => {
               const cardId = selectedDeck[index]

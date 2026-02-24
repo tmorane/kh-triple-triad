@@ -9,10 +9,27 @@ import { createMatchRuntime } from '../../domain/match/runtimeEcs'
 import type { MatchState } from '../../domain/match/types'
 import { createDefaultProfile } from '../../domain/progression/profile'
 import { playCriticalVictorySound } from '../audio/criticalVictorySound'
+import {
+  playCardPlacementSound,
+  playCardSelectionSound,
+  playCaptureSound,
+  playDrawSound,
+  playLoseSound,
+  playWinSound,
+} from '../audio/gameplaySounds'
 import { MatchPage } from './MatchPage'
 
 vi.mock('../audio/criticalVictorySound', () => ({
   playCriticalVictorySound: vi.fn(),
+}))
+
+vi.mock('../audio/gameplaySounds', () => ({
+  playCardSelectionSound: vi.fn(),
+  playCardPlacementSound: vi.fn(),
+  playCaptureSound: vi.fn(),
+  playWinSound: vi.fn(),
+  playLoseSound: vi.fn(),
+  playDrawSound: vi.fn(),
 }))
 
 type GameContextValue = NonNullable<ComponentProps<typeof GameContext.Provider>['value']>
@@ -21,6 +38,18 @@ const baseDeck = ['c41', 'c42', 'c43', 'c44', 'c45']
 const cardPoolIds = cardPool.map((card) => card.id)
 const baseDeck4x4 = cardPoolIds.slice(0, 8)
 const cpuDeck4x4 = cardPoolIds.slice(8, 16)
+
+function createEmptyRelics() {
+  return {
+    golden_pass: 0,
+    initiative_core: 0,
+    boss_breaker: 0,
+    stabilizer: 0,
+    deep_pockets: 0,
+    draft_chisel: 0,
+    high_risk_token: 0,
+  }
+}
 
 function createEmptyTypeSynergy() {
   return {
@@ -97,6 +126,58 @@ function makeActivePlayerTurnState(): MatchState {
     turns: 1,
     status: 'active',
     lastMove: { actor: 'cpu', cardId: 'c71', cell: 0 },
+  }
+}
+
+function makeActivePlayerTurnStateWithCapture(): MatchState {
+  return {
+    config: {
+      playerDeck: ['c110', 'c42', 'c43', 'c44', 'c45'],
+      cpuDeck: ['c11', 'c72', 'c73', 'c74', 'c75'],
+      mode: '3x3',
+      rules: { open: true, same: false, plus: false },
+      seed: 999,
+    },
+    rules: { open: true, same: false, plus: false },
+    typeSynergy: createEmptyTypeSynergy(),
+    metrics: createEmptyMetrics(),
+    turn: 'player',
+    board: [{ owner: 'cpu', cardId: 'c11' }, null, null, null, null, null, null, null, null],
+    hands: { player: ['c110'], cpu: ['c72', 'c73', 'c74', 'c75'] },
+    turns: 1,
+    status: 'active',
+    lastMove: { actor: 'cpu', cardId: 'c11', cell: 0 },
+  }
+}
+
+function makeActiveCpuTurnStateWithCapture(): MatchState {
+  return {
+    config: {
+      playerDeck: ['c11', 'c42', 'c43', 'c44', 'c45'],
+      cpuDeck: ['c110', 'c72', 'c73', 'c74', 'c75'],
+      mode: '3x3',
+      rules: { open: true, same: false, plus: false },
+      seed: 1000,
+    },
+    rules: { open: true, same: false, plus: false },
+    typeSynergy: createEmptyTypeSynergy(),
+    metrics: createEmptyMetrics(),
+    turn: 'cpu',
+    board: [
+      { owner: 'player', cardId: 'c11' },
+      null,
+      { owner: 'cpu', cardId: 'c72' },
+      { owner: 'cpu', cardId: 'c73' },
+      { owner: 'cpu', cardId: 'c74' },
+      { owner: 'cpu', cardId: 'c75' },
+      { owner: 'cpu', cardId: 'c72' },
+      { owner: 'cpu', cardId: 'c73' },
+      { owner: 'cpu', cardId: 'c74' },
+    ],
+    hands: { player: [], cpu: ['c110'] },
+    turns: 8,
+    status: 'active',
+    lastMove: { actor: 'player', cardId: 'c11', cell: 0 },
   }
 }
 
@@ -183,12 +264,13 @@ function makeFinishedState4x4(ownerByCell: Array<'player' | 'cpu'>): MatchState 
 
 function buildContextValue(
   state: MatchState,
-  queue: 'normal' | 'ranked',
+  queue: 'normal' | 'ranked' | 'tower',
   opponentLevel: 1 | 8 = 1,
   overrides: Partial<GameContextValue> = {},
 ): GameContextValue {
   const profile = createDefaultProfile()
-  profile.ranked.lp = 95
+  profile.rankedByMode['3x3'].lp = 95
+  profile.rankedByMode['4x4'].lp = 95
   const isHighLevelOpponent = opponentLevel === 8
 
   const runtime = createMatchRuntime(state)
@@ -298,6 +380,12 @@ function renderMatchPageWithContext(contextValue: GameContextValue) {
 
 beforeEach(() => {
   vi.mocked(playCriticalVictorySound).mockReset()
+  vi.mocked(playCardSelectionSound).mockReset()
+  vi.mocked(playCardPlacementSound).mockReset()
+  vi.mocked(playCaptureSound).mockReset()
+  vi.mocked(playWinSound).mockReset()
+  vi.mocked(playLoseSound).mockReset()
+  vi.mocked(playDrawSound).mockReset()
 })
 
 describe('MatchPage ranked preview', () => {
@@ -311,7 +399,7 @@ describe('MatchPage ranked preview', () => {
     expect(screen.getByText('Queue: Ranked')).toBeInTheDocument()
     expect(screen.getByTestId('match-ranked-recap')).toBeInTheDocument()
     expect(screen.getByTestId('match-ranked-emblem')).toHaveAttribute('src', '/ranks/iron.svg')
-    expect(screen.getByTestId('match-ranked-delta')).toHaveTextContent('+20 LP')
+    expect(screen.getByTestId('match-ranked-delta')).toHaveTextContent('+60 LP')
     expect(screen.getByTestId('match-ranked-progress')).toHaveAttribute('role', 'progressbar')
   })
 
@@ -365,6 +453,76 @@ describe('MatchPage finish header', () => {
   })
 })
 
+describe('MatchPage gameplay sounds', () => {
+  test('plays selection sound on explicit card click and keyboard digit selection', async () => {
+    renderMatchPageWithContext(buildContextValue(makeActivePlayerTurnState(), 'normal'))
+
+    const cardButton = screen.getByTestId('player-card-c42')
+    await userEvent.click(cardButton)
+    expect(playCardSelectionSound).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Digit2' }))
+    })
+    expect(playCardSelectionSound).toHaveBeenCalledTimes(2)
+  })
+
+  test('plays placement + capture sounds on a valid player move that flips cards', async () => {
+    const user = userEvent.setup()
+    const updateCurrentMatch = vi.fn()
+    renderMatchPageWithContext(
+      buildContextValue(makeActivePlayerTurnStateWithCapture(), 'normal', 1, {
+        updateCurrentMatch: updateCurrentMatch as unknown as GameContextValue['updateCurrentMatch'],
+      }),
+    )
+
+    await user.click(screen.getByTestId('player-card-c110'))
+    await user.click(screen.getByTestId('board-cell-1'))
+
+    expect(updateCurrentMatch).toHaveBeenCalledTimes(1)
+    expect(playCardPlacementSound).toHaveBeenCalledTimes(1)
+    expect(playCaptureSound).toHaveBeenCalledTimes(1)
+  })
+
+  test('plays placement + capture sounds on cpu turn moves', async () => {
+    vi.useFakeTimers()
+    try {
+      const updateCurrentMatch = vi.fn()
+      renderMatchPageWithContext(
+        buildContextValue(makeActiveCpuTurnStateWithCapture(), 'normal', 8, {
+          updateCurrentMatch: updateCurrentMatch as unknown as GameContextValue['updateCurrentMatch'],
+        }),
+      )
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(900)
+      })
+
+      expect(updateCurrentMatch).toHaveBeenCalledTimes(1)
+      expect(playCardPlacementSound).toHaveBeenCalledTimes(1)
+      expect(playCaptureSound).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('does not play gameplay sounds when audio is disabled', async () => {
+    const user = userEvent.setup()
+    const state = makeActivePlayerTurnStateWithCapture()
+    const contextValue = buildContextValue(state, 'normal')
+    contextValue.profile.settings.audioEnabled = false
+
+    renderMatchPageWithContext(contextValue)
+
+    await user.click(screen.getByTestId('player-card-c110'))
+    await user.click(screen.getByTestId('board-cell-1'))
+
+    expect(playCardSelectionSound).not.toHaveBeenCalled()
+    expect(playCardPlacementSound).not.toHaveBeenCalled()
+    expect(playCaptureSound).not.toHaveBeenCalled()
+  })
+})
+
 describe('MatchPage critical victory', () => {
   test('shows critical victory badge, details, and plays sound once', async () => {
     const state = makeFinishedState(['player', 'player', 'player', 'player', 'player', 'player', 'player', 'player', 'player'])
@@ -376,6 +534,7 @@ describe('MatchPage critical victory', () => {
     expect(screen.getByText('Critical Victory')).toBeInTheDocument()
     expect(screen.getByText(/\+22 critical/)).toBeInTheDocument()
     expect(playCriticalVictorySound).toHaveBeenCalledTimes(1)
+    expect(playWinSound).not.toHaveBeenCalled()
 
     view.rerender(
       <MemoryRouter initialEntries={['/match']}>
@@ -397,10 +556,48 @@ describe('MatchPage critical victory', () => {
 
     expect(screen.queryByText('Critical Victory')).not.toBeInTheDocument()
     expect(playCriticalVictorySound).not.toHaveBeenCalled()
+    expect(playWinSound).toHaveBeenCalledTimes(1)
+  })
+
+  test('plays lose and draw sounds on matching outcomes', async () => {
+    renderMatchPageWithContext(buildContextValue(makeFinishedState(['cpu', 'cpu', 'cpu', 'cpu', 'cpu', 'cpu', 'player', 'player', 'player']), 'normal'))
+    await waitFor(() => expect(screen.getByTestId('match-finish-modal')).toBeInTheDocument())
+    expect(playLoseSound).toHaveBeenCalledTimes(1)
+
+    renderMatchPageWithContext(buildContextValue(makeFinishedState(['player', 'player', 'player', 'player', 'cpu', 'cpu', 'cpu', 'cpu']), 'normal'))
+    await waitFor(() => expect(screen.getAllByTestId('match-finish-modal').length).toBeGreaterThan(0))
+    expect(playDrawSound).toHaveBeenCalledTimes(1)
+  })
+
+  test('does not play result sounds when audio is disabled', async () => {
+    const state = makeFinishedState(['player', 'player', 'player', 'player', 'player', 'player', 'player', 'player', 'player'])
+    const contextValue = buildContextValue(state, 'normal', 8)
+    contextValue.profile.settings.audioEnabled = false
+
+    renderMatchPageWithContext(contextValue)
+    await waitFor(() => expect(screen.getByTestId('match-finish-modal')).toBeInTheDocument())
+
+    expect(playCriticalVictorySound).not.toHaveBeenCalled()
+    expect(playWinSound).not.toHaveBeenCalled()
+    expect(playLoseSound).not.toHaveBeenCalled()
+    expect(playDrawSound).not.toHaveBeenCalled()
   })
 })
 
 describe('MatchPage claimed card selection', () => {
+  test('uses the same card container classes as deck 3x3 selection', async () => {
+    const state = makeFinishedState(['player', 'player', 'player', 'player', 'player', 'player', 'player', 'player', 'cpu'])
+    renderMatchPageWithContext(buildContextValue(state, 'normal', 8))
+
+    await waitFor(() => expect(screen.getByTestId('match-finish-modal')).toBeInTheDocument())
+
+    const claimGrid = screen.getByLabelText('Claim card selection')
+    expect(claimGrid).toHaveClass('setup-selected-cards')
+
+    const firstClaimCard = screen.getByTestId('match-claim-card-c71')
+    expect(firstClaimCard).toHaveClass('setup-preview-card')
+  })
+
   test('victory requires selecting one cpu card before continuing and passes selected card to finalize', async () => {
     const user = userEvent.setup()
     const finalizeMock = vi.fn()
@@ -537,6 +734,7 @@ describe('MatchPage hand layout classes by mode', () => {
     expect(matchPanel).toHaveClass('match-panel--4x4')
     expect(matchPanel).not.toHaveClass('match-panel--3x3')
     expect(screen.getByLabelText('CPU hand')).toHaveClass('hand-row--two-columns')
+    expect(screen.getByLabelText('CPU hand')).not.toHaveClass('hand-row--cpu-3x3')
     expect(screen.getByLabelText('Player hand')).toHaveClass('hand-row--two-columns')
   })
 
@@ -547,8 +745,73 @@ describe('MatchPage hand layout classes by mode', () => {
 
     expect(matchPanel).toHaveClass('match-panel--3x3')
     expect(matchPanel).not.toHaveClass('match-panel--4x4')
+    expect(screen.getByLabelText('CPU hand')).toHaveClass('hand-row--cpu-3x3')
     expect(screen.getByLabelText('CPU hand')).not.toHaveClass('hand-row--two-columns')
     expect(screen.getByLabelText('Player hand')).not.toHaveClass('hand-row--two-columns')
+  })
+})
+
+describe('MatchPage tower mode', () => {
+  test('shows tower HUD metadata in active tower matches', () => {
+    const state = makeActivePlayerTurnState4x4()
+    const contextValue = buildContextValue(state, 'tower', 8)
+    if (!contextValue.currentMatch) {
+      throw new Error('Expected current match in context fixture.')
+    }
+    contextValue.currentMatch.tower = {
+      floor: 12,
+      checkpointFloor: 10,
+      boss: false,
+      relics: createEmptyRelics(),
+    }
+
+    renderMatchPageWithContext(contextValue)
+
+    expect(screen.getByTestId('match-tower-floor')).toHaveTextContent('Tower Floor 12')
+    expect(screen.getByTestId('match-tower-floor')).toHaveTextContent('Checkpoint 10')
+    expect(screen.getByTestId('match-tower-boss')).toHaveTextContent('Normal Floor')
+    expect(screen.getByTestId('match-tower-relics')).toHaveTextContent('Relics 0')
+  })
+
+  test('finish modal hides claimed-card selection and uses tower action labels', async () => {
+    const state = makeFinishedState4x4([
+      'player',
+      'player',
+      'player',
+      'player',
+      'player',
+      'player',
+      'player',
+      'player',
+      'player',
+      'player',
+      'player',
+      'player',
+      'player',
+      'player',
+      'player',
+      'cpu',
+    ])
+    const contextValue = buildContextValue(state, 'tower', 8)
+    if (!contextValue.currentMatch) {
+      throw new Error('Expected current match in context fixture.')
+    }
+    contextValue.currentMatch.tower = {
+      floor: 31,
+      checkpointFloor: 30,
+      boss: false,
+      relics: createEmptyRelics(),
+    }
+
+    renderMatchPageWithContext(contextValue)
+
+    await waitFor(() => expect(screen.getByTestId('match-finish-modal')).toBeInTheDocument())
+
+    expect(screen.getByText('Queue: Tower')).toBeInTheDocument()
+    expect(screen.queryByText('Choose 1 opponent card to claim')).not.toBeInTheDocument()
+    expect(screen.getByText('Tower mode does not grant claimed cards.')).toBeInTheDocument()
+    expect(screen.queryByTestId('restart-match-button')).not.toBeInTheDocument()
+    expect(screen.getByTestId('finish-match-button')).toHaveTextContent('Continue Ascension')
   })
 })
 

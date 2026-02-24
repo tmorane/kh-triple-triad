@@ -115,9 +115,11 @@ export function HomePage() {
   const missions = missionOrder.map((missionId) => profile.missions[missionId])
   const completedMissions = missions.filter((mission) => mission.completed).length
 
-  const ranked = profile.ranked
-  const rankedTierLabel = formatTierLabelExplicit(ranked.tier, ranked.division)
-  const rankedProgressPercent = ranked.lp
+  const ranked3x3 = profile.rankedByMode['3x3']
+  const ranked4x4 = profile.rankedByMode['4x4']
+  const rankedTierLabel3x3 = formatTierLabelExplicit(ranked3x3.tier, ranked3x3.division)
+  const rankedTierLabel4x4 = formatTierLabelExplicit(ranked4x4.tier, ranked4x4.division)
+  const rankedProgressPercent = ranked4x4.lp
 
   const panelStyle = {
     '--home-win-rate': `${winRatePercent}%`,
@@ -139,7 +141,7 @@ export function HomePage() {
       setIsLoadingLadders(true)
       setLadderError(null)
       try {
-        const [owned, peak] = await Promise.all([fetchOwnedCardsLadder(5), fetchPeakRankLadder(5)])
+        const [owned, peak] = await Promise.all([fetchOwnedCardsLadder(5), fetchPeakRankLadder('4x4', 5)])
         if (!mounted) {
           return
         }
@@ -166,12 +168,20 @@ export function HomePage() {
 
   const metrics: ProfileMetric[] = [
     {
-      icon: 'R',
-      label: 'Ranked Tier',
-      value: rankedTierLabel,
-      sub: `${ranked.lp} LP`,
-      progress: rankedProgressPercent,
-      testId: 'home-ranked-tier',
+      icon: '3',
+      label: '3X3 Ranked',
+      value: rankedTierLabel3x3,
+      sub: `${ranked3x3.lp} LP`,
+      progress: ranked3x3.lp,
+      testId: 'home-ranked-tier-3x3',
+    },
+    {
+      icon: '4',
+      label: '4X4 Ranked',
+      value: rankedTierLabel4x4,
+      sub: `${ranked4x4.lp} LP`,
+      progress: ranked4x4.lp,
+      testId: 'home-ranked-tier-4x4',
     },
     {
       icon: 'G',
@@ -183,7 +193,7 @@ export function HomePage() {
     },
     {
       icon: 'C',
-      label: 'Card Collection',
+      label: 'Pokédex',
       value: `${ownedCards}/${totalCards}`,
       sub: `${clampPercent(Math.round((ownedCards / totalCards) * 100))}% complete`,
       progress: clampPercent(Math.round((ownedCards / totalCards) * 100)),
@@ -216,9 +226,13 @@ export function HomePage() {
 
           <div className="home-identity-copy">
             <h1>{profile.playerName}</h1>
-            <p className="lead" data-testid="home-ranked-tier-label">{rankedTierLabel}</p>
-            <p className="home-rank-line" data-testid="home-ranked-lp">
-              {ranked.lp} LP
+            <p className="lead" data-testid="home-ranked-tier-label-3x3">{`3X3 · ${rankedTierLabel3x3}`}</p>
+            <p className="home-rank-line" data-testid="home-ranked-lp-3x3">
+              {ranked3x3.lp} LP
+            </p>
+            <p className="lead" data-testid="home-ranked-tier-label-4x4">{`4X4 · ${rankedTierLabel4x4}`}</p>
+            <p className="home-rank-line" data-testid="home-ranked-lp-4x4">
+              {ranked4x4.lp} LP
             </p>
           </div>
         </div>
@@ -234,14 +248,23 @@ export function HomePage() {
             </p>
           </aside>
 
-          <aside className="home-ranked-badge-card" data-testid="home-ranked-badge-card">
+          <aside className="home-ranked-badge-card" data-testid="home-ranked-badge-card-3x3">
             <img
-              src={`/ranks/${ranked.tier}.svg`}
-              alt={`${tierNames[ranked.tier]} rank emblem`}
+              src={`/ranks/${ranked3x3.tier}.svg`}
+              alt={`${tierNames[ranked3x3.tier]} rank emblem 3x3`}
               className="home-ranked-badge"
-              data-testid="home-ranked-badge"
+              data-testid="home-ranked-badge-3x3"
             />
-            <p className="home-ranked-badge-caption" data-testid="home-ranked-badge-label">{rankedTierLabel}</p>
+            <p className="home-ranked-badge-caption" data-testid="home-ranked-badge-label-3x3">{`3X3 · ${rankedTierLabel3x3}`}</p>
+          </aside>
+          <aside className="home-ranked-badge-card" data-testid="home-ranked-badge-card-4x4">
+            <img
+              src={`/ranks/${ranked4x4.tier}.svg`}
+              alt={`${tierNames[ranked4x4.tier]} rank emblem 4x4`}
+              className="home-ranked-badge"
+              data-testid="home-ranked-badge-4x4"
+            />
+            <p className="home-ranked-badge-caption" data-testid="home-ranked-badge-label-4x4">{`4X4 · ${rankedTierLabel4x4}`}</p>
           </aside>
         </div>
       </div>

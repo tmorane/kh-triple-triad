@@ -1,10 +1,12 @@
 import { cardPool, getCard } from '../cards/cardPool'
+import { getRankedDeckScoreBonus } from '../progression/rankedBonuses'
 import { createSeededRng } from '../random/seededRng'
 import type { CardId, MatchMode, PlayerProfile, RankedTierId, Rarity } from '../types'
 import type { CpuAiProfile } from './ai'
 import { getModeSpec } from './modeSpec'
 
-export type OpponentLevel = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8
+export type OpponentLevel = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10
+export const MAX_NORMAL_OPPONENT_LEVEL = 10
 
 interface DeckScoreRange {
   min: number
@@ -28,6 +30,10 @@ export interface CpuOpponentPreview {
   baseTargetScore: number
   adaptiveTargetScore: number
   winGoldBonus: number
+}
+
+interface OpponentBuildOptions {
+  scoreBonus?: number
 }
 
 export interface CpuOpponent extends CpuOpponentPreview {
@@ -120,11 +126,36 @@ export const opponentLevelConfigs: ReadonlyArray<OpponentLevelConfig> = [
     aiProfile: 'expert',
     winGoldBonus: 28,
   },
+  {
+    level: 9,
+    tierId: 'grandmaster',
+    scoreRange: { min: 156, max: 168 },
+    rarityWeights: { epic: 0.1, legendary: 0.9 },
+    aiProfile: 'expert',
+    winGoldBonus: 32,
+  },
+  {
+    level: 10,
+    tierId: 'challenger',
+    scoreRange: { min: 160, max: 170 },
+    rarityWeights: { legendary: 1 },
+    aiProfile: 'expert',
+    winGoldBonus: 36,
+  },
 ]
 
-const configByTier: Partial<Record<RankedTierId, OpponentLevelConfig>> = Object.fromEntries(
-  opponentLevelConfigs.map((entry) => [entry.tierId, entry]),
-) as Partial<Record<RankedTierId, OpponentLevelConfig>>
+const rankedTierToOpponentLevel: Record<RankedTierId, OpponentLevel> = {
+  iron: 1,
+  bronze: 2,
+  silver: 3,
+  gold: 4,
+  platinum: 5,
+  emerald: 6,
+  diamond: 7,
+  master: 8,
+  grandmaster: 8,
+  challenger: 8,
+}
 
 const cardsByRarity: Record<Rarity, CardId[]> = {
   common: cardPool.filter((card) => card.rarity === 'common').map((card) => card.id),
@@ -141,22 +172,35 @@ export function computeDeckScore(cardIds: CardId[]): number {
   }, 0)
 }
 
-export function getOpponentLevelForProfile(profile: PlayerProfile): OpponentLevel {
-  return getConfigForTier(profile.ranked.tier).level
+export function getOpponentLevelForProfile(profile: PlayerProfile, mode: MatchMode): OpponentLevel {
+  return rankedTierToOpponentLevel[profile.rankedByMode[mode].tier]
 }
 
-export function getCpuOpponentPreview(profile: PlayerProfile, playerDeck: CardId[], mode: MatchMode = '3x3'): CpuOpponentPreview {
-  const level = getOpponentLevelForProfile(profile)
-  return getCpuOpponentPreviewForLevel(level, playerDeck, mode)
+export function getRankedDeckScoreBonusForProfile(profile: PlayerProfile, mode: MatchMode): number {
+  const ranked = profile.rankedByMode[mode]
+  return getRankedDeckScoreBonus(ranked.tier, ranked.division)
+}
+
+export function getCpuOpponentPreview(
+  profile: PlayerProfile,
+  playerDeck: CardId[],
+  mode: MatchMode = '3x3',
+  options?: OpponentBuildOptions,
+): CpuOpponentPreview {
+  const level = getOpponentLevelForProfile(profile, mode)
+  const rankedScoreBonus = getRankedDeckScoreBonusForProfile(profile, mode)
+  const mergedScoreBonus = (options?.scoreBonus ?? 0) + rankedScoreBonus
+  return getCpuOpponentPreviewForLevel(level, playerDeck, mode, { ...options, scoreBonus: mergedScoreBonus })
 }
 
 export function getCpuOpponentPreviewForLevel(
   level: OpponentLevel,
   playerDeck: CardId[],
   mode: MatchMode = '3x3',
+  options?: OpponentBuildOptions,
 ): CpuOpponentPreview {
   const config = getConfigForLevel(level)
-  const scoreRange = scaleScoreRangeForMode(config.scoreRange, mode)
+  const scoreRange = applyScoreBonusToRange(scaleScoreRangeForMode(config.scoreRange, mode), options?.scoreBonus ?? 0)
   const playerDeckScore = computeDeckScore(playerDeck)
   const { min, max } = scoreRange
   const baseTargetScore = Math.round((min + max) / 2)
@@ -178,9 +222,12 @@ export function buildCpuOpponent(
   playerDeck: CardId[],
   seed: number,
   mode: MatchMode = '3x3',
+  options?: OpponentBuildOptions,
 ): CpuOpponent {
-  const level = getOpponentLevelForProfile(profile)
-  return buildCpuOpponentForLevel(level, playerDeck, seed, mode)
+  const level = getOpponentLevelForProfile(profile, mode)
+  const rankedScoreBonus = getRankedDeckScoreBonusForProfile(profile, mode)
+  const mergedScoreBonus = (options?.scoreBonus ?? 0) + rankedScoreBonus
+  return buildCpuOpponentForLevel(level, playerDeck, seed, mode, { ...options, scoreBonus: mergedScoreBonus })
 }
 
 export function buildCpuOpponentForLevel(
@@ -188,9 +235,10 @@ export function buildCpuOpponentForLevel(
   playerDeck: CardId[],
   seed: number,
   mode: MatchMode = '3x3',
+  options?: OpponentBuildOptions,
 ): CpuOpponent {
   const deckSize = getModeSpec(mode).deckSize
-  const preview = getCpuOpponentPreviewForLevel(level, playerDeck, mode)
+  const preview = getCpuOpponentPreviewForLevel(level, playerDeck, mode, options)
   const config = getConfigForLevel(level)
   const rng = createSeededRng(seed)
 
@@ -235,16 +283,16 @@ export function getOpponentLevelInfo(level: OpponentLevel, mode: MatchMode = '3x
   }
 }
 
-function getConfigForTier(tierId: RankedTierId): OpponentLevelConfig {
-  if (tierId === 'grandmaster' || tierId === 'challenger') {
-    return opponentLevelConfigs[opponentLevelConfigs.length - 1]!
+function applyScoreBonusToRange(scoreRange: DeckScoreRange, scoreBonus: number): DeckScoreRange {
+  const bonus = Number.isFinite(scoreBonus) ? Math.floor(scoreBonus) : 0
+  if (bonus === 0) {
+    return scoreRange
   }
 
-  const config = configByTier[tierId]
-  if (!config) {
-    throw new Error(`No opponent config for tier ${tierId}.`)
+  return {
+    min: Math.max(1, scoreRange.min + bonus),
+    max: Math.max(1, scoreRange.max + bonus),
   }
-  return config
 }
 
 function getConfigForLevel(level: OpponentLevel): OpponentLevelConfig {

@@ -1,5 +1,5 @@
 const SPLASHART_BASE_PATH = '/splashart'
-const ART_EXTENSIONS = ['webp', 'png', 'jpg'] as const
+const ART_EXTENSIONS = ['png', 'webp', 'jpg'] as const
 const CARD_ART_NAME_ALIASES: Record<string, string[]> = {
   'Minute Bombe': ['Bombe Minute'],
   Surveillant: ['Robot de Surveillance'],

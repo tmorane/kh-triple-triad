@@ -2,7 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, test, vi } from 'vitest'
 import { getCard } from '../../domain/cards/cardPool'
 import type { Actor } from '../../domain/types'
-import { PixiBoard, type BoardSlot } from './PixiBoard'
+import { PixiBoard, getPixiRenderResolution, type BoardSlot } from './PixiBoard'
 
 function makeEmptyBoard(): Array<BoardSlot | null> {
   return Array.from({ length: 9 }, () => null)
@@ -30,6 +30,13 @@ function renderFallbackBoard(overrides?: {
 }
 
 describe('PixiBoard', () => {
+  test('clamps pixi render resolution to keep board cards sharp', () => {
+    expect(getPixiRenderResolution(undefined)).toBe(1)
+    expect(getPixiRenderResolution(0.6)).toBe(1)
+    expect(getPixiRenderResolution(1.5)).toBe(1.5)
+    expect(getPixiRenderResolution(3)).toBe(2)
+  })
+
   test('applies turn and status classes in fallback mode', () => {
     const { rerender } = renderFallbackBoard({ turnActor: 'player', status: 'active' })
 
@@ -91,6 +98,16 @@ describe('PixiBoard', () => {
     expect(screen.getByTestId('board-cell-4-stat-right')).toHaveTextContent(String(placedCard.right))
     expect(screen.getByTestId('board-cell-4-stat-bottom')).toHaveTextContent(String(placedCard.bottom))
     expect(screen.getByTestId('board-cell-4-stat-left')).toHaveTextContent(String(placedCard.left))
+  })
+
+  test('renders placed card splashart in fallback mode', () => {
+    const board = makeEmptyBoard()
+    board[4] = { cardId: 'c01', owner: 'player' }
+
+    renderFallbackBoard({ board, interactive: false })
+
+    const cardArt = screen.getByTestId('board-cell-4-art')
+    expect(cardArt.getAttribute('src')).toContain('/splashart/')
   })
 
   test('renders a 16-cell fallback grid for 4x4 boards', () => {

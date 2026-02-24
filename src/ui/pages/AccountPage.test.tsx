@@ -53,6 +53,9 @@ function createContextValue(overrides: Partial<GameContextValue> = {}): GameCont
     renamePlayer: () => {
       throw new Error('Not implemented in test.')
     },
+    setAudioEnabled: () => {
+      throw new Error('Not implemented in test.')
+    },
     renameDeckSlot: () => {
       throw new Error('Not implemented in test.')
     },
@@ -187,6 +190,24 @@ describe('AccountPage', () => {
     await user.click(screen.getByTestId('account-player-name-submit'))
 
     expect(renamePlayer).toHaveBeenCalledWith('Alice')
+  })
+
+  test('toggles local audio setting from account page', async () => {
+    const user = userEvent.setup()
+    const setAudioEnabled = vi.fn()
+    const profile = createDefaultProfile()
+    profile.settings.audioEnabled = true
+
+    renderAccountPage({ profile, setAudioEnabled })
+    await waitFor(() => {
+      expect(screen.queryByText('Loading cloud session...')).not.toBeInTheDocument()
+    })
+
+    expect(screen.getByTestId('account-audio-state')).toHaveTextContent('Sound effects are currently ON.')
+
+    await user.click(screen.getByTestId('account-audio-toggle'))
+
+    expect(setAudioEnabled).toHaveBeenCalledWith(false)
   })
 
   test('creates a new tester profile from account page', async () => {

@@ -1,8 +1,10 @@
 import { useState } from 'react'
+import { cardTypeIds } from '../../domain/cards/taxonomy'
+import { getSynergyRuleSpec } from '../../domain/cards/synergyRules'
 import type { CardTypeId } from '../../domain/types'
 import { getTypeLogoMeta } from './typeLogos'
 
-type SynergyLegendLogoId = 'sans_coeur' | 'simili' | 'nescient' | 'humain'
+type SynergyLegendLogoId = CardTypeId
 
 interface SynergyBonusLegendProps {
   highlightTypeId: CardTypeId | null
@@ -16,32 +18,15 @@ interface SynergyLegendLogo {
   description: string
 }
 
-const logos: SynergyLegendLogo[] = [
-  {
-    id: 'sans_coeur',
-    typeId: 'sans_coeur',
-    name: 'Obscur',
-    description: 'Obscur (3+) : +1 on all 4 sides on first move.',
-  },
-  {
-    id: 'simili',
-    typeId: 'simili',
-    name: 'Psy',
-    description: 'Psy (3+) : +1 on active corner sides.',
-  },
-  {
-    id: 'nescient',
-    typeId: 'nescient',
-    name: 'Combat',
-    description: 'Combat (3+) : +3 gold per Same/Plus trigger (cap +12/match).',
-  },
-  {
-    id: 'humain',
-    typeId: 'humain',
-    name: 'Nature',
-    description: 'Nature (3+) : +10 gold on 2+ point win.',
-  },
-]
+const logos: SynergyLegendLogo[] = cardTypeIds.map((typeId) => {
+  const rule = getSynergyRuleSpec(typeId)
+  return {
+    id: typeId,
+    typeId,
+    name: rule.label,
+    description: rule.legendDescription,
+  }
+})
 
 function resolveActiveRowId(
   highlightTypeId: CardTypeId | null,
@@ -51,11 +36,7 @@ function resolveActiveRowId(
     return null
   }
 
-  if (highlightTypeId === 'sans_coeur' || highlightTypeId === 'simili' || highlightTypeId === 'nescient' || highlightTypeId === 'humain') {
-    return highlightTypeId
-  }
-
-  return null
+  return logos.some((logo) => logo.id === highlightTypeId) ? highlightTypeId : null
 }
 
 export function SynergyBonusLegend({ highlightTypeId, isTypeHidden }: SynergyBonusLegendProps) {

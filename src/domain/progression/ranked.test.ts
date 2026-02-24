@@ -29,27 +29,27 @@ describe('ranked ladder progression', () => {
     expect(state.demotionShieldLosses).toBe(0)
   })
 
-  test('applies adaptive LP on win streak (+20, +25, +30 cap)', () => {
+  test('applies boosted LP on win streak (+60, +65, +70 cap) with ranked division bonus', () => {
     const first = applySequence(['player'])
-    expect(first.deltaLp).toBe(20)
-    expect(first.next.lp).toBe(20)
+    expect(first.deltaLp).toBe(60)
+    expect(first.next.lp).toBe(60)
 
     const second = applySequence(['player', 'player'])
-    expect(second.deltaLp).toBe(25)
-    expect(second.next.lp).toBe(45)
+    expect(second.deltaLp).toBe(65)
+    expect(second.next.lp).toBe(25)
 
     const third = applySequence(['player', 'player', 'player'])
-    expect(third.deltaLp).toBe(30)
-    expect(third.next.lp).toBe(75)
+    expect(third.deltaLp).toBe(71)
+    expect(third.next.lp).toBe(96)
   })
 
   test('promotes automatically at 100 LP and carries overflow', () => {
-    const result = applySequence(['player', 'player', 'player', 'player'])
+    const result = applySequence(['player', 'player'])
 
     expect(result.promoted).toBe(true)
     expect(result.next.tier).toBe('iron')
     expect(result.next.division).toBe('III')
-    expect(result.next.lp).toBe(5)
+    expect(result.next.lp).toBe(25)
     expect(result.next.demotionShieldLosses).toBe(3)
   })
 
@@ -140,6 +140,42 @@ describe('ranked ladder progression', () => {
     expect(result.next.matchesPlayed).toBe(23)
   })
 
+  test('adds ranked division LP bonus on wins only', () => {
+    const state = {
+      ...createInitialRankedState(),
+      tier: 'gold' as const,
+      division: 'I' as const,
+      lp: 10,
+      resultStreak: { type: 'none' as const, count: 0 },
+      demotionShieldLosses: 0,
+    }
+
+    const result = applyRankedMatchResult(state, 'player')
+
+    expect(result.deltaLp).toBe(63)
+    expect(result.next.lp).toBe(73)
+    expect(result.promoted).toBe(false)
+    expect(result.next.tier).toBe('gold')
+    expect(result.next.division).toBe('I')
+  })
+
+  test('keeps LP losses unchanged regardless of division bonus tier', () => {
+    const state = {
+      ...createInitialRankedState(),
+      tier: 'gold' as const,
+      division: 'I' as const,
+      lp: 50,
+      resultStreak: { type: 'none' as const, count: 0 },
+      demotionShieldLosses: 0,
+    }
+
+    const result = applyRankedMatchResult(state, 'cpu')
+
+    expect(result.deltaLp).toBe(-20)
+    expect(result.next.lp).toBe(30)
+    expect(result.demoted).toBe(false)
+  })
+
   test('master+ tiers have no divisions and can promote with carry', () => {
     const state = {
       ...createInitialRankedState(),
@@ -152,11 +188,11 @@ describe('ranked ladder progression', () => {
 
     const result = applyRankedMatchResult(state, 'player')
 
-    expect(result.deltaLp).toBe(30)
+    expect(result.deltaLp).toBe(70)
     expect(result.promoted).toBe(true)
     expect(result.next.tier).toBe('grandmaster')
     expect(result.next.division).toBe(null)
-    expect(result.next.lp).toBe(20)
+    expect(result.next.lp).toBe(60)
     expect(result.next.demotionShieldLosses).toBe(3)
   })
 

@@ -3,19 +3,24 @@ import { useNavigate } from 'react-router-dom'
 import { useGame } from '../../app/useGame'
 import { getCard } from '../../domain/cards/cardPool'
 import { getDeckForMode, getSelectedDeckSlot, hasExactlyDeckSizeUniqueCards } from '../../domain/cards/decks'
+import { resolveDeckTypeSynergy } from '../../domain/cards/typeSynergy'
 import { getModeSpec } from '../../domain/match/modeSpec'
 import {
   getCpuOpponentPreview,
   getCpuOpponentPreviewForLevel,
+  MAX_NORMAL_OPPONENT_LEVEL,
   getOpponentLevelForProfile,
   getOpponentLevelInfo,
+  getRankedDeckScoreBonusForProfile,
   type OpponentLevel,
 } from '../../domain/match/opponents'
+import { resolveTowerFloorSpec } from '../../domain/tower/floorPlan'
 import type { MatchMode, MatchQueue, Rarity } from '../../domain/types'
+import { DeckSynergyGuide } from '../components/DeckSynergyGuide'
 import { TriadCard } from '../components/TriadCard'
 
 type SetupDeckMode = 'manual' | 'auto'
-type SetupPresetId = '3x3-normal' | '4x4-normal' | '3x3-ranked' | '4x4-ranked'
+type SetupPresetId = '3x3-normal' | '4x4-normal' | '3x3-ranked' | '4x4-ranked' | 'tower-4x4'
 
 const modeAssetBasePath = `${import.meta.env.BASE_URL}modes/`
 
@@ -61,12 +66,20 @@ const setupPresets: SetupPreset[] = [
     subtitle: 'Ranked',
     artwork: `${modeAssetBasePath}mode-4x4-ranked.svg`,
   },
+  {
+    id: 'tower-4x4',
+    mode: '4x4',
+    queue: 'tower',
+    title: 'Tower',
+    subtitle: '4X4',
+    artwork: `${modeAssetBasePath}mode-4x4-normal.svg`,
+  },
 ]
 
 const presetById = Object.fromEntries(setupPresets.map((preset) => [preset.id, preset])) as Record<SetupPresetId, SetupPreset>
 
 function toOpponentLevel(value: number): OpponentLevel {
-  return Math.max(1, Math.min(8, value)) as OpponentLevel
+  return Math.max(1, Math.min(MAX_NORMAL_OPPONENT_LEVEL, value)) as OpponentLevel
 }
 
 function formatTierLabel(tierId: string): string {
@@ -93,6 +106,9 @@ function formatRarityMix(weights: Partial<Record<Rarity, number>>): string {
 }
 
 function formatPresetLabel(preset: SetupPreset): string {
+  if (preset.queue === 'tower') {
+    return '4X4 TOWER'
+  }
   return `${preset.mode.toUpperCase()} ${preset.queue === 'ranked' ? 'RANKED' : 'NORMAL'}`
 }
 
@@ -106,28 +122,36 @@ function getPresetTestId(presetId: SetupPresetId): string {
   if (presetId === '3x3-ranked') {
     return 'setup-mode-3x3-ranked'
   }
+  if (presetId === 'tower-4x4') {
+    return 'setup-mode-tower'
+  }
   return 'setup-mode-4x4-ranked'
 }
 
 export function SetupPage() {
   const navigate = useNavigate()
-  const { profile, startMatch, selectDeckSlot, setDeckSlotMode } = useGame()
+  const { profile, startMatch, startTowerRun, resumeTowerRun, towerRun, towerProgress, selectDeckSlot, setDeckSlotMode } = useGame()
   const selectedSlot = getSelectedDeckSlot(profile)
 
   const [error, setError] = useState<string | null>(null)
   const [deckMode, setDeckMode] = useState<SetupDeckMode>('manual')
   const [selectedPresetId, setSelectedPresetId] = useState<SetupPresetId | null>(null)
 
-  const maxNormalLevel = useMemo(() => getOpponentLevelForProfile(profile), [profile.ranked.tier, profile.ranked.division])
-  const [selectedNormalOpponentLevel, setSelectedNormalOpponentLevel] = useState<OpponentLevel>(maxNormalLevel)
+  const defaultRankedOpponentLevel = getOpponentLevelForProfile(profile, selectedSlot.mode)
+  const [selectedNormalOpponentLevel, setSelectedNormalOpponentLevel] = useState<OpponentLevel>(defaultRankedOpponentLevel)
 
   const selectedPreset = selectedPresetId ? presetById[selectedPresetId] : null
   const selectedMode = selectedPreset?.mode ?? null
   const selectedQueue = selectedPreset?.queue ?? null
+  const isTowerPreset = selectedQueue === 'tower'
   const shouldShowManualDeckPreview = deckMode === 'manual'
-  const ownedUniqueCount = useMemo(() => new Set(profile.ownedCardIds).size, [profile.ownedCardIds])
+  const ownedUniqueCount = new Set(profile.ownedCardIds).size
+  const safeTowerProgress = towerProgress ?? { bestFloor: 0, checkpointFloor: 0, highestClearedFloor: 0, clearedFloor100: false }
+  const towerStartFloor = towerRun ? towerRun.floor : Math.min(100, safeTowerProgress.checkpointFloor + 1)
+  const towerFloorSpec = useMemo(() => resolveTowerFloorSpec(towerStartFloor), [towerStartFloor])
 
   const modeSpec = useMemo(() => (selectedMode ? getModeSpec(selectedMode) : null), [selectedMode])
+  const selectedDeckPreviewColumns = modeSpec ? (modeSpec.deckSize === 8 ? 4 : modeSpec.deckSize) : 0
   const canUseAutoDeck = modeSpec ? ownedUniqueCount >= modeSpec.deckSize : false
   const autoDeckRequirementMessage =
     modeSpec && selectedMode ? `Auto Deck requires at least ${modeSpec.deckSize} owned cards for ${selectedMode.toUpperCase()}.` : null
@@ -137,15 +161,7 @@ export function SetupPage() {
     }
     return getDeckForMode(selectedSlot, selectedMode)
   }, [selectedMode, selectedSlot])
-
-  useEffect(() => {
-    setSelectedNormalOpponentLevel((current) => {
-      if (current > maxNormalLevel) {
-        return maxNormalLevel
-      }
-      return current
-    })
-  }, [maxNormalLevel])
+  const selectedDeckSynergy = useMemo(() => resolveDeckTypeSynergy(selectedDeck), [selectedDeck])
 
   useEffect(() => {
     if (deckMode === 'auto' && !canUseAutoDeck) {
@@ -153,28 +169,50 @@ export function SetupPage() {
     }
   }, [canUseAutoDeck, deckMode])
 
+  useEffect(() => {
+    if (isTowerPreset && deckMode !== 'manual') {
+      setDeckMode('manual')
+    }
+  }, [deckMode, isTowerPreset])
+
   const canStart =
     selectedPreset && modeSpec
-      ? deckMode === 'auto'
-        ? canUseAutoDeck
-        : hasExactlyDeckSizeUniqueCards(selectedDeck, modeSpec.deckSize)
+      ? isTowerPreset
+        ? towerRun
+          ? towerRun.pendingRewards.length === 0
+          : hasExactlyDeckSizeUniqueCards(selectedDeck, modeSpec.deckSize)
+        : deckMode === 'auto'
+          ? canUseAutoDeck
+          : hasExactlyDeckSizeUniqueCards(selectedDeck, modeSpec.deckSize)
       : false
 
   const availableNormalLevels = useMemo(
-    () => Array.from({ length: maxNormalLevel }, (_, index) => toOpponentLevel(index + 1)),
-    [maxNormalLevel],
+    () => Array.from({ length: MAX_NORMAL_OPPONENT_LEVEL }, (_, index) => toOpponentLevel(index + 1)),
+    [],
   )
 
-  const effectiveOpponentLevel = selectedQueue === 'ranked' ? maxNormalLevel : selectedNormalOpponentLevel
+  const rankedOpponentLevel = selectedMode ? getOpponentLevelForProfile(profile, selectedMode) : defaultRankedOpponentLevel
+  const rankedDeckScoreBonus = selectedMode ? getRankedDeckScoreBonusForProfile(profile, selectedMode) : 0
+  const effectiveOpponentLevel =
+    selectedQueue === 'tower'
+      ? (towerFloorSpec.opponentLevel as OpponentLevel)
+      : selectedQueue === 'ranked'
+        ? rankedOpponentLevel
+        : selectedNormalOpponentLevel
   const opponentPreview = useMemo(() => {
     if (!selectedPreset || !selectedMode) {
       return null
+    }
+    if (selectedQueue === 'tower') {
+      return getCpuOpponentPreviewForLevel(towerFloorSpec.opponentLevel as OpponentLevel, towerRun?.deck ?? selectedDeck, '4x4', {
+        scoreBonus: towerFloorSpec.scoreBonus,
+      })
     }
 
     return selectedQueue === 'ranked'
       ? getCpuOpponentPreview(profile, selectedDeck, selectedMode)
       : getCpuOpponentPreviewForLevel(selectedNormalOpponentLevel, selectedDeck, selectedMode)
-  }, [selectedDeck, selectedMode, selectedNormalOpponentLevel, selectedPreset, selectedQueue, profile])
+  }, [selectedDeck, selectedMode, selectedNormalOpponentLevel, selectedPreset, selectedQueue, profile, towerFloorSpec, towerRun?.deck])
 
   const opponentLevelInfo = useMemo(() => {
     if (!selectedMode || !selectedPreset) {
@@ -207,6 +245,20 @@ export function SetupPage() {
 
     try {
       const activeQueue = selectedPreset.queue
+      if (activeQueue === 'tower') {
+        if (!startTowerRun || !resumeTowerRun) {
+          throw new Error('Tower mode is unavailable in this context.')
+        }
+
+        if (towerRun) {
+          resumeTowerRun()
+        } else {
+          startTowerRun()
+        }
+        navigate('/match')
+        return
+      }
+
       const startOptions =
         activeQueue === 'normal'
           ? { useAutoDeck: deckMode === 'auto', normalOpponentLevel: selectedNormalOpponentLevel }
@@ -304,14 +356,32 @@ export function SetupPage() {
                 {opponentPreview && opponentLevelInfo ? (
                   <div className="setup-opponent-top-right" data-testid="setup-opponent-top-right">
                     <div className="setup-new-challenger" data-testid="setup-new-challenger">
-                      <p className="setup-new-challenger-title">New Challenger</p>
+                      <p className="setup-new-challenger-title">{selectedQueue === 'tower' ? 'Tower Run' : 'New Challenger'}</p>
                       <p className="setup-new-challenger-meta" data-testid="setup-opponent-level">
                         CPU L{opponentPreview.level} · {formatTierLabel(opponentLevelInfo.tierId)}
                       </p>
                       <div className="setup-new-challenger-details">
+                        {selectedQueue === 'tower' ? (
+                          <>
+                            <p className="setup-new-challenger-line" data-testid="setup-tower-floor">
+                              Floor: {towerStartFloor} {towerFloorSpec.boss ? '· Boss' : '· Normal'}
+                            </p>
+                            <p className="setup-new-challenger-line" data-testid="setup-tower-checkpoint">
+                              Checkpoint: {towerRun ? towerRun.checkpointFloor : safeTowerProgress.checkpointFloor}
+                            </p>
+                            <p className="setup-new-challenger-line" data-testid="setup-tower-relics">
+                              Relics: {towerRun ? Object.values(towerRun.relics).reduce((sum, count) => sum + count, 0) : 0}
+                            </p>
+                          </>
+                        ) : null}
                         <p className="setup-new-challenger-line" data-testid="setup-opponent-score-range">
                           Deck score range: {opponentPreview.scoreRange.min}-{opponentPreview.scoreRange.max}
                         </p>
+                        {selectedQueue === 'ranked' ? (
+                          <p className="setup-new-challenger-line" data-testid="setup-opponent-rank-bonus">
+                            Rank bonus: +{rankedDeckScoreBonus} score
+                          </p>
+                        ) : null}
                         <p className="setup-new-challenger-line" data-testid="setup-opponent-bonus">
                           Win bonus: +{opponentPreview.winGoldBonus}
                         </p>
@@ -327,34 +397,36 @@ export function SetupPage() {
                 ) : null}
               </div>
 
-              <fieldset className="setup-rule-block">
-                <legend>Deck Mode</legend>
-                <div className="rule-toggle-group setup-deck-mode-group">
-                  <label className="setup-rule-toggle setup-rule-toggle--deck-mode">
-                    <input
-                      type="radio"
-                      name="setup-deck-mode"
-                      checked={deckMode === 'manual'}
-                      onChange={() => setDeckMode('manual')}
-                      data-testid="setup-deck-mode-manual"
-                    />
-                    <span>Use My Deck</span>
-                  </label>
-                  <label className="setup-rule-toggle setup-rule-toggle--deck-mode">
-                    <input
-                      type="radio"
-                      name="setup-deck-mode"
-                      checked={deckMode === 'auto'}
-                      onChange={() => setDeckMode('auto')}
-                      data-testid="setup-deck-mode-auto"
-                      disabled={!canUseAutoDeck}
-                    />
-                    <span>Auto Deck (random, in-range, +50% rewards)</span>
-                  </label>
-                </div>
-              </fieldset>
+              {selectedQueue !== 'tower' ? (
+                <fieldset className="setup-rule-block">
+                  <legend>Deck Mode</legend>
+                  <div className="rule-toggle-group setup-deck-mode-group">
+                    <label className="setup-rule-toggle setup-rule-toggle--deck-mode">
+                      <input
+                        type="radio"
+                        name="setup-deck-mode"
+                        checked={deckMode === 'manual'}
+                        onChange={() => setDeckMode('manual')}
+                        data-testid="setup-deck-mode-manual"
+                      />
+                      <span>Use My Deck</span>
+                    </label>
+                    <label className="setup-rule-toggle setup-rule-toggle--deck-mode">
+                      <input
+                        type="radio"
+                        name="setup-deck-mode"
+                        checked={deckMode === 'auto'}
+                        onChange={() => setDeckMode('auto')}
+                        data-testid="setup-deck-mode-auto"
+                        disabled={!canUseAutoDeck}
+                      />
+                      <span>Auto Deck (random, in-range, +50% rewards)</span>
+                    </label>
+                  </div>
+                </fieldset>
+              ) : null}
 
-              {!canUseAutoDeck && autoDeckRequirementMessage ? (
+              {selectedQueue !== 'tower' && !canUseAutoDeck && autoDeckRequirementMessage ? (
                 <p className="small setup-auto-deck-note" data-testid="setup-auto-deck-note">
                   {autoDeckRequirementMessage}
                 </p>
@@ -363,6 +435,11 @@ export function SetupPage() {
               {selectedQueue === 'ranked' ? (
                 <p className="small" data-testid="setup-ranked-note">
                   Ranked uses Open only (Same/Plus disabled).
+                </p>
+              ) : null}
+              {selectedQueue === 'tower' && towerRun && towerRun.pendingRewards.length > 0 ? (
+                <p className="small" data-testid="setup-tower-pending-reward-note">
+                  Resolve pending tower rewards from Results before resuming the run.
                 </p>
               ) : null}
 
@@ -375,7 +452,13 @@ export function SetupPage() {
                     disabled={!canStart}
                     data-testid="start-match-button"
                   >
-                    {selectedQueue === 'ranked' ? `Start ${selectedMode} Ranked` : `Start ${selectedMode} Normal`}
+                    {selectedQueue === 'tower'
+                      ? towerRun
+                        ? `Resume Tower Floor ${towerRun.floor}`
+                        : `Start Tower Floor ${towerStartFloor}`
+                      : selectedQueue === 'ranked'
+                        ? `Start ${selectedMode} Ranked`
+                        : `Start ${selectedMode} Normal`}
                   </button>
                 </div>
                 {error && <p className="error setup-launch-error">{error}</p>}
@@ -403,15 +486,26 @@ export function SetupPage() {
                       )
                     })}
                   </div>
-                ) : (
+                ) : selectedQueue === 'ranked' ? (
                   <p className="small setup-opponent-ranked-lock" data-testid="setup-opponent-ranked-lock">
                     Ranked opponent is locked to your current rank.
+                  </p>
+                ) : (
+                  <p className="small setup-opponent-ranked-lock" data-testid="setup-tower-lock-note">
+                    Tower rules and difficulty are driven by floor progression.
                   </p>
                 )}
               </section>
 
               {shouldShowManualDeckPreview ? (
                 <>
+                  <DeckSynergyGuide
+                    countsByType={selectedDeckSynergy.countsByType}
+                    primaryTypeId={selectedDeckSynergy.primaryTypeId}
+                    secondaryTypeId={selectedDeckSynergy.secondaryTypeId}
+                    testIdPrefix="setup-synergy"
+                  />
+
                   <p className="small setup-deck-count">
                     Deck: {selectedDeck.length}/{modeSpec?.deckSize ?? 0} selected ({selectedMode})
                   </p>
@@ -420,7 +514,7 @@ export function SetupPage() {
                     className="setup-selected-cards"
                     data-testid="setup-selected-cards"
                     aria-label="Selected cards"
-                    style={{ '--setup-selected-columns': `${modeSpec?.deckSize ?? 0}` } as CSSProperties}
+                    style={{ '--setup-selected-columns': `${selectedDeckPreviewColumns}` } as CSSProperties}
                   >
                     {Array.from({ length: modeSpec?.deckSize ?? 0 }, (_, index) => {
                       const cardId = selectedDeck[index]

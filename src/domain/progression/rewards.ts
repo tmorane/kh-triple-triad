@@ -33,6 +33,7 @@ export function applyMatchRewards(
   opponentLevel: OpponentLevel = 1,
   rewardMultiplier = 1,
   claimedCpuCardId?: CardId,
+  options?: { disableCardCapture?: boolean },
 ): MatchProgressionResult {
   const rng = createSeededRng(seed)
 
@@ -55,9 +56,15 @@ export function applyMatchRewards(
       m2_combo_practitioner: { ...profile.missions.m2_combo_practitioner },
       m3_corner_tactician: { ...profile.missions.m3_corner_tactician },
     },
-    ranked: {
-      ...profile.ranked,
-      resultStreak: { ...profile.ranked.resultStreak },
+    rankedByMode: {
+      '3x3': {
+        ...profile.rankedByMode['3x3'],
+        resultStreak: { ...profile.rankedByMode['3x3'].resultStreak },
+      },
+      '4x4': {
+        ...profile.rankedByMode['4x4'],
+        resultStreak: { ...profile.rankedByMode['4x4'].resultStreak },
+      },
     },
     settings: { ...profile.settings },
   }
@@ -72,7 +79,7 @@ export function applyMatchRewards(
   }
 
   const baseGold = result.winner === 'player' ? 60 : result.winner === 'draw' ? 30 : 20
-  let bonusGoldFromDuplicate = 0
+  const bonusGoldFromDuplicate = 0
   const bonusGoldFromDifficulty = result.winner === 'player' ? (opponentLevel - 1) * 4 : 0
   const playerSamePlusTriggers = result.metrics?.samePlusTriggersByActor.player ?? 0
   const playerPrimaryTypeId = result.typeSynergy?.player.primaryTypeId ?? null
@@ -91,10 +98,12 @@ export function applyMatchRewards(
     result.winner === 'player' && result.typeSynergy?.player.secondaryTypeId ? 5 : 0
   const safeMultiplier = Number.isFinite(rewardMultiplier) && rewardMultiplier > 0 ? rewardMultiplier : 1
   let droppedCardId: CardId | null = null
-  let duplicateConverted = false
+  const duplicateConverted = false
   const newlyOwnedCards: CardId[] = []
 
-  if (result.winner === 'player') {
+  const disableCardCapture = options?.disableCardCapture === true
+
+  if (result.winner === 'player' && !disableCardCapture) {
     const capturedCardId = resolveCapturedCardId(updatedProfile.ownedCardIds, cpuDeck, rng, claimedCpuCardId)
     droppedCardId = capturedCardId
 

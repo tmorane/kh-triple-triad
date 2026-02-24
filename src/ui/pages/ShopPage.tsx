@@ -485,13 +485,22 @@ export function ShopPage() {
                 data-testid={`shop-special-pack-${packId}`}
               >
                 <div className="shop-special-pack-head">
-                  <img
-                    className="shop-special-pack-art"
-                    src={visual.artSrc}
-                    alt={`${formatPackLabel(packId)} artwork`}
-                    loading="lazy"
-                    decoding="async"
-                  />
+                  <button
+                    type="button"
+                    className="shop-special-pack-art-buy"
+                    disabled={!canBuy}
+                    onClick={() => handleBuySpecialPack(packId)}
+                    data-testid={`buy-open-special-pack-${packId}`}
+                    aria-label={`Buy and open ${formatPackLabel(packId)} for ${price} gold`}
+                  >
+                    <img
+                      className="shop-special-pack-art"
+                      src={visual.artSrc}
+                      alt={`${formatPackLabel(packId)} artwork`}
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  </button>
                   <div>
                     <h3>{formatPackLabel(packId)}</h3>
                     <p className="small">{visual.tagline}</p>
@@ -566,21 +575,14 @@ export function ShopPage() {
                   </div>
                 )}
 
-                <button
-                  type="button"
-                  className="shop-price-buy shop-special-pack-buy"
-                  disabled={!canBuy}
-                  onClick={() => handleBuySpecialPack(packId)}
-                  data-testid={`buy-open-special-pack-${packId}`}
-                  aria-label={`Buy and open ${formatPackLabel(packId)} for ${price} gold`}
-                >
+                <div className="shop-price-buy shop-special-pack-buy shop-special-pack-buy--display" aria-hidden="true">
                   <span className="shop-price-buy__label">Price</span>
                   <span className="shop-price-buy__value">
                     {price}
                     <span className="shop-price-buy__unit">G</span>
                   </span>
-                  <span className="shop-price-buy__hint">Buy &amp; Open</span>
-                </button>
+                  <span className="shop-price-buy__hint">Click artwork to buy</span>
+                </div>
               </article>
             )
           })}
@@ -795,8 +797,8 @@ export function ShopPage() {
         <Link className="button button-primary" to="/packs">
           Packs
         </Link>
-        <Link className="button button-primary" to="/collection">
-          Collection
+        <Link className="button button-primary" to="/pokedex">
+          Pokédex
         </Link>
         <Link className="button" to="/">
           Home

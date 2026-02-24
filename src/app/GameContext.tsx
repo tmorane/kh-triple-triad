@@ -6,6 +6,7 @@ import {
   buildAutoPlayerDeck,
   buildCpuOpponent,
   buildCpuOpponentForLevel,
+  MAX_NORMAL_OPPONENT_LEVEL,
   getOpponentLevelForProfile,
   type CpuOpponent,
   type OpponentLevel,
@@ -31,6 +32,11 @@ import { evaluateAchievements } from '../domain/progression/achievements'
 import { applyMatchMissions } from '../domain/progression/missions'
 import { applyMatchRewards, type RewardBreakdown } from '../domain/progression/rewards'
 import { applyRankedMatchResult, type RankedMatchResultSummary } from '../domain/progression/ranked'
+import { resolveTowerFloorSpec } from '../domain/tower/floorPlan'
+import { resolveTowerRelicEffects } from '../domain/tower/relics'
+import { applyTowerCheckpointRewards } from '../domain/tower/rewards'
+import { createInitialTowerProgress, createTowerRun, describeTowerPostMatch, queueTowerRewardsForFloor, selectTowerReward } from '../domain/tower/run'
+import type { TowerMatchSummary, TowerProgressState, TowerRunState } from '../domain/tower/types'
 import {
   openOwnedPack as applyOpenPack,
   openOwnedPacks as applyOpenPacks,
@@ -56,6 +62,12 @@ interface CurrentMatch {
   opponent: CpuOpponent
   rewardMultiplier: number
   usedAutoDeck: boolean
+  tower?: {
+    floor: number
+    checkpointFloor: number
+    boss: boolean
+    relics: TowerRunState['relics']
+  }
 }
 
 export interface MatchOpponentSummary {
@@ -72,7 +84,9 @@ export interface LastMatchSummary {
   rewards: RewardBreakdown
   newlyOwnedCards: CardId[]
   opponent: MatchOpponentSummary
+  rankedMode: MatchMode | null
   rankedUpdate: RankedMatchResultSummary | null
+  tower?: TowerMatchSummary
 }
 
 interface GameContextValue {
@@ -80,6 +94,8 @@ interface GameContextValue {
   storedProfiles: StoredProfilesSnapshot
   currentMatch: CurrentMatch | null
   lastMatchSummary: LastMatchSummary | null
+  towerProgress?: TowerProgressState
+  towerRun?: TowerRunState | null
   startMatch(
     queue: MatchQueue,
     mode: MatchMode,
@@ -87,8 +103,14 @@ interface GameContextValue {
     rules: RuleSet,
     options?: { useAutoDeck?: boolean; normalOpponentLevel?: OpponentLevel },
   ): void
+  startTowerRun?(): void
+  resumeTowerRun?(): void
+  continueTowerRun?(): void
+  selectTowerReward?(choiceId: string, swapOutCardId?: CardId): void
+  abandonTowerRun?(): void
   selectDeckSlot(slotId: DeckSlotId): void
   renamePlayer(name: string): { valid: boolean; reason?: string }
+  setAudioEnabled(enabled: boolean): void
   renameDeckSlot(slotId: DeckSlotId, name: string): { valid: boolean; reason?: string }
   toggleDeckSlotCard(slotId: DeckSlotId, cardId: CardId, mode: MatchMode): void
   setDeckSlotMode(slotId: DeckSlotId, mode: MatchMode): void
@@ -129,18 +151,34 @@ function cloneProfile(profile: PlayerProfile): PlayerProfile {
       m2_combo_practitioner: { ...profile.missions.m2_combo_practitioner },
       m3_corner_tactician: { ...profile.missions.m3_corner_tactician },
     },
-    ranked: {
-      ...profile.ranked,
-      resultStreak: { ...profile.ranked.resultStreak },
+    rankedByMode: {
+      '3x3': {
+        ...profile.rankedByMode['3x3'],
+        resultStreak: { ...profile.rankedByMode['3x3'].resultStreak },
+      },
+      '4x4': {
+        ...profile.rankedByMode['4x4'],
+        resultStreak: { ...profile.rankedByMode['4x4'].resultStreak },
+      },
     },
     settings: { ...profile.settings },
   }
+}
+
+function resolveProfileTowerProgress(profile: PlayerProfile): TowerProgressState {
+  return profile.towerProgress ?? createInitialTowerProgress()
+}
+
+function resolveProfileTowerRun(profile: PlayerProfile): TowerRunState | null {
+  return profile.towerRun ?? null
 }
 
 export function GameProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<PlayerProfile>(() => loadProfile())
   const [currentMatch, setCurrentMatch] = useState<CurrentMatch | null>(null)
   const [lastMatchSummary, setLastMatchSummary] = useState<LastMatchSummary | null>(null)
+  const towerProgress = resolveProfileTowerProgress(profile)
+  const towerRun = resolveProfileTowerRun(profile)
 
   const commitComputedProfile = useCallback((nextProfile: PlayerProfile) => {
     saveProfile(nextProfile)
@@ -159,13 +197,120 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
   const storedProfiles: StoredProfilesSnapshot = listStoredProfiles()
 
-  const value = useMemo<GameContextValue>(
-    () => ({
+  const value = useMemo<GameContextValue>(() => {
+    const startPreparedMatch = ({
+      queue,
+      mode,
+      playerDeck,
+      cpuDeck,
+      rules,
+      seed,
+      startingTurn,
+      opponent,
+      rewardMultiplier,
+      usedAutoDeck,
+      tower,
+    }: {
+      queue: MatchQueue
+      mode: MatchMode
+      playerDeck: CardId[]
+      cpuDeck: CardId[]
+      rules: RuleSet
+      seed: number
+      startingTurn: 'player' | 'cpu'
+      opponent: CpuOpponent
+      rewardMultiplier: number
+      usedAutoDeck: boolean
+      tower?: CurrentMatch['tower']
+    }) => {
+      const playerSynergy = resolveDeckTypeSynergy(playerDeck)
+      const cpuSynergy = resolveDeckTypeSynergy(cpuDeck)
+
+      const state = createMatch({
+        playerDeck,
+        cpuDeck,
+        mode,
+        rules,
+        seed,
+        startingTurn,
+        typeSynergy: {
+          player: {
+            primaryTypeId: playerSynergy.primaryTypeId,
+            secondaryTypeId: playerSynergy.secondaryTypeId,
+          },
+          cpu: {
+            primaryTypeId: cpuSynergy.primaryTypeId,
+            secondaryTypeId: cpuSynergy.secondaryTypeId,
+          },
+        },
+      })
+
+      const runtime = createMatchRuntime(state)
+
+      setCurrentMatch({
+        state,
+        runtime,
+        queue,
+        cpuDeck: [...cpuDeck],
+        seed,
+        opponent,
+        rewardMultiplier,
+        usedAutoDeck,
+        tower,
+      })
+    }
+
+    const startTowerMatch = (run: TowerRunState, sourceProfile: PlayerProfile) => {
+      const floorSpec = resolveTowerFloorSpec(run.floor)
+      const relicEffects = resolveTowerRelicEffects(run.relics)
+      const scoreReduction = floorSpec.boss ? relicEffects.bossScoreReduction : relicEffects.nonBossScoreReduction
+      const adjustedScoreBonus = Math.max(0, floorSpec.scoreBonus + relicEffects.scoreBonusModifier - scoreReduction)
+      const seed = Date.now()
+      const level = Math.max(1, Math.min(8, floorSpec.opponentLevel)) as OpponentLevel
+      const opponent = buildCpuOpponentForLevel(level, run.deck, seed, '4x4', { scoreBonus: adjustedScoreBonus })
+      const rewardMultiplier = Number((floorSpec.rewardMultiplier * relicEffects.goldMultiplier).toFixed(2))
+      const startingTurn = relicEffects.forcePlayerStart ? 'player' : resolveStartingTurn(seed)
+
+      startPreparedMatch({
+        queue: 'tower',
+        mode: '4x4',
+        playerDeck: [...run.deck],
+        cpuDeck: [...opponent.deck],
+        rules: floorSpec.rules,
+        seed,
+        startingTurn,
+        opponent,
+        rewardMultiplier,
+        usedAutoDeck: false,
+        tower: {
+          floor: run.floor,
+          checkpointFloor: run.checkpointFloor,
+          boss: floorSpec.boss,
+          relics: { ...run.relics },
+        },
+      })
+
+      const profileWithTowerState: PlayerProfile = {
+        ...sourceProfile,
+        towerProgress: resolveProfileTowerProgress(sourceProfile),
+        towerRun: run,
+      }
+      commitComputedProfile(profileWithTowerState)
+      setLastMatchSummary(null)
+    }
+
+    return {
       profile,
       storedProfiles,
       currentMatch,
       lastMatchSummary,
+      towerProgress,
+      towerRun,
       startMatch: (queue, mode, deck, rules, options) => {
+        if (queue === 'tower') {
+          throw new Error('Tower matches must be started via startTowerRun/resumeTowerRun.')
+        }
+
         const modeSpec = getModeSpec(mode)
         const useAutoDeck = options?.useAutoDeck ?? false
         const requestedNormalOpponentLevel = options?.normalOpponentLevel
@@ -181,19 +326,16 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           }
         }
 
-        const referenceDeck =
-          deck.length === modeSpec.deckSize ? deck : profile.ownedCardIds.slice(0, modeSpec.deckSize)
+        const referenceDeck = deck.length === modeSpec.deckSize ? deck : profile.ownedCardIds.slice(0, modeSpec.deckSize)
         if (referenceDeck.length !== modeSpec.deckSize) {
           throw new Error('Unable to determine a reference deck for CPU matching.')
         }
 
         const seed = Date.now()
-        const maxNormalOpponentLevel = getOpponentLevelForProfile(profile)
-        const normalOpponentLevel = requestedNormalOpponentLevel ?? maxNormalOpponentLevel
-        if (queue === 'normal' && (normalOpponentLevel < 1 || normalOpponentLevel > maxNormalOpponentLevel)) {
-          throw new Error(
-            `Normal opponent level L${normalOpponentLevel} is locked. Maximum available is L${maxNormalOpponentLevel}.`,
-          )
+        const rankedOpponentLevel = getOpponentLevelForProfile(profile, mode)
+        const normalOpponentLevel = requestedNormalOpponentLevel ?? rankedOpponentLevel
+        if (queue === 'normal' && (normalOpponentLevel < 1 || normalOpponentLevel > MAX_NORMAL_OPPONENT_LEVEL)) {
+          throw new Error(`Normal opponent level must be between L1 and L${MAX_NORMAL_OPPONENT_LEVEL}. Received L${normalOpponentLevel}.`)
         }
 
         const opponent =
@@ -202,9 +344,6 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
             : buildCpuOpponentForLevel(normalOpponentLevel, referenceDeck, seed, mode)
         const cpuDeck = [...opponent.deck]
         const playerDeck = useAutoDeck ? buildAutoPlayerDeck(opponent.scoreRange, seed + 1, mode, profile.ownedCardIds) : [...deck]
-        const playerSynergy = resolveDeckTypeSynergy(playerDeck)
-        const cpuSynergy = resolveDeckTypeSynergy(cpuDeck)
-        const startingTurn = resolveStartingTurn(seed)
         const rewardMultiplier = useAutoDeck ? 1.5 : 1
         const effectiveRules: RuleSet =
           queue === 'ranked'
@@ -219,37 +358,89 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
                 plus: rules.plus,
               }
 
-        const state = createMatch({
+        startPreparedMatch({
+          queue,
+          mode,
           playerDeck,
           cpuDeck,
-          mode,
           rules: effectiveRules,
           seed,
-          startingTurn,
-          typeSynergy: {
-            player: {
-              primaryTypeId: playerSynergy.primaryTypeId,
-              secondaryTypeId: playerSynergy.secondaryTypeId,
-            },
-            cpu: {
-              primaryTypeId: cpuSynergy.primaryTypeId,
-              secondaryTypeId: cpuSynergy.secondaryTypeId,
-            },
-          },
-        })
-
-        const runtime = createMatchRuntime(state)
-
-        setCurrentMatch({
-          state,
-          runtime,
-          queue,
-          cpuDeck,
-          seed,
+          startingTurn: resolveStartingTurn(seed),
           opponent,
           rewardMultiplier,
           usedAutoDeck: useAutoDeck,
         })
+      },
+      startTowerRun: () => {
+        const selectedDeckSlot = profile.deckSlots.find((slot) => slot.id === profile.selectedDeckSlotId)
+        if (!selectedDeckSlot) {
+          throw new Error('No selected deck slot found.')
+        }
+
+        const deck = [...selectedDeckSlot.cards4x4]
+        const validation = validateDeck(deck, profile.ownedCardIds, '4x4')
+        if (!validation.valid) {
+          throw new Error(validation.reason)
+        }
+
+        const run = createTowerRun(deck, towerProgress, Date.now())
+        startTowerMatch(run, profile)
+      },
+      resumeTowerRun: () => {
+        if (!towerRun) {
+          throw new Error('No active tower run to resume.')
+        }
+        if (towerRun.pendingRewards.length > 0) {
+          throw new Error('Select pending tower rewards before resuming the run.')
+        }
+
+        startTowerMatch(towerRun, profile)
+      },
+      continueTowerRun: () => {
+        if (!towerRun) {
+          throw new Error('No active tower run to continue.')
+        }
+        if (towerRun.pendingRewards.length > 0) {
+          throw new Error('Select pending tower rewards before starting the next floor.')
+        }
+
+        startTowerMatch(towerRun, profile)
+      },
+      selectTowerReward: (choiceId, swapOutCardId) => {
+        if (!towerRun) {
+          throw new Error('No active tower run.')
+        }
+
+        const nextRun = selectTowerReward(towerRun, choiceId, swapOutCardId)
+        const nextProfile = cloneProfile(profile)
+        nextProfile.towerProgress = towerProgress
+        nextProfile.towerRun = nextRun
+        commitComputedProfile(nextProfile)
+
+        setLastMatchSummary((existingSummary) => {
+          if (!existingSummary?.tower) {
+            return existingSummary
+          }
+          return {
+            ...existingSummary,
+            tower: {
+              ...existingSummary.tower,
+              pendingReward: nextRun.pendingRewards[0] ?? null,
+            },
+          }
+        })
+      },
+      abandonTowerRun: () => {
+        const nextProfile = cloneProfile(profile)
+        nextProfile.towerProgress = towerProgress
+        nextProfile.towerRun = null
+        commitComputedProfile(nextProfile)
+
+        if (currentMatch?.queue === 'tower') {
+          setCurrentMatch(null)
+        }
+
+        setLastMatchSummary((existingSummary) => (existingSummary?.queue === 'tower' ? null : existingSummary))
       },
       selectDeckSlot: (slotId) => {
         persistProfileUpdate((nextProfile) => {
@@ -267,6 +458,11 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         })
 
         return { valid: true }
+      },
+      setAudioEnabled: (enabled) => {
+        persistProfileUpdate((nextProfile) => {
+          nextProfile.settings.audioEnabled = enabled
+        })
       },
       renameDeckSlot: (slotId, name) => {
         const validation = isDeckNameValid(name)
@@ -346,6 +542,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           currentMatch.opponent.level,
           currentMatch.rewardMultiplier,
           claimedCpuCardId,
+          { disableCardCapture: currentMatch.queue === 'tower' },
         )
 
         const missionProgression = applyMatchMissions(
@@ -361,13 +558,66 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         )
 
         let nextProfile = missionProgression.profile
+        let rankedMode: MatchMode | null = null
         let rankedUpdate: RankedMatchResultSummary | null = null
+        let towerSummary: TowerMatchSummary | undefined
 
         if (currentMatch.queue === 'ranked') {
-          rankedUpdate = applyRankedMatchResult(nextProfile.ranked, result.winner)
+          const rankedModeForMatch = currentMatch.state.config.mode
+          rankedMode = rankedModeForMatch
+          rankedUpdate = applyRankedMatchResult(nextProfile.rankedByMode[rankedModeForMatch], result.winner)
           nextProfile = {
             ...nextProfile,
-            ranked: rankedUpdate.next,
+            rankedByMode: {
+              ...nextProfile.rankedByMode,
+              [rankedModeForMatch]: rankedUpdate.next,
+            },
+          }
+        }
+
+        if (currentMatch.queue === 'tower') {
+          const activeTowerRun = resolveProfileTowerRun(nextProfile)
+          if (!activeTowerRun || !currentMatch.tower) {
+            throw new Error('Tower run state is missing for tower match finalization.')
+          }
+
+          const towerProgressState = resolveProfileTowerProgress(nextProfile)
+          const towerResult = describeTowerPostMatch(activeTowerRun, towerProgressState, result.winner)
+          const relicEffects = resolveTowerRelicEffects(activeTowerRun.relics)
+          const completedFloor = currentMatch.tower.floor
+
+          nextProfile = {
+            ...nextProfile,
+            towerProgress: towerResult.nextProgress,
+            towerRun: towerResult.nextRun,
+          }
+
+          if (towerResult.checkpointReached || towerResult.status === 'cleared') {
+            const checkpointReward = applyTowerCheckpointRewards(nextProfile, completedFloor, relicEffects.checkpointPackBonus)
+            nextProfile = checkpointReward.profile
+          }
+
+          if (towerResult.status === 'continue' && towerResult.nextRun) {
+            const queuedRun = queueTowerRewardsForFloor(towerResult.nextRun, completedFloor)
+            nextProfile = {
+              ...nextProfile,
+              towerRun: queuedRun,
+            }
+            towerSummary = {
+              floor: completedFloor,
+              checkpointFloor: towerResult.nextProgress.checkpointFloor,
+              status: 'continue',
+              pendingReward: queuedRun.pendingRewards[0] ?? null,
+              nextFloor: queuedRun.floor,
+            }
+          } else {
+            towerSummary = {
+              floor: completedFloor,
+              checkpointFloor: towerResult.nextProgress.checkpointFloor,
+              status: towerResult.status,
+              pendingReward: null,
+              nextFloor: null,
+            }
           }
         }
 
@@ -385,7 +635,9 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
             deckScore: currentMatch.opponent.deckScore,
             winGoldBonus: currentMatch.opponent.winGoldBonus,
           },
+          rankedMode,
           rankedUpdate,
+          tower: towerSummary,
         }
 
         setLastMatchSummary(summary)
@@ -475,9 +727,17 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         setCurrentMatch(null)
         setLastMatchSummary(null)
       },
-    }),
-    [commitComputedProfile, currentMatch, lastMatchSummary, persistProfileUpdate, profile, storedProfiles],
-  )
+    }
+  }, [
+    commitComputedProfile,
+    currentMatch,
+    lastMatchSummary,
+    persistProfileUpdate,
+    profile,
+    storedProfiles,
+    towerProgress,
+    towerRun,
+  ])
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>
 }

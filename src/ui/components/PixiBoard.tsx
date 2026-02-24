@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type SyntheticEvent } from 'react'
+import type { Texture } from 'pixi.js'
 import { getCard } from '../../domain/cards/cardPool'
 import type { Actor, CardId } from '../../domain/types'
+import { getCardArtCandidates } from './cardArt'
 
 export interface BoardSlot {
   owner: Actor
@@ -20,6 +22,11 @@ interface PixiBoardProps {
 const boardSize = 468
 const boardInset = 30
 const gap = 10
+
+export function getPixiRenderResolution(devicePixelRatio: number | undefined): number {
+  const safeDevicePixelRatio = typeof devicePixelRatio === 'number' && Number.isFinite(devicePixelRatio) ? devicePixelRatio : 1
+  return Math.min(2, Math.max(1, safeDevicePixelRatio))
+}
 
 function getBoardDimension(cellCount: number): number {
   const dimension = Math.round(Math.sqrt(cellCount))
@@ -42,6 +49,62 @@ function getCardSigil(name: string): string {
     .slice(0, 2)
     .join('')
     .toUpperCase()
+}
+
+const cardArtTextureCache = new Map<string, Promise<Texture | null>>()
+
+async function loadCardArtTexture(cardName: string, loadTexture: (url: string) => Promise<Texture>): Promise<Texture | null> {
+  const cachedTexturePromise = cardArtTextureCache.get(cardName)
+  if (cachedTexturePromise) {
+    return cachedTexturePromise
+  }
+
+  const texturePromise = (async () => {
+    const artCandidates = getCardArtCandidates(cardName)
+
+    for (const artCandidate of artCandidates) {
+      try {
+        return await loadTexture(artCandidate)
+      } catch {
+        // Try next candidate path/extension.
+      }
+    }
+
+    return null
+  })()
+
+  cardArtTextureCache.set(cardName, texturePromise)
+  return texturePromise
+}
+
+function handleFallbackCardArtError(event: SyntheticEvent<HTMLImageElement>) {
+  const image = event.currentTarget
+  const cardName = image.dataset.cardName
+  if (!cardName) {
+    image.hidden = true
+    const fallbackSigil = image.nextElementSibling
+    if (fallbackSigil instanceof HTMLElement) {
+      fallbackSigil.hidden = false
+    }
+    return
+  }
+
+  const artCandidates = getCardArtCandidates(cardName)
+  const candidateIndex = Number.parseInt(image.dataset.candidateIndex ?? '0', 10)
+  const safeCandidateIndex = Number.isFinite(candidateIndex) ? candidateIndex : 0
+  const nextCandidateIndex = safeCandidateIndex + 1
+
+  if (nextCandidateIndex < artCandidates.length) {
+    image.dataset.candidateIndex = `${nextCandidateIndex}`
+    image.src = artCandidates[nextCandidateIndex]
+    return
+  }
+
+  image.hidden = true
+  const fallbackSigil = image.nextElementSibling
+  if (fallbackSigil instanceof HTMLElement) {
+    fallbackSigil.hidden = false
+  }
 }
 
 export function PixiBoard({
@@ -112,11 +175,14 @@ export function PixiBoard({
       }
 
       const { Application } = await import('pixi.js')
+      const resolution = getPixiRenderResolution(typeof window === 'undefined' ? undefined : window.devicePixelRatio)
 
       const app = new Application()
       await app.init({
         width: boardSize,
         height: boardSize,
+        autoDensity: true,
+        resolution,
         antialias: true,
         backgroundAlpha: 0,
       })
@@ -177,7 +243,7 @@ export function PixiBoard({
         return
       }
 
-      const { Container, Graphics, Text } = await import('pixi.js')
+      const { Assets, Container, Graphics, Sprite, Text } = await import('pixi.js')
       if (cancelled) {
         return
       }
@@ -275,6 +341,9 @@ export function PixiBoard({
           const sigil = getCardSigil(card.name)
           const ownerPlate = slot.owner === 'player' ? 0x2a5479 : 0x7e3a4f
           const ownerEdge = slot.owner === 'player' ? 0x91c6ff : 0xffb0c1
+          const artInset = 16
+          const artWidth = cellSize - artInset * 2
+          const artHeight = cellSize - artInset * 2
 
           const cardContainer = new Container()
           cardContainer.pivot.set(cellSize / 2, cellSize / 2)
@@ -286,13 +355,22 @@ export function PixiBoard({
           plate.stroke({ width: 2, color: ownerEdge, alpha: 0.8 })
           cardContainer.addChild(plate)
 
-          const crest = new Graphics()
-          crest.roundRect(cellSize * 0.26, cellSize * 0.26, cellSize * 0.48, cellSize * 0.48, 12)
-          crest.fill({ color: 0x112330, alpha: 0.56 })
-          crest.stroke({ width: 1, color: 0xf7d79d, alpha: 0.56 })
-          cardContainer.addChild(crest)
+          const artFrame = new Graphics()
+          artFrame.roundRect(artInset, artInset, artWidth, artHeight, 11)
+          artFrame.fill({ color: 0x10202c, alpha: 0.58 })
+          artFrame.stroke({ width: 1, color: 0xf7d79d, alpha: 0.5 })
+          cardContainer.addChild(artFrame)
 
-          const sigilLabel = new Text({
+          const centerLayer = new Container()
+          cardContainer.addChild(centerLayer)
+
+          const fallbackCrest = new Graphics()
+          fallbackCrest.roundRect(cellSize * 0.26, cellSize * 0.26, cellSize * 0.48, cellSize * 0.48, 12)
+          fallbackCrest.fill({ color: 0x112330, alpha: 0.56 })
+          fallbackCrest.stroke({ width: 1, color: 0xf7d79d, alpha: 0.56 })
+          centerLayer.addChild(fallbackCrest)
+
+          const fallbackSigilLabel = new Text({
             text: sigil,
             style: {
               fill: 0xfff1d2,
@@ -302,10 +380,44 @@ export function PixiBoard({
               letterSpacing: 1.2,
             },
           })
-          sigilLabel.anchor.set(0.5)
-          sigilLabel.x = cellSize / 2
-          sigilLabel.y = cellSize / 2
-          cardContainer.addChild(sigilLabel)
+          fallbackSigilLabel.anchor.set(0.5)
+          fallbackSigilLabel.x = cellSize / 2
+          fallbackSigilLabel.y = cellSize / 2
+          centerLayer.addChild(fallbackSigilLabel)
+
+          void loadCardArtTexture(card.name, (url) => Assets.load<Texture>(url))
+            .then((cardArtTexture) => {
+              if (cancelled || centerLayer.destroyed || !cardArtTexture) {
+                return
+              }
+
+              const staleCenterChildren = centerLayer.removeChildren()
+              staleCenterChildren.forEach((child) => child.destroy())
+
+              const artMask = new Graphics()
+              artMask.roundRect(artInset, artInset, artWidth, artHeight, 10)
+              artMask.fill({ color: 0xffffff, alpha: 1 })
+              centerLayer.addChild(artMask)
+
+              const artSprite = new Sprite(cardArtTexture)
+              artSprite.anchor.set(0.5)
+              artSprite.x = cellSize / 2
+              artSprite.y = cellSize / 2
+              const sourceWidth = Math.max(1, cardArtTexture.width)
+              const sourceHeight = Math.max(1, cardArtTexture.height)
+              const coverScale = Math.max(artWidth / sourceWidth, artHeight / sourceHeight)
+              artSprite.scale.set(coverScale)
+              artSprite.mask = artMask
+              centerLayer.addChildAt(artSprite, 0)
+
+              const artTint = new Graphics()
+              artTint.roundRect(artInset, artInset, artWidth, artHeight, 10)
+              artTint.fill({ color: 0x0a1722, alpha: 0.14 })
+              centerLayer.addChild(artTint)
+            })
+            .catch(() => {
+              // Fallback sigil stays visible if art loading fails.
+            })
 
           const statStyle = {
             fill: 0xffefc7,
@@ -455,6 +567,8 @@ export function PixiBoard({
       >
         {board.map((slot, index) => {
           const card = slot ? getCard(slot.cardId) : null
+          const artCandidates = card ? getCardArtCandidates(card.name) : []
+          const artSrc = artCandidates[0] ?? null
           const isClickable = interactive && slot === null
           const classes = [
             'fallback-cell',
@@ -494,7 +608,23 @@ export function PixiBoard({
                   <span className="fallback-cell__stat fallback-cell__stat--left" data-testid={`board-cell-${index}-stat-left`}>
                     {card.left}
                   </span>
-                  <span className="fallback-cell__center">{getCardSigil(card.name)}</span>
+                  {artSrc ? (
+                    <img
+                      className="fallback-cell__art"
+                      src={artSrc}
+                      alt=""
+                      loading="lazy"
+                      decoding="async"
+                      draggable={false}
+                      onError={handleFallbackCardArtError}
+                      data-card-name={card.name}
+                      data-candidate-index="0"
+                      data-testid={`board-cell-${index}-art`}
+                    />
+                  ) : null}
+                  <span className="fallback-cell__center" hidden={Boolean(artSrc)}>
+                    {getCardSigil(card.name)}
+                  </span>
                 </>
               ) : (
                 index + 1

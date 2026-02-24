@@ -5,8 +5,16 @@ import { MemoryRouter } from 'react-router-dom'
 import { GameProvider } from '../../app/GameContext'
 import { cardPool } from '../../domain/cards/cardPool'
 import { PROFILE_STORAGE_KEY, createDefaultProfile, saveProfile } from '../../domain/progression/profile'
-import type { PlayerProfile } from '../../domain/types'
+import type { CardCategoryId, PlayerProfile } from '../../domain/types'
 import { DecksPage } from './DecksPage'
+
+function pickCardIdsByCategory(categoryId: CardCategoryId, count: number): string[] {
+  const matching = cardPool.filter((card) => card.categoryId === categoryId).map((card) => card.id)
+  if (matching.length < count) {
+    throw new Error(`Missing ${count} cards for category ${categoryId}.`)
+  }
+  return matching.slice(0, count)
+}
 
 function createDecksProfile(): PlayerProfile {
   const profile = createDefaultProfile()
@@ -25,6 +33,26 @@ function createDecksProfile(): PlayerProfile {
   profile.deckSlots[2].mode = '4x4'
   profile.deckSlots[2].cards = []
   profile.deckSlots[2].cards4x4 = []
+
+  profile.selectedDeckSlotId = 'slot-1'
+  return profile
+}
+
+function createSynergyDecksProfile(): PlayerProfile {
+  const profile = createDecksProfile()
+
+  const obscur = pickCardIdsByCategory('sans_coeur', 4)
+  const psy = pickCardIdsByCategory('simili', 2)
+  const combat = pickCardIdsByCategory('nescient', 2)
+  const nature = pickCardIdsByCategory('humain', 5)
+
+  profile.deckSlots[0].mode = '4x4'
+  profile.deckSlots[0].cards4x4 = [...obscur.slice(0, 3), ...psy.slice(0, 2), ...nature.slice(0, 3)]
+  profile.deckSlots[0].cards = profile.deckSlots[0].cards4x4.slice(0, 5)
+
+  profile.deckSlots[1].mode = '4x4'
+  profile.deckSlots[1].cards4x4 = [...nature, obscur[3]!, psy[0]!, combat[0]!]
+  profile.deckSlots[1].cards = profile.deckSlots[1].cards4x4.slice(0, 5)
 
   profile.selectedDeckSlotId = 'slot-1'
   return profile
@@ -65,6 +93,13 @@ describe('DecksPage', () => {
     expect(within(screen.getByTestId('setup-selected-cards')).getAllByTestId(/^setup-selected-card-/)).toHaveLength(8)
   })
 
+  test('uses a 4-column selected preview grid in 4x4 mode', () => {
+    renderDecks()
+
+    const selectedCards = screen.getByTestId('setup-selected-cards')
+    expect(selectedCards.style.getPropertyValue('--setup-selected-columns').trim()).toBe('4')
+  })
+
   test('switching edit mode to 3x3 uses 5-card deck list', async () => {
     const user = userEvent.setup()
     renderDecks()
@@ -74,6 +109,27 @@ describe('DecksPage', () => {
     expect(screen.getByTestId('setup-mode-3x3')).toBeChecked()
     expect(screen.getByText('Deck: 5/5 selected')).toBeInTheDocument()
     expect(within(screen.getByTestId('setup-selected-cards')).getAllByTestId(/^setup-selected-card-/)).toHaveLength(5)
+  })
+
+  test('renders synergy guide with detailed type effects', () => {
+    renderDecks(createSynergyDecksProfile())
+
+    expect(screen.getByTestId('decks-synergy-guide')).toBeInTheDocument()
+    expect(screen.getByTestId('decks-synergy-detail-title')).toHaveTextContent('Obscur')
+    expect(screen.getByTestId('decks-synergy-detail-primary')).toHaveTextContent('1er coup')
+    expect(screen.getByTestId('decks-synergy-detail-secondary')).toHaveTextContent('+5 or')
+  })
+
+  test('updates synergy guide when switching deck slots', async () => {
+    const user = userEvent.setup()
+    renderDecks(createSynergyDecksProfile())
+
+    expect(screen.getByTestId('decks-synergy-detail-title')).toHaveTextContent('Obscur')
+
+    await user.click(screen.getByTestId('deck-slot-slot-2'))
+
+    expect(screen.getByTestId('decks-synergy-detail-title')).toHaveTextContent('Nature')
+    expect(screen.getByTestId('decks-synergy-detail-secondary')).toHaveTextContent('pas de bonus secondaire')
   })
 
   test('renaming slot persists in profile storage', async () => {

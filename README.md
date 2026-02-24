@@ -98,6 +98,10 @@ npx netlify deploy --prod --dir dist
 
 This project supports Supabase auth, cloud profile sync (`/account`), and global ladders (`/ranks`).
 
+By default, cloud auth uses this project's built-in Supabase public config.
+
+If you want to point to another Supabase project, override with env values:
+
 1. Copy env values:
 
 ```bash

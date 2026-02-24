@@ -42,25 +42,25 @@ function makeUpdate(overrides: Partial<RankedMatchResultSummary> = {}): RankedMa
 
 describe('RankedLpRecap', () => {
   test('renders positive delta LP', () => {
-    render(<RankedLpRecap update={makeUpdate({ deltaLp: 30, promoted: false })} animated={false} context="results" testIdPrefix="ranked" />)
+    render(<RankedLpRecap mode="4x4" update={makeUpdate({ deltaLp: 30, promoted: false })} animated={false} context="results" testIdPrefix="ranked" />)
 
     expect(screen.getByTestId('ranked-delta')).toHaveTextContent('+30 LP')
   })
 
   test('renders negative and neutral delta LP', () => {
     const { rerender } = render(
-      <RankedLpRecap update={makeUpdate({ deltaLp: -25, promoted: false, demoted: false })} animated={false} context="results" testIdPrefix="ranked" />,
+      <RankedLpRecap mode="4x4" update={makeUpdate({ deltaLp: -25, promoted: false, demoted: false })} animated={false} context="results" testIdPrefix="ranked" />,
     )
     expect(screen.getByTestId('ranked-delta')).toHaveTextContent('-25 LP')
 
     rerender(
-      <RankedLpRecap update={makeUpdate({ deltaLp: 0, promoted: false, demoted: false })} animated={false} context="results" testIdPrefix="ranked" />,
+      <RankedLpRecap mode="4x4" update={makeUpdate({ deltaLp: 0, promoted: false, demoted: false })} animated={false} context="results" testIdPrefix="ranked" />,
     )
     expect(screen.getByTestId('ranked-delta')).toHaveTextContent('0 LP')
   })
 
   test('renders next tier emblem and before/after labels', () => {
-    render(<RankedLpRecap update={makeUpdate()} animated={false} context="results" testIdPrefix="ranked" />)
+    render(<RankedLpRecap mode="4x4" update={makeUpdate()} animated={false} context="results" testIdPrefix="ranked" />)
 
     expect(screen.getByTestId('ranked-emblem')).toHaveAttribute('src', '/ranks/iron.svg')
     expect(screen.getByTestId('ranked-before')).toHaveTextContent('Before: Iron IV • 95 LP')
@@ -69,18 +69,18 @@ describe('RankedLpRecap', () => {
 
   test('renders promotion and demotion badges from flags', () => {
     const { rerender } = render(
-      <RankedLpRecap update={makeUpdate({ promoted: true, demoted: false })} animated={false} context="results" testIdPrefix="ranked" />,
+      <RankedLpRecap mode="4x4" update={makeUpdate({ promoted: true, demoted: false })} animated={false} context="results" testIdPrefix="ranked" />,
     )
     expect(screen.getByTestId('ranked-event')).toHaveTextContent('PROMOTION')
 
     rerender(
-      <RankedLpRecap update={makeUpdate({ promoted: false, demoted: true })} animated={false} context="results" testIdPrefix="ranked" />,
+      <RankedLpRecap mode="4x4" update={makeUpdate({ promoted: false, demoted: true })} animated={false} context="results" testIdPrefix="ranked" />,
     )
     expect(screen.getByTestId('ranked-event')).toHaveTextContent('DEMOTION')
   })
 
   test('does not mark recap as animated when animated is false', () => {
-    render(<RankedLpRecap update={makeUpdate()} animated={false} context="results" testIdPrefix="ranked" />)
+    render(<RankedLpRecap mode="4x4" update={makeUpdate()} animated={false} context="results" testIdPrefix="ranked" />)
 
     expect(screen.getByTestId('ranked-recap')).not.toHaveClass('is-animated')
   })

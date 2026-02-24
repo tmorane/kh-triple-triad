@@ -1,9 +1,11 @@
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import type { ComponentProps } from 'react'
 import { MemoryRouter } from 'react-router-dom'
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test, vi } from 'vitest'
 import { GameContext } from '../../app/GameContext'
 import { createDefaultProfile } from '../../domain/progression/profile'
+import type { TowerRelicRewardOffer } from '../../domain/tower/types'
 import { ResultsPage } from './ResultsPage'
 
 type GameContextValue = NonNullable<ComponentProps<typeof GameContext.Provider>['value']>
@@ -18,11 +20,57 @@ function renderResults(value: GameContextValue) {
   )
 }
 
-function buildContext(queue: 'normal' | 'ranked'): GameContextValue {
+function buildContext(queue: 'normal' | 'ranked' | 'tower'): GameContextValue {
   const profile = createDefaultProfile()
+  const towerRelics = {
+    golden_pass: 0,
+    initiative_core: 0,
+    boss_breaker: 0,
+    stabilizer: 0,
+    deep_pockets: 0,
+    draft_chisel: 0,
+    high_risk_token: 0,
+  }
+  const towerPendingReward: TowerRelicRewardOffer | null =
+    queue === 'tower'
+      ? {
+          kind: 'relic' as const,
+          floor: 3,
+          choices: [
+            { id: 'golden_pass' as const, title: 'Golden Pass', description: '+15% gold' },
+            { id: 'stabilizer' as const, title: 'Stabilizer', description: '-1 non-boss score bonus' },
+            { id: 'initiative_core' as const, title: 'Initiative Core', description: 'Start first' },
+          ] as [
+            TowerRelicRewardOffer['choices'][0],
+            TowerRelicRewardOffer['choices'][1],
+            TowerRelicRewardOffer['choices'][2],
+          ],
+        }
+      : null
 
   return {
     profile,
+    towerRun:
+      queue === 'tower'
+        ? {
+            mode: '4x4',
+            floor: 4,
+            checkpointFloor: 0,
+            deck: profile.deckSlots[0].cards4x4,
+            relics: towerRelics,
+            pendingRewards: towerPendingReward ? [towerPendingReward] : [],
+            seed: 1234,
+          }
+        : null,
+    towerProgress:
+      queue === 'tower'
+        ? {
+            bestFloor: 3,
+            checkpointFloor: 0,
+            highestClearedFloor: 0,
+            clearedFloor100: false,
+          }
+        : undefined,
     storedProfiles: {
       activeProfileId: 'profile-1',
       profiles: [
@@ -40,11 +88,11 @@ function buildContext(queue: 'normal' | 'ranked'): GameContextValue {
     lastMatchSummary: {
       queue,
       result: {
-        mode: '3x3',
+        mode: queue === 'tower' ? '4x4' : '3x3',
         winner: 'player',
-        playerCount: 6,
-        cpuCount: 3,
-        turns: 9,
+        playerCount: queue === 'tower' ? 10 : 6,
+        cpuCount: queue === 'tower' ? 6 : 3,
+        turns: queue === 'tower' ? 16 : 9,
         rules: { open: true, same: false, plus: false },
       },
       rewards: {
@@ -57,11 +105,11 @@ function buildContext(queue: 'normal' | 'ranked'): GameContextValue {
         bonusGoldFromCriticalVictory: 0,
         bonusGoldFromAutoDeck: 0,
         criticalVictory: false,
-        droppedCardId: 'c41',
+        droppedCardId: queue === 'tower' ? null : 'c41',
         duplicateConverted: false,
         newlyUnlockedAchievements: [],
       },
-      newlyOwnedCards: ['c41'],
+      newlyOwnedCards: queue === 'tower' ? [] : ['c41'],
       opponent: {
         level: 8,
         aiProfile: 'expert',
@@ -69,17 +117,18 @@ function buildContext(queue: 'normal' | 'ranked'): GameContextValue {
         deckScore: 160,
         winGoldBonus: 28,
       },
+      rankedMode: queue === 'ranked' ? '3x3' : null,
       rankedUpdate:
         queue === 'ranked'
           ? {
               previous: {
-                ...profile.ranked,
+                ...profile.rankedByMode['3x3'],
                 tier: 'iron',
                 division: 'IV',
                 lp: 95,
               },
               next: {
-                ...profile.ranked,
+                ...profile.rankedByMode['3x3'],
                 tier: 'iron',
                 division: 'III',
                 lp: 15,
@@ -89,8 +138,33 @@ function buildContext(queue: 'normal' | 'ranked'): GameContextValue {
               demoted: false,
             }
           : null,
+      tower:
+        queue === 'tower'
+          ? {
+              floor: 3,
+              checkpointFloor: 0,
+              status: 'continue',
+              pendingReward: towerPendingReward,
+              nextFloor: 4,
+            }
+          : undefined,
     },
     startMatch: () => {
+      throw new Error('Not implemented in test.')
+    },
+    startTowerRun: () => {
+      throw new Error('Not implemented in test.')
+    },
+    resumeTowerRun: () => {
+      throw new Error('Not implemented in test.')
+    },
+    continueTowerRun: () => {
+      throw new Error('Not implemented in test.')
+    },
+    selectTowerReward: () => {
+      throw new Error('Not implemented in test.')
+    },
+    abandonTowerRun: () => {
       throw new Error('Not implemented in test.')
     },
     selectDeckSlot: () => {
@@ -296,5 +370,29 @@ describe('ResultsPage claimed card summary', () => {
 
     expect(screen.getByText('Claimed Card')).toBeInTheDocument()
     expect(screen.getByText('No card claimed this match.')).toBeInTheDocument()
+  })
+})
+
+describe('ResultsPage tower flow', () => {
+  test('shows tower queue labels and tower-specific claimed card copy', () => {
+    renderResults(buildContext('tower'))
+
+    expect(screen.getByText('Queue: Tower')).toBeInTheDocument()
+    expect(screen.getByTestId('results-tower-summary')).toBeInTheDocument()
+    expect(screen.getByText('Tower mode does not grant claimed cards.')).toBeInTheDocument()
+    expect(screen.getByTestId('results-tower-floor')).toHaveTextContent('Floor 3')
+  })
+
+  test('calls selectTowerReward when a reward choice is selected', async () => {
+    const user = userEvent.setup()
+    const context = buildContext('tower')
+    const selectTowerRewardMock = vi.fn()
+    context.selectTowerReward = selectTowerRewardMock as unknown as GameContextValue['selectTowerReward']
+
+    renderResults(context)
+
+    await user.click(screen.getByTestId('results-tower-choice-golden_pass'))
+
+    expect(selectTowerRewardMock).toHaveBeenCalledWith('golden_pass')
   })
 })

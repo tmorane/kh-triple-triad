@@ -1,5 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import type { SyntheticEvent } from 'react'
+import { formatCardPokedexNumber } from '../../domain/cards/pokedex'
 import { getTypeIdByCategory } from '../../domain/cards/taxonomy'
 import type { CardDef } from '../../domain/types'
 import { getCardArtCandidates } from './cardArt'
@@ -21,6 +22,7 @@ export interface TriadCardProps {
   onClick?: () => void
   className?: string
   testId?: string
+  deferArtLoading?: boolean
 }
 
 function getSigil(name: string): string {
@@ -59,9 +61,10 @@ export const TriadCard = memo(function TriadCard({
   onClick,
   className,
   testId,
+  deferArtLoading = false,
 }: TriadCardProps) {
   const locked = !owned
-  const label = locked ? `Locked card ${card.id.toUpperCase()}` : card.name
+  const label = locked ? `Locked card ${formatCardPokedexNumber(card)}` : card.name
   const isMatchHandContext = context === 'hand-player' || context === 'hand-cpu'
   const hasNewPill = showNew && owned
   const isRevealNew = showNew && owned && newBadgeVariant === 'reveal'
@@ -70,13 +73,49 @@ export const TriadCard = memo(function TriadCard({
     () => (locked ? null : getTypeLogoMeta(getTypeIdByCategory(card.categoryId))),
     [card.categoryId, locked],
   )
+  const interactiveCardRef = useRef<HTMLButtonElement | null>(null)
   const artCandidateIndexRef = useRef(0)
+  const [isArtVisible, setIsArtVisible] = useState(() => {
+    if (locked || !deferArtLoading) {
+      return true
+    }
+    return typeof window === 'undefined' || typeof window.IntersectionObserver === 'undefined'
+  })
   const [artUnavailable, setArtUnavailable] = useState(false)
 
   useEffect(() => {
     artCandidateIndexRef.current = 0
     setArtUnavailable(false)
   }, [card.name, locked])
+
+  useEffect(() => {
+    if (isArtVisible || locked || !deferArtLoading) {
+      return
+    }
+    if (typeof window === 'undefined' || typeof window.IntersectionObserver === 'undefined') {
+      return
+    }
+    const node = interactiveCardRef.current
+    if (!node) {
+      return
+    }
+
+    const observer = new window.IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting || entry.intersectionRatio > 0) {
+            setIsArtVisible(true)
+            observer.disconnect()
+            break
+          }
+        }
+      },
+      { rootMargin: '320px' },
+    )
+
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [deferArtLoading, isArtVisible, locked])
 
   const classes = [
     'triad-card',
@@ -97,8 +136,8 @@ export const TriadCard = memo(function TriadCard({
   const right = locked ? '?' : card.right
   const bottom = locked ? '?' : card.bottom
   const left = locked ? '?' : card.left
-  const artSrc = !locked && !artUnavailable ? (artCandidates[0] ?? null) : null
-  const showSigil = locked || artUnavailable
+  const artSrc = !locked && isArtVisible && !artUnavailable ? (artCandidates[0] ?? null) : null
+  const showSigil = locked || artUnavailable || !isArtVisible
   const useCompactName = context === 'setup' && !locked && getLongestNameSegmentLength(card.name) >= 9
   const nameClassName = useCompactName ? 'triad-card__name triad-card__name--compact' : 'triad-card__name'
 
@@ -179,7 +218,7 @@ export const TriadCard = memo(function TriadCard({
             <div className="triad-card__footer">
               <span className={nameClassName}>{locked ? 'Locked Card' : card.name}</span>
               <span className="triad-card__meta">
-                <span className="triad-card__id">{locked ? '????' : card.id.toUpperCase()}</span>
+                <span className="triad-card__id">{locked ? '????' : formatCardPokedexNumber(card)}</span>
                 <span className="triad-card__rarity">{locked ? 'Unknown' : normalizeRarity(card.rarity)}</span>
               </span>
             </div>
@@ -192,6 +231,7 @@ export const TriadCard = memo(function TriadCard({
   if (interactive) {
     return (
       <button
+        ref={interactiveCardRef}
         type="button"
         className={classes}
         onClick={onClick}

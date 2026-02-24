@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { RankedMatchResultSummary } from '../../domain/progression/ranked'
-import type { RankedTierId } from '../../domain/types'
+import type { MatchMode, RankedTierId } from '../../domain/types'
 
 type RankedLpRecapContext = 'modal' | 'results'
 
 interface RankedLpRecapProps {
+  mode: MatchMode
   update: RankedMatchResultSummary
   animated: boolean
   context: RankedLpRecapContext
@@ -81,7 +82,7 @@ function getPrefersReducedMotion(): boolean {
   return window.matchMedia('(prefers-reduced-motion: reduce)').matches
 }
 
-export function RankedLpRecap({ update, animated, context, testIdPrefix }: RankedLpRecapProps) {
+export function RankedLpRecap({ mode, update, animated, context, testIdPrefix }: RankedLpRecapProps) {
   const deltaClass = getDeltaClass(update.deltaLp)
   const targetLp = clampLp(update.next.lp)
   const shouldAnimate = animated && !getPrefersReducedMotion()
@@ -139,7 +140,7 @@ export function RankedLpRecap({ update, animated, context, testIdPrefix }: Ranke
           className="ranked-lp-recap__emblem"
           data-testid={`${testIdPrefix}-emblem`}
         />
-        <h3 className="ranked-lp-recap__title">Ranked LP</h3>
+        <h3 className="ranked-lp-recap__title">{`Ranked LP · ${mode.toUpperCase()}`}</h3>
         <p
           className={`ranked-lp-recap__delta ranked-lp-recap__delta--${deltaClass}`}
           data-testid={`${testIdPrefix}-delta`}

@@ -14,8 +14,12 @@ const divisionLabelByTierType = {
 } as const
 
 const rankedRules = [
-  'Win streak LP: +20 / +25 / +30 LP',
+  'Win streak LP: +60 / +65 / +70 LP',
+  'Win bonus by division: IV +0, III +1, II +2, I +3 LP',
+  'Win bonus by apex tier: Master +0, Grandmaster +1, Challenger +2 LP',
   'Loss streak LP: -20 / -25 / -30 LP',
+  'Deck bonus by division: IV +0, III +2, II +4, I +6 score',
+  'Deck bonus by apex tier: Master +0, Grandmaster +3, Challenger +6 score',
   'Draw: 0 LP',
   'Promotion at 100 LP with carry',
   'Demotion shield: 3 losses after promotion',
@@ -25,14 +29,16 @@ export function RanksPage() {
   const laddersEnabled = isGlobalLadderEnabled()
   const [isLoadingLadders, setIsLoadingLadders] = useState(laddersEnabled)
   const [ownedCardsLadder, setOwnedCardsLadder] = useState<LadderEntry[]>([])
-  const [peakRankLadder, setPeakRankLadder] = useState<LadderEntry[]>([])
+  const [peakRankLadder3x3, setPeakRankLadder3x3] = useState<LadderEntry[]>([])
+  const [peakRankLadder4x4, setPeakRankLadder4x4] = useState<LadderEntry[]>([])
   const [ladderError, setLadderError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!laddersEnabled) {
       setIsLoadingLadders(false)
       setOwnedCardsLadder([])
-      setPeakRankLadder([])
+      setPeakRankLadder3x3([])
+      setPeakRankLadder4x4([])
       setLadderError(null)
       return
     }
@@ -43,12 +49,17 @@ export function RanksPage() {
       setIsLoadingLadders(true)
       setLadderError(null)
       try {
-        const [owned, peak] = await Promise.all([fetchOwnedCardsLadder(50), fetchPeakRankLadder(50)])
+        const [owned, peak3x3, peak4x4] = await Promise.all([
+          fetchOwnedCardsLadder(50),
+          fetchPeakRankLadder('3x3', 50),
+          fetchPeakRankLadder('4x4', 50),
+        ])
         if (!mounted) {
           return
         }
         setOwnedCardsLadder(owned)
-        setPeakRankLadder(peak)
+        setPeakRankLadder3x3(peak3x3)
+        setPeakRankLadder4x4(peak4x4)
       } catch (error) {
         if (!mounted) {
           return
@@ -139,13 +150,29 @@ export function RanksPage() {
               )}
             </article>
 
-            <article className="ranks-ladder-card" data-testid="ranks-peak-ladder">
-              <h3>Highest Peak Rank</h3>
-              {peakRankLadder.length === 0 ? (
+            <article className="ranks-ladder-card" data-testid="ranks-peak-ladder-3x3">
+              <h3>Highest Peak Rank 3X3</h3>
+              {peakRankLadder3x3.length === 0 ? (
                 <p className="small">No players yet.</p>
               ) : (
                 <ol className="ranks-ladder-list">
-                  {peakRankLadder.map((entry, index) => (
+                  {peakRankLadder3x3.map((entry, index) => (
+                    <li key={entry.userId} className="ranks-ladder-row">
+                      <span className="ranks-ladder-position">#{index + 1}</span>
+                      <span className="ranks-ladder-name">{entry.playerName}</span>
+                      <span className="ranks-ladder-value">{entry.peakRankLabel}</span>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </article>
+            <article className="ranks-ladder-card" data-testid="ranks-peak-ladder-4x4">
+              <h3>Highest Peak Rank 4X4</h3>
+              {peakRankLadder4x4.length === 0 ? (
+                <p className="small">No players yet.</p>
+              ) : (
+                <ol className="ranks-ladder-list">
+                  {peakRankLadder4x4.map((entry, index) => (
                     <li key={entry.userId} className="ranks-ladder-row">
                       <span className="ranks-ladder-position">#{index + 1}</span>
                       <span className="ranks-ladder-name">{entry.playerName}</span>

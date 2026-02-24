@@ -7,17 +7,25 @@ import {
   buildCpuOpponent,
   buildCpuOpponentForLevel,
   computeDeckScore,
+  getCpuOpponentPreview,
   getCpuOpponentPreviewForLevel,
   getOpponentLevelForProfile,
   getOpponentLevelInfo,
+  getRankedDeckScoreBonusForProfile,
   opponentLevelConfigs,
 } from './opponents'
 
-function makeProfileAtTier(tierId: ReturnType<typeof createDefaultProfile>['ranked']['tier']) {
+function makeProfileAtTier(
+  tierId: ReturnType<typeof createDefaultProfile>['rankedByMode']['4x4']['tier'],
+  division: ReturnType<typeof createDefaultProfile>['rankedByMode']['4x4']['division'] = 'IV',
+) {
   const profile = createDefaultProfile()
-  profile.ranked.tier = tierId
-  profile.ranked.division =
-    tierId === 'master' || tierId === 'grandmaster' || tierId === 'challenger' ? null : 'IV'
+  profile.rankedByMode['3x3'].tier = tierId
+  profile.rankedByMode['4x4'].tier = tierId
+  profile.rankedByMode['3x3'].division =
+    tierId === 'master' || tierId === 'grandmaster' || tierId === 'challenger' ? null : division
+  profile.rankedByMode['4x4'].division =
+    tierId === 'master' || tierId === 'grandmaster' || tierId === 'challenger' ? null : division
   return profile
 }
 
@@ -27,8 +35,8 @@ function median(values: number[]): number {
 }
 
 describe('opponents', () => {
-  test('maps ranked tiers to opponent levels 1..8', () => {
-    const expectedByTier: Array<{ tierId: ReturnType<typeof createDefaultProfile>['ranked']['tier']; level: OpponentLevel }> = [
+  test('maps ranked tiers to locked opponent levels capped at L8', () => {
+    const expectedByTier: Array<{ tierId: ReturnType<typeof createDefaultProfile>['rankedByMode']['4x4']['tier']; level: OpponentLevel }> = [
       { tierId: 'iron', level: 1 },
       { tierId: 'bronze', level: 2 },
       { tierId: 'silver', level: 3 },
@@ -43,7 +51,8 @@ describe('opponents', () => {
 
     for (const { tierId, level } of expectedByTier) {
       const profile = makeProfileAtTier(tierId)
-      expect(getOpponentLevelForProfile(profile)).toBe(level)
+      expect(getOpponentLevelForProfile(profile, '3x3')).toBe(level)
+      expect(getOpponentLevelForProfile(profile, '4x4')).toBe(level)
     }
   })
 
@@ -71,6 +80,63 @@ describe('opponents', () => {
     expect(new Set(opponent.deck).size).toBe(5)
     expect(opponent.deckScore).toBeGreaterThanOrEqual(opponent.scoreRange.min)
     expect(opponent.deckScore).toBeLessThanOrEqual(opponent.scoreRange.max)
+  })
+
+  test('builds CPU opponents for selected high levels L9 and L10', () => {
+    const playerDeck = createDefaultProfile().deckSlots[0].cards
+    const opponentL9 = buildCpuOpponentForLevel(9, playerDeck, 4040)
+    const opponentL10 = buildCpuOpponentForLevel(10, playerDeck, 5050)
+
+    expect(opponentL9.level).toBe(9)
+    expect(opponentL9.tierId).toBe('grandmaster')
+    expect(opponentL9.aiProfile).toBe('expert')
+    expect(opponentL9.scoreRange).toEqual({ min: 156, max: 168 })
+    expect(opponentL9.winGoldBonus).toBe(32)
+    expect(opponentL9.deck).toHaveLength(5)
+    expect(new Set(opponentL9.deck).size).toBe(5)
+    expect(opponentL9.deckScore).toBeGreaterThanOrEqual(opponentL9.scoreRange.min)
+    expect(opponentL9.deckScore).toBeLessThanOrEqual(opponentL9.scoreRange.max)
+
+    expect(opponentL10.level).toBe(10)
+    expect(opponentL10.tierId).toBe('challenger')
+    expect(opponentL10.aiProfile).toBe('expert')
+    expect(opponentL10.scoreRange).toEqual({ min: 160, max: 170 })
+    expect(opponentL10.winGoldBonus).toBe(36)
+    expect(opponentL10.deck).toHaveLength(5)
+    expect(new Set(opponentL10.deck).size).toBe(5)
+    expect(opponentL10.deckScore).toBeGreaterThanOrEqual(opponentL10.scoreRange.min)
+    expect(opponentL10.deckScore).toBeLessThanOrEqual(opponentL10.scoreRange.max)
+  })
+
+  test('applies ranked deck score bonus per division at fixed non-apex tier', () => {
+    const playerDeck = createDefaultProfile().deckSlots[0].cards
+    const profileIv = makeProfileAtTier('gold', 'IV')
+    const profileIii = makeProfileAtTier('gold', 'III')
+    const profileIi = makeProfileAtTier('gold', 'II')
+    const profileI = makeProfileAtTier('gold', 'I')
+
+    expect(getCpuOpponentPreview(profileIv, playerDeck).scoreRange).toEqual({ min: 72, max: 90 })
+    expect(getCpuOpponentPreview(profileIii, playerDeck).scoreRange).toEqual({ min: 74, max: 92 })
+    expect(getCpuOpponentPreview(profileIi, playerDeck).scoreRange).toEqual({ min: 76, max: 94 })
+    expect(getCpuOpponentPreview(profileI, playerDeck).scoreRange).toEqual({ min: 78, max: 96 })
+  })
+
+  test('applies ranked deck score bonus across apex tiers even at locked L8', () => {
+    const playerDeck = createDefaultProfile().deckSlots[0].cards
+    const masterProfile = makeProfileAtTier('master')
+    const grandmasterProfile = makeProfileAtTier('grandmaster')
+    const challengerProfile = makeProfileAtTier('challenger')
+
+    expect(getCpuOpponentPreview(masterProfile, playerDeck).scoreRange).toEqual({ min: 150, max: 178 })
+    expect(getCpuOpponentPreview(grandmasterProfile, playerDeck).scoreRange).toEqual({ min: 153, max: 181 })
+    expect(getCpuOpponentPreview(challengerProfile, playerDeck).scoreRange).toEqual({ min: 156, max: 184 })
+  })
+
+  test('exposes ranked deck bonus for UI from player profile rank state', () => {
+    expect(getRankedDeckScoreBonusForProfile(makeProfileAtTier('iron', 'IV'), '3x3')).toBe(0)
+    expect(getRankedDeckScoreBonusForProfile(makeProfileAtTier('diamond', 'I'), '3x3')).toBe(6)
+    expect(getRankedDeckScoreBonusForProfile(makeProfileAtTier('grandmaster'), '3x3')).toBe(3)
+    expect(getRankedDeckScoreBonusForProfile(makeProfileAtTier('challenger'), '3x3')).toBe(6)
   })
 
   test('returns preview config for an explicitly selected level', () => {
@@ -102,8 +168,7 @@ describe('opponents', () => {
     const playerDeck = playerProfile.deckSlots[0].cards
 
     for (const config of opponentLevelConfigs) {
-      const profile = makeProfileAtTier(config.tierId)
-      const opponent = buildCpuOpponent(profile, playerDeck, config.level * 11)
+      const opponent = buildCpuOpponentForLevel(config.level, playerDeck, config.level * 11)
       const allowedRarities = new Set(Object.keys(config.rarityWeights))
 
       for (const cardId of opponent.deck) {
@@ -122,16 +187,14 @@ describe('opponents', () => {
     expect(a).toEqual(b)
   })
 
-  test('increases median CPU deck score from L1 to L8', () => {
+  test('increases median CPU deck score from L1 to L10', () => {
     const playerDeck = createDefaultProfile().deckSlots[0].cards
     const mediansByLevel: number[] = []
 
-    for (let level = 1 as OpponentLevel; level <= 8; level = (level + 1) as OpponentLevel) {
-      const config = opponentLevelConfigs[level - 1]
-      const profile = makeProfileAtTier(config.tierId)
+    for (let level = 1 as OpponentLevel; level <= 10; level = (level + 1) as OpponentLevel) {
       const samples: number[] = []
       for (let seed = 1; seed <= 21; seed += 1) {
-        samples.push(buildCpuOpponent(profile, playerDeck, seed).deckScore)
+        samples.push(buildCpuOpponentForLevel(level, playerDeck, seed).deckScore)
       }
       mediansByLevel.push(median(samples))
     }

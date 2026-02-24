@@ -182,9 +182,15 @@ function cloneProfile(profile: PlayerProfile): PlayerProfile {
       m2_combo_practitioner: { ...profile.missions.m2_combo_practitioner },
       m3_corner_tactician: { ...profile.missions.m3_corner_tactician },
     },
-    ranked: {
-      ...profile.ranked,
-      resultStreak: { ...profile.ranked.resultStreak },
+    rankedByMode: {
+      '3x3': {
+        ...profile.rankedByMode['3x3'],
+        resultStreak: { ...profile.rankedByMode['3x3'].resultStreak },
+      },
+      '4x4': {
+        ...profile.rankedByMode['4x4'],
+        resultStreak: { ...profile.rankedByMode['4x4'].resultStreak },
+      },
     },
     settings: { ...profile.settings },
   }

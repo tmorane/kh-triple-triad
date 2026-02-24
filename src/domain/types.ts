@@ -1,3 +1,5 @@
+import type { TowerProgressState, TowerRunState } from './tower/types'
+
 export type CardId = string
 
 export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary'
@@ -51,7 +53,7 @@ export interface RuleSet {
   plus: boolean
 }
 
-export type MatchQueue = 'normal' | 'ranked'
+export type MatchQueue = 'normal' | 'ranked' | 'tower'
 export type MatchMode = '3x3' | '4x4'
 
 export interface MatchConfig {
@@ -199,12 +201,14 @@ export interface RankedState {
   demotionShieldLosses: number
 }
 
+export type RankedByMode = Record<MatchMode, RankedState>
+
 export interface SpecialPackPityState {
   legendaryFocusChancePercent: number
 }
 
 export interface PlayerProfile {
-  version: 7
+  version: 9
   playerName: string
   gold: number
   ownedCardIds: CardId[]
@@ -216,8 +220,10 @@ export interface PlayerProfile {
   achievements: AchievementUnlock[]
   missions: Record<MissionId, MissionProgress>
   specialPackPity?: SpecialPackPityState
-  ranked: RankedState
-  settings: { audioEnabled: false }
+  rankedByMode: RankedByMode
+  towerProgress?: TowerProgressState
+  towerRun?: TowerRunState | null
+  settings: { audioEnabled: boolean }
 }
 
-export type PlayerProfileV7 = PlayerProfile
+export type PlayerProfileV8 = PlayerProfile

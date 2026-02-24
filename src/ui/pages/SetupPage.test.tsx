@@ -5,8 +5,16 @@ import { MemoryRouter } from 'react-router-dom'
 import { GameProvider } from '../../app/GameContext'
 import { cardPool } from '../../domain/cards/cardPool'
 import { createDefaultProfile, saveProfile } from '../../domain/progression/profile'
-import type { PlayerProfile } from '../../domain/types'
+import type { CardCategoryId, PlayerProfile } from '../../domain/types'
 import { SetupPage } from './SetupPage'
+
+function pickCardIdsByCategory(categoryId: CardCategoryId, count: number): string[] {
+  const matching = cardPool.filter((card) => card.categoryId === categoryId).map((card) => card.id)
+  if (matching.length < count) {
+    throw new Error(`Missing ${count} cards for category ${categoryId}.`)
+  }
+  return matching.slice(0, count)
+}
 
 function createPlayProfile(): PlayerProfile {
   const profile = createDefaultProfile()
@@ -25,6 +33,26 @@ function createPlayProfile(): PlayerProfile {
   profile.deckSlots[2].mode = '4x4'
   profile.deckSlots[2].cards = []
   profile.deckSlots[2].cards4x4 = []
+
+  profile.selectedDeckSlotId = 'slot-1'
+  return profile
+}
+
+function createSynergyPlayProfile(): PlayerProfile {
+  const profile = createPlayProfile()
+
+  const obscur = pickCardIdsByCategory('sans_coeur', 4)
+  const psy = pickCardIdsByCategory('simili', 2)
+  const combat = pickCardIdsByCategory('nescient', 2)
+  const nature = pickCardIdsByCategory('humain', 5)
+
+  profile.deckSlots[0].mode = '4x4'
+  profile.deckSlots[0].cards4x4 = [...obscur.slice(0, 3), ...psy.slice(0, 2), ...nature.slice(0, 3)]
+  profile.deckSlots[0].cards = profile.deckSlots[0].cards4x4.slice(0, 5)
+
+  profile.deckSlots[1].mode = '4x4'
+  profile.deckSlots[1].cards4x4 = [...nature, obscur[3]!, psy[0]!, combat[0]!]
+  profile.deckSlots[1].cards = profile.deckSlots[1].cards4x4.slice(0, 5)
 
   profile.selectedDeckSlotId = 'slot-1'
   return profile
@@ -55,6 +83,7 @@ describe('SetupPage (Play lobby)', () => {
     expect(screen.getByTestId('setup-mode-4x4')).toBeInTheDocument()
     expect(screen.getByTestId('setup-mode-3x3-ranked')).toBeInTheDocument()
     expect(screen.getByTestId('setup-mode-4x4-ranked')).toBeInTheDocument()
+    expect(screen.getByTestId('setup-mode-tower')).toBeInTheDocument()
     expect(screen.queryByTestId('start-match-button')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Deck slots')).not.toBeInTheDocument()
   })
@@ -72,6 +101,7 @@ describe('SetupPage (Play lobby)', () => {
     expect(within(selectedLeftStack).getByLabelText('Deck slots')).toBeInTheDocument()
     expect(screen.getByTestId('setup-deck-mode-manual')).toBeInTheDocument()
     expect(screen.getByTestId('setup-opponent-level-option-1')).toBeInTheDocument()
+    expect(screen.getByTestId('setup-opponent-level-option-10')).toBeInTheDocument()
     expect(screen.getByTestId('setup-new-challenger')).toBeInTheDocument()
     expect(screen.getByTestId('setup-opponent-score-range')).toBeInTheDocument()
     expect(screen.getByTestId('setup-opponent-bonus')).toBeInTheDocument()
@@ -80,6 +110,50 @@ describe('SetupPage (Play lobby)', () => {
     expect(screen.queryByText('Next Opponent')).not.toBeInTheDocument()
     expect(screen.getByTestId('start-match-button')).toHaveTextContent('Start 4x4 Normal')
     expect(screen.getByTestId('start-match-button')).toBeEnabled()
+  })
+
+  test('uses a 4-column selected preview grid in 4x4 setup', async () => {
+    const user = userEvent.setup()
+    renderSetup()
+
+    await user.click(screen.getByTestId('setup-mode-4x4'))
+
+    const selectedCards = screen.getByTestId('setup-selected-cards')
+    expect(selectedCards.style.getPropertyValue('--setup-selected-columns').trim()).toBe('4')
+  })
+
+  test('shows synergy guide in manual preview after selecting a preset', async () => {
+    const user = userEvent.setup()
+    renderSetup(createSynergyPlayProfile())
+
+    await user.click(screen.getByTestId('setup-mode-4x4'))
+
+    expect(screen.getByTestId('setup-synergy-guide')).toBeInTheDocument()
+    expect(screen.getByTestId('setup-synergy-detail-title')).toHaveTextContent('Obscur')
+  })
+
+  test('hides synergy guide when auto deck mode is enabled', async () => {
+    const user = userEvent.setup()
+    renderSetup(createSynergyPlayProfile())
+
+    await user.click(screen.getByTestId('setup-mode-3x3'))
+    expect(screen.getByTestId('setup-synergy-guide')).toBeInTheDocument()
+
+    await user.click(screen.getByTestId('setup-deck-mode-auto'))
+    expect(screen.queryByTestId('setup-synergy-guide')).not.toBeInTheDocument()
+  })
+
+  test('updates synergy guide when switching deck slot in setup', async () => {
+    const user = userEvent.setup()
+    renderSetup(createSynergyPlayProfile())
+
+    await user.click(screen.getByTestId('setup-mode-4x4'))
+    expect(screen.getByTestId('setup-synergy-detail-title')).toHaveTextContent('Obscur')
+
+    await user.click(screen.getByTestId('deck-slot-slot-2'))
+
+    expect(screen.getByTestId('setup-synergy-detail-title')).toHaveTextContent('Nature')
+    expect(screen.getByTestId('setup-synergy-detail-secondary')).toHaveTextContent('pas de bonus secondaire')
   })
 
   test('ranked preset locks opponent level and uses ranked start label', async () => {
@@ -91,9 +165,60 @@ describe('SetupPage (Play lobby)', () => {
     expect(screen.getByTestId('setup-selected-preset')).toHaveTextContent('3X3 RANKED')
     expect(screen.getByTestId('setup-ranked-note')).toBeInTheDocument()
     expect(screen.getByTestId('setup-opponent-ranked-lock')).toBeInTheDocument()
+    expect(screen.getByTestId('setup-opponent-rank-bonus')).toHaveTextContent('Rank bonus: +0 score')
     expect(screen.queryByTestId('setup-opponent-level-option-1')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('setup-opponent-level-option-10')).not.toBeInTheDocument()
     expect(screen.getByTestId('start-match-button')).toHaveTextContent('Start 3x3 Ranked')
     expect(within(screen.getByTestId('setup-selected-cards')).getAllByTestId(/^setup-selected-card-/)).toHaveLength(5)
+  })
+
+  test('tower preset hides auto deck mode and starts from floor 1 when no run exists', async () => {
+    const user = userEvent.setup()
+    renderSetup()
+
+    await user.click(screen.getByTestId('setup-mode-tower'))
+
+    expect(screen.getByTestId('setup-selected-preset')).toHaveTextContent('4X4 TOWER')
+    expect(screen.queryByTestId('setup-deck-mode-manual')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('setup-deck-mode-auto')).not.toBeInTheDocument()
+    expect(screen.getByTestId('setup-tower-floor')).toHaveTextContent('Floor: 1')
+    expect(screen.getByTestId('setup-tower-checkpoint')).toHaveTextContent('Checkpoint: 0')
+    expect(screen.getByTestId('start-match-button')).toHaveTextContent('Start Tower Floor 1')
+  })
+
+  test('tower preset shows resume label when an active run exists', async () => {
+    const user = userEvent.setup()
+    const profile = createPlayProfile()
+    profile.towerProgress = {
+      bestFloor: 22,
+      checkpointFloor: 20,
+      highestClearedFloor: 0,
+      clearedFloor100: false,
+    }
+    profile.towerRun = {
+      mode: '4x4',
+      floor: 23,
+      checkpointFloor: 20,
+      deck: [...profile.deckSlots[0].cards4x4],
+      relics: {
+        golden_pass: 1,
+        initiative_core: 0,
+        boss_breaker: 0,
+        stabilizer: 0,
+        deep_pockets: 0,
+        draft_chisel: 0,
+        high_risk_token: 0,
+      },
+      pendingRewards: [],
+      seed: 1234,
+    }
+
+    renderSetup(profile)
+    await user.click(screen.getByTestId('setup-mode-tower'))
+
+    expect(screen.getByTestId('setup-tower-floor')).toHaveTextContent('Floor: 23')
+    expect(screen.getByTestId('setup-tower-checkpoint')).toHaveTextContent('Checkpoint: 20')
+    expect(screen.getByTestId('start-match-button')).toHaveTextContent('Resume Tower Floor 23')
   })
 
   test('deck completeness follows selected mode and slot', async () => {

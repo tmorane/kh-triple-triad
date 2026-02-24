@@ -17,12 +17,14 @@ type GameContextValue = NonNullable<ComponentProps<typeof GameContext.Provider>[
 function renderPacksWithContext(options: {
   profileGold?: number
   rarePackCount?: number
+  audioEnabled?: boolean
   openOwnedPack: (packId: ShopPackId) => OpenedPackResult
   openOwnedPacks?: (packId: ShopPackId, quantity: number) => OpenedPackBatchResult
 }) {
   const profile = createDefaultProfile()
   profile.gold = options.profileGold ?? profile.gold
   profile.packInventoryByRarity.rare = options.rarePackCount ?? 0
+  profile.settings.audioEnabled = options.audioEnabled ?? true
 
   const contextValue: GameContextValue = {
     profile,
@@ -48,6 +50,9 @@ function renderPacksWithContext(options: {
       throw new Error('Not implemented in test.')
     },
     renamePlayer: () => {
+      throw new Error('Not implemented in test.')
+    },
+    setAudioEnabled: () => {
       throw new Error('Not implemented in test.')
     },
     renameDeckSlot: () => {
@@ -226,6 +231,31 @@ describe('PacksPage', () => {
       vi.advanceTimersByTime(1000)
     })
     expect(playNewCardSound).toHaveBeenCalledTimes(2)
+  })
+
+  test('does not play sounds when profile audio is disabled', () => {
+    const openOwnedPack = vi.fn<(packId: ShopPackId) => OpenedPackResult>().mockReturnValue({
+      packId: 'rare',
+      remainingPackCount: 0,
+      pulls: [
+        { cardId: 'c41', rarity: 'rare', isNewOwnership: true, copiesAfter: 1 },
+        { cardId: 'c42', rarity: 'rare', isNewOwnership: true, copiesAfter: 1 },
+        { cardId: 'c43', rarity: 'rare', isNewOwnership: true, copiesAfter: 1 },
+      ],
+    })
+
+    renderPacksWithContext({
+      rarePackCount: 1,
+      audioEnabled: false,
+      openOwnedPack,
+    })
+
+    fireEvent.click(screen.getByTestId('open-pack-rare'))
+    act(() => {
+      vi.advanceTimersByTime(2000)
+    })
+
+    expect(playNewCardSound).not.toHaveBeenCalled()
   })
 
   test('opens multiple packs at once when quantity selector is above 1', () => {

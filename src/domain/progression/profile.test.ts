@@ -48,7 +48,7 @@ describe('profile persistence', () => {
   test('creates a default profile on first launch', () => {
     const profile = loadProfile()
 
-    expect(profile.version).toBe(7)
+    expect(profile.version).toBe(9)
     expect(profile.playerName).toBe('Joueur')
     expect(profile.gold).toBe(100)
     expect(profile.ownedCardIds).toEqual(starterOwnedCardIds)
@@ -86,7 +86,7 @@ describe('profile persistence', () => {
       'm2_combo_practitioner',
       'm3_corner_tactician',
     ])
-    expect(profile.ranked).toEqual({
+    expect(profile.rankedByMode['4x4']).toEqual({
       tier: 'iron',
       division: 'IV',
       lp: 0,
@@ -97,7 +97,8 @@ describe('profile persistence', () => {
       resultStreak: { type: 'none', count: 0 },
       demotionShieldLosses: 0,
     })
-    expect(profile.settings.audioEnabled).toBe(false)
+    expect(profile.rankedByMode['3x3']).toEqual(profile.rankedByMode['4x4'])
+    expect(profile.settings.audioEnabled).toBe(true)
     expect(profile.specialPackPity).toEqual({ legendaryFocusChancePercent: 1 })
   })
 
@@ -133,8 +134,8 @@ describe('profile persistence', () => {
     expect(profile.deckSlots[0].cards4x4).toHaveLength(8)
     expect(profile.deckSlots[0].cards.every((cardId) => profile.ownedCardIds.includes(cardId))).toBe(true)
     expect(profile.deckSlots[0].cards4x4.every((cardId) => profile.ownedCardIds.includes(cardId))).toBe(true)
-    expect(profile.ranked.tier).toBe('iron')
-    expect(profile.ranked.lp).toBe(0)
+    expect(profile.rankedByMode['4x4'].tier).toBe('iron')
+    expect(profile.rankedByMode['4x4'].lp).toBe(0)
   })
 
   test('returns exactly what was saved on reload', () => {
@@ -149,11 +150,14 @@ describe('profile persistence', () => {
         streak: 0,
         bestStreak: 0,
       },
-      ranked: {
-        ...profile.ranked,
-        tier: 'silver',
-        division: 'I',
-        lp: 88,
+      rankedByMode: {
+        ...profile.rankedByMode,
+        '4x4': {
+          ...profile.rankedByMode['4x4'],
+          tier: 'silver',
+          division: 'I',
+          lp: 88,
+        },
       },
       selectedDeckSlotId: 'slot-2' as const,
       deckSlots: [
@@ -225,7 +229,7 @@ describe('profile persistence', () => {
     )
   })
 
-  test('migrates a v5 profile to v7, initializes missions, and resets ranked state', () => {
+  test('migrates a v5 profile to v9, initializes missions, and resets ranked state', () => {
     const v5 = {
       version: 5,
       gold: 420,
@@ -263,7 +267,7 @@ describe('profile persistence', () => {
 
     const migrated = loadProfile()
 
-    expect(migrated.version).toBe(7)
+    expect(migrated.version).toBe(9)
     expect(migrated.gold).toBe(420)
     expect(migrated.stats).toEqual(v5.stats)
     expect(migrated.deckSlots[0].cards4x4).toEqual(fillToEight(v5.deckSlots[0].cards, starterOwnedCardIds))
@@ -273,7 +277,7 @@ describe('profile persistence', () => {
     expect(migrated.deckSlots[1].mode).toBe('4x4')
     expect(migrated.deckSlots[2].mode).toBe('4x4')
     expect(Object.keys(migrated.missions)).toHaveLength(3)
-    expect(migrated.ranked).toEqual({
+    expect(migrated.rankedByMode['4x4']).toEqual({
       tier: 'iron',
       division: 'IV',
       lp: 0,
@@ -284,12 +288,14 @@ describe('profile persistence', () => {
       resultStreak: { type: 'none', count: 0 },
       demotionShieldLosses: 0,
     })
+    expect(migrated.rankedByMode['3x3']).toEqual(migrated.rankedByMode['4x4'])
 
     const persisted = JSON.parse(localStorage.getItem(PROFILE_STORAGE_KEY) ?? '{}') as { version?: number }
-    expect(persisted.version).toBe(7)
+    expect(persisted.version).toBe(9)
+    expect(migrated.settings.audioEnabled).toBe(true)
   })
 
-  test('migrates a v2 profile to v7 and preserves deck/stat data', () => {
+  test('migrates a v2 profile to v9 and preserves deck/stat data', () => {
     const v2Owned = starterOwnedCardIds
     const v2 = {
       version: 2,
@@ -325,7 +331,7 @@ describe('profile persistence', () => {
 
     const migrated = loadProfile()
 
-    expect(migrated.version).toBe(7)
+    expect(migrated.version).toBe(9)
     expect(migrated.gold).toBe(175)
     expect(migrated.ownedCardIds).toEqual(v2.ownedCardIds)
     expect(migrated.stats).toEqual(v2.stats)
@@ -335,27 +341,39 @@ describe('profile persistence', () => {
     expect(migrated.deckSlots[0].mode).toBe('4x4')
     expect(migrated.cardCopiesById).toEqual(copiesFor(v2Owned))
     expect(migrated.packInventoryByRarity).toEqual(emptyPackInventory())
-    expect(migrated.ranked.tier).toBe('iron')
+    expect(migrated.rankedByMode['4x4'].tier).toBe('iron')
   })
 
   test('migrates a v6 profile without playerName and keeps existing progression data', () => {
     const base = createDefaultProfile()
-    const rest = { ...base }
-    delete (rest as { playerName?: string }).playerName
-    delete (rest as { missions?: unknown }).missions
     const legacyV6 = {
-      ...rest,
       version: 6 as const,
+      gold: 333,
+      ownedCardIds: [...base.ownedCardIds],
+      cardCopiesById: { ...base.cardCopiesById },
+      packInventoryByRarity: { ...base.packInventoryByRarity },
+      deckSlots: base.deckSlots.map((slot) => ({
+        id: slot.id,
+        name: slot.name,
+        cards: [...slot.cards],
+        rules: { ...slot.rules },
+      })),
+      selectedDeckSlotId: base.selectedDeckSlotId,
+      stats: {
+        ...base.stats,
+        played: 4,
+        won: 3,
+      },
+      achievements: [...base.achievements],
+      ranked: { ...base.rankedByMode['4x4'] },
+      settings: { audioEnabled: false as const },
     }
-    legacyV6.gold = 333
-    legacyV6.stats.played = 4
-    legacyV6.stats.won = 3
 
     localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(legacyV6))
 
     const migrated = loadProfile()
 
-    expect(migrated.version).toBe(7)
+    expect(migrated.version).toBe(9)
     expect(migrated.playerName).toBe('Joueur')
     expect(migrated.gold).toBe(333)
     expect(migrated.stats.played).toBe(4)
@@ -385,7 +403,7 @@ describe('profile persistence', () => {
     expect(migrated.deckSlots[2].mode).toBe('4x4')
   })
 
-  test('hydrates missing legendary focus pity state on loaded v7 profile', () => {
+  test('hydrates missing legendary focus pity state on loaded legacy profile', () => {
     const base = createDefaultProfile()
     const legacyWithoutPity = { ...base }
     delete (legacyWithoutPity as { specialPackPity?: unknown }).specialPackPity
@@ -476,5 +494,64 @@ describe('profile persistence', () => {
     expect(deleted.valid).toBe(true)
     expect(listStoredProfiles().profiles.find((profile) => profile.id === bobId)).toBeUndefined()
     expect(loadProfile().playerName).toBe('Host')
+  })
+
+  test('default profile initializes independent ranked ladders for 3x3 and 4x4', () => {
+    const profile = loadProfile()
+    expect(profile.version).toBe(9)
+    expect(profile.rankedByMode['3x3']).toEqual({
+      tier: 'iron',
+      division: 'IV',
+      lp: 0,
+      wins: 0,
+      losses: 0,
+      draws: 0,
+      matchesPlayed: 0,
+      resultStreak: { type: 'none', count: 0 },
+      demotionShieldLosses: 0,
+    })
+    expect(profile.rankedByMode['4x4']).toEqual(profile.rankedByMode['3x3'])
+  })
+
+  test('migrates v8 profile to v9 and forces audio on', () => {
+    const v8Profile = {
+      ...createDefaultProfile(),
+      version: 8 as const,
+      settings: { audioEnabled: false as const },
+    }
+
+    localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(v8Profile))
+    const loaded = loadProfile()
+
+    expect(loaded.version).toBe(9)
+    expect(loaded.settings.audioEnabled).toBe(true)
+  })
+
+  test('migrates v7 profile ranked into both v9 ladders', () => {
+    const legacyV7 = {
+      ...createDefaultProfile(),
+      version: 7 as const,
+      settings: { audioEnabled: false as const },
+      ranked: {
+        tier: 'gold' as const,
+        division: 'II' as const,
+        lp: 42,
+        wins: 7,
+        losses: 3,
+        draws: 1,
+        matchesPlayed: 11,
+        resultStreak: { type: 'win' as const, count: 2 },
+        demotionShieldLosses: 1,
+      },
+    }
+    delete (legacyV7 as { rankedByMode?: unknown }).rankedByMode
+
+    localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(legacyV7))
+    const loaded = loadProfile()
+
+    expect(loaded.version).toBe(9)
+    expect(loaded.rankedByMode['3x3']).toEqual(legacyV7.ranked)
+    expect(loaded.rankedByMode['4x4']).toEqual(legacyV7.ranked)
+    expect(loaded.settings.audioEnabled).toBe(true)
   })
 })

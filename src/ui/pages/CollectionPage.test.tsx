@@ -66,6 +66,7 @@ function renderCollection(valueOverrides: Partial<GameContextValue> = {}) {
         deckScore: 45,
         winGoldBonus: 0,
       },
+      rankedMode: null,
       rankedUpdate: null,
     },
     startMatch: () => {
@@ -143,6 +144,14 @@ function getVisibleCollectionCards() {
   return screen.queryAllByTestId(/^collection-card-/)
 }
 
+function getSectionCardIds(sectionTestId: string): string[] {
+  const section = screen.getByTestId(sectionTestId)
+  return within(section)
+    .queryAllByTestId(/^collection-card-/)
+    .map((card) => card.getAttribute('data-testid')?.replace('collection-card-', '') ?? '')
+    .filter(Boolean)
+}
+
 function getCardIdByType(typeId: 'sans_coeur' | 'simili' | 'nescient' | 'humain'): string {
   const card = cardPool.find((entry) => getTypeIdByCategory(entry.categoryId) === typeId)
   if (!card) {
@@ -151,20 +160,25 @@ function getCardIdByType(typeId: 'sans_coeur' | 'simili' | 'nescient' | 'humain'
   return card.id
 }
 
-const raritySectionLabels = {
-  common: 'Communes',
-  uncommon: 'Peu communes',
-  rare: 'Rares',
-  epic: 'Epiques',
-  legendary: 'Legendaires',
-} as const
-
 describe('CollectionPage', () => {
   beforeEach(() => {
     localStorage.clear()
   })
 
-  test('renders four compact synergy logos in inspect panel', () => {
+  test('renders pokedex headings and french filter labels', () => {
+    renderCollection()
+
+    expect(screen.getByRole('heading', { name: 'Pokédex' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Index Pokédex' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Fiche' })).toBeInTheDocument()
+    expect(screen.getByText(/Entrées capturées :/)).toBeInTheDocument()
+    expect(screen.getByText(/Copies totales :/)).toBeInTheDocument()
+    expect(screen.getAllByText('Rareté').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Type').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Découverte').length).toBeGreaterThan(0)
+  })
+
+  test('renders four compact synergy logos in detail panel', () => {
     renderCollection()
 
     const legend = screen.getByTestId('collection-synergy-legend')
@@ -227,7 +241,7 @@ describe('CollectionPage', () => {
     expect(within(card).getByText('NEW')).toBeInTheDocument()
   })
 
-  test('shows type logo badge on owned cards in the collection grid', () => {
+  test('shows type logo badge on owned cards in the pokedex grid', () => {
     renderCollection()
 
     const card = screen.getByTestId('collection-card-c11')
@@ -235,7 +249,7 @@ describe('CollectionPage', () => {
     expect(within(card).getByTestId('triad-card-type-logo')).toHaveAttribute('src', '/logos-types/obscur.png')
   })
 
-  test('does not show type logo badge on locked cards in the collection grid', () => {
+  test('does not show type logo badge on locked cards in the pokedex grid', () => {
     renderCollection()
 
     const card = screen.getByTestId('collection-card-c84')
@@ -243,30 +257,43 @@ describe('CollectionPage', () => {
     expect(within(card).queryByTestId('triad-card-type-logo')).not.toBeInTheDocument()
   })
 
-  test('shows all cards by default with full result count', () => {
+  test('shows all cards by default with full result count in french', () => {
     renderCollection()
 
     expect(getVisibleCollectionCards()).toHaveLength(cardPool.length)
     expect(screen.getByTestId('collection-filter-result-count')).toHaveTextContent(
-      `${cardPool.length} cards shown / ${cardPool.length} total`,
+      `${cardPool.length} entrées affichées / ${cardPool.length} au total`,
     )
   })
 
-  test('shows cards grouped by rarity with owned/total counters', () => {
+  test('groups cards by captured status and sorts captured cards by real pokedex number', () => {
     const profile = createDefaultProfile()
-    profile.ownedCardIds.push('c11')
-    profile.cardCopiesById.c11 = 2
+    profile.ownedCardIds = ['c52', 'c02']
+    profile.cardCopiesById = { c52: 1, c02: 1 }
     renderCollection({ profile })
 
-    const expectedOrder = ['common', 'uncommon', 'rare', 'epic', 'legendary'] as const
-    const titles = expectedOrder.map((rarity) => screen.getByTestId(`collection-rarity-title-${rarity}`))
-    expect(titles.map((title) => title.textContent)).toEqual(
-      expectedOrder.map((rarity) => {
-        const total = cardPool.filter((card) => card.rarity === rarity).length
-        const ownedCount = cardPool.filter((card) => card.rarity === rarity && profile.ownedCardIds.includes(card.id)).length
-        return `${raritySectionLabels[rarity]} (${ownedCount}/${total})`
-      }),
-    )
+    const capturedCardIds = getSectionCardIds('collection-status-section-owned')
+    const lockedCardIds = getSectionCardIds('collection-status-section-locked')
+
+    expect(capturedCardIds.length).toBe(profile.ownedCardIds.length)
+    expect(lockedCardIds.length).toBe(cardPool.length - profile.ownedCardIds.length)
+
+    expect(capturedCardIds).toEqual(['c52', 'c02'])
+    expect(lockedCardIds).not.toContain('c52')
+    expect(lockedCardIds).not.toContain('c02')
+
+    expect(screen.getByTestId('collection-status-title-owned')).toHaveTextContent('Capturés')
+    expect(screen.getByTestId('collection-status-title-locked')).toHaveTextContent('Non capturés')
+  })
+
+  test('shows selected card id as pokedex number', async () => {
+    const user = userEvent.setup()
+    renderCollection()
+
+    const selectedCard = screen.getByTestId('collection-card-c11')
+    await user.click(selectedCard)
+
+    expect(screen.getByTestId('collection-selected-id')).toHaveTextContent('#023')
   })
 
   test('filters by rarity with multi-select chips', async () => {
@@ -280,7 +307,7 @@ describe('CollectionPage', () => {
     const legendaryCount = cardPool.filter((card) => card.rarity === 'legendary').length
     expect(getVisibleCollectionCards()).toHaveLength(legendaryCount)
     expect(screen.getByTestId('collection-filter-result-count')).toHaveTextContent(
-      `${legendaryCount} cards shown / ${cardPool.length} total`,
+      `${legendaryCount} entrées affichées / ${cardPool.length} au total`,
     )
   })
 
@@ -296,7 +323,7 @@ describe('CollectionPage', () => {
     const expectedCount = cardPool.filter((card) => getTypeIdByCategory(card.categoryId) === typeToKeep).length
     expect(getVisibleCollectionCards()).toHaveLength(expectedCount)
     expect(screen.getByTestId('collection-filter-result-count')).toHaveTextContent(
-      `${expectedCount} cards shown / ${cardPool.length} total`,
+      `${expectedCount} entrées affichées / ${cardPool.length} au total`,
     )
   })
 
@@ -354,7 +381,7 @@ describe('CollectionPage', () => {
 
     const expectedCard = cardPool.find((card) => card.rarity === 'common' && profile.ownedCardIds.includes(card.id))
     expect(expectedCard).toBeTruthy()
-    expect(screen.getByTestId('collection-selected-id')).toHaveTextContent(expectedCard!.id.toUpperCase())
+    expect(screen.getByTestId('collection-selected-id')).toHaveTextContent('#001')
     expect(screen.getByTestId('collection-selected-name')).toHaveTextContent(expectedCard!.name)
   })
 
@@ -374,11 +401,11 @@ describe('CollectionPage', () => {
     expect(screen.getByTestId('collection-filter-type-humain')).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByTestId('collection-filter-type-simili')).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByTestId('collection-filter-result-count')).toHaveTextContent(
-      `${cardPool.length} cards shown / ${cardPool.length} total`,
+      `${cardPool.length} entrées affichées / ${cardPool.length} au total`,
     )
   })
 
-  test('persists selected filters when leaving and returning to collection', async () => {
+  test('persists selected filters when leaving and returning to pokedex', async () => {
     const user = userEvent.setup()
     const { unmount } = renderCollection()
 
@@ -395,7 +422,7 @@ describe('CollectionPage', () => {
     expect(screen.getByTestId('collection-filter-rarity-common')).toHaveAttribute('aria-pressed', 'false')
   })
 
-  test('shows empty state when no cards match filters', async () => {
+  test('shows empty states in french when no cards match filters', async () => {
     const user = userEvent.setup()
     const profile = createDefaultProfile()
     profile.ownedCardIds = cardPool.map((card) => card.id)
@@ -404,23 +431,39 @@ describe('CollectionPage', () => {
 
     await user.click(screen.getByTestId('collection-filter-discovery-locked'))
 
-    expect(screen.getByTestId('collection-empty-state')).toBeInTheDocument()
-    expect(screen.getByTestId('collection-inspect-empty')).toBeInTheDocument()
+    expect(screen.getByTestId('collection-empty-state')).toHaveTextContent('Aucune entrée ne correspond aux filtres actuels.')
+    expect(screen.getByTestId('collection-inspect-empty')).toHaveTextContent(
+      'Aucune carte sélectionnée. Ajuste les filtres pour afficher une entrée.',
+    )
     expect(getVisibleCollectionCards()).toHaveLength(0)
   })
 
-  test('shows copy counts in inspect panel for owned cards', async () => {
+  test('shows copy counts and translated hint values in detail panel', async () => {
     const user = userEvent.setup()
     renderCollection()
 
     const selectedCard = screen.getByTestId('collection-card-c11')
     await user.click(selectedCard)
+
     expect(screen.getByTestId('collection-selected-copies')).toHaveTextContent('2')
-    expect(screen.getByText('Total copies: 12')).toBeInTheDocument()
+    expect(screen.getByText('Copies totales : 12')).toBeInTheDocument()
     expect(screen.getByTestId('collection-selected-category')).not.toHaveTextContent('Inconnu')
     expect(screen.getByTestId('collection-selected-element')).not.toHaveTextContent('Inconnu')
     expect(screen.getByTestId('collection-selected-type')).not.toHaveTextContent('Inconnu')
-
     expect(within(selectedCard).getByText('x2')).toBeInTheDocument()
+  })
+
+  test('shows french locked details and lock hint', async () => {
+    const user = userEvent.setup()
+    renderCollection()
+
+    await user.click(screen.getByTestId('collection-card-c84'))
+
+    expect(screen.getByTestId('collection-selected-name')).toHaveTextContent('Inconnu')
+    expect(screen.getByTestId('collection-selected-rarity')).toHaveTextContent('Inconnu')
+    expect(screen.getByTestId('collection-selected-id')).toHaveTextContent('????')
+    expect(screen.getByTestId('collection-lock-hint')).toHaveTextContent(
+      'Données de carte masquées. Gagne des matchs pour révéler cette entrée.',
+    )
   })
 })

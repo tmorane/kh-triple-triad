@@ -60,7 +60,7 @@ function formatTierLabel(tier: RankedTierId, division: string | null): string {
 }
 
 export function AccountPage() {
-  const { profile, storedProfiles, renamePlayer, createStoredProfile, switchStoredProfile, deleteStoredProfile, resetProfile } = useGame()
+  const { profile, storedProfiles, renamePlayer, setAudioEnabled, createStoredProfile, switchStoredProfile, deleteStoredProfile, resetProfile } = useGame()
   const cloudEnabled = isCloudAuthEnabled()
 
   const [sessionUser, setSessionUser] = useState<CloudSessionUser | null>(null)
@@ -87,9 +87,12 @@ export function AccountPage() {
   const played = profile.stats.played
   const wins = profile.stats.won
   const losses = Math.max(played - wins, 0)
-  const ranked = profile.ranked
-  const rankedTierLabel = formatTierLabel(ranked.tier, ranked.division)
-  const rankedRecordLabel = `${ranked.wins}W ${ranked.losses}L ${ranked.draws}D`
+  const ranked3x3 = profile.rankedByMode['3x3']
+  const ranked4x4 = profile.rankedByMode['4x4']
+  const rankedTierLabel3x3 = formatTierLabel(ranked3x3.tier, ranked3x3.division)
+  const rankedTierLabel4x4 = formatTierLabel(ranked4x4.tier, ranked4x4.division)
+  const rankedRecordLabel3x3 = `${ranked3x3.wins}W ${ranked3x3.losses}L ${ranked3x3.draws}D`
+  const rankedRecordLabel4x4 = `${ranked4x4.wins}W ${ranked4x4.losses}L ${ranked4x4.draws}D`
   const nextGoldTarget = GOLD_MILESTONES.find((milestone) => profile.gold < milestone) ?? null
 
   useEffect(() => {
@@ -100,11 +103,18 @@ export function AccountPage() {
   const detailedMetrics = useMemo<DetailedMetric[]>(
     () => [
       {
-        icon: 'R',
-        label: 'Ranked Tier',
-        value: rankedTierLabel,
-        sub: `${ranked.lp} LP`,
-        progress: ranked.lp,
+        icon: '3',
+        label: '3X3 Ranked Tier',
+        value: rankedTierLabel3x3,
+        sub: `${ranked3x3.lp} LP`,
+        progress: ranked3x3.lp,
+      },
+      {
+        icon: '4',
+        label: '4X4 Ranked Tier',
+        value: rankedTierLabel4x4,
+        sub: `${ranked4x4.lp} LP`,
+        progress: ranked4x4.lp,
       },
       {
         icon: 'G',
@@ -115,7 +125,7 @@ export function AccountPage() {
       },
       {
         icon: 'C',
-        label: 'Card Collection',
+        label: 'Pokédex',
         value: `${ownedCards}/${totalCards}`,
         sub: `${clampPercent(Math.round((ownedCards / totalCards) * 100))}% complete`,
         progress: clampPercent(Math.round((ownedCards / totalCards) * 100)),
@@ -142,9 +152,15 @@ export function AccountPage() {
       },
       {
         icon: 'B',
-        label: 'Ranked Record',
-        value: rankedRecordLabel,
-        sub: `${ranked.matchesPlayed} ranked matches`,
+        label: '3X3 Ranked Record',
+        value: rankedRecordLabel3x3,
+        sub: `${ranked3x3.matchesPlayed} ranked matches`,
+      },
+      {
+        icon: 'R',
+        label: '4X4 Ranked Record',
+        value: rankedRecordLabel4x4,
+        sub: `${ranked4x4.matchesPlayed} ranked matches`,
       },
       {
         icon: 'M',
@@ -154,8 +170,10 @@ export function AccountPage() {
       },
     ],
     [
-      rankedTierLabel,
-      ranked.lp,
+      rankedTierLabel3x3,
+      rankedTierLabel4x4,
+      ranked3x3.lp,
+      ranked4x4.lp,
       profile.gold,
       nextGoldTarget,
       ownedCards,
@@ -167,8 +185,10 @@ export function AccountPage() {
       activeDeckMaxSize,
       profile.stats.streak,
       profile.stats.bestStreak,
-      rankedRecordLabel,
-      ranked.matchesPlayed,
+      rankedRecordLabel3x3,
+      rankedRecordLabel4x4,
+      ranked3x3.matchesPlayed,
+      ranked4x4.matchesPlayed,
       wins,
       losses,
       played,
@@ -390,6 +410,19 @@ export function AccountPage() {
             {playerNameError}
           </p>
         ) : null}
+        <div className="account-local-form">
+          <p className="small" data-testid="account-audio-state">
+            Sound effects are currently {profile.settings.audioEnabled ? 'ON.' : 'OFF.'}
+          </p>
+          <button
+            type="button"
+            className="button"
+            onClick={() => setAudioEnabled(!profile.settings.audioEnabled)}
+            data-testid="account-audio-toggle"
+          >
+            {profile.settings.audioEnabled ? 'Turn sound OFF' : 'Turn sound ON'}
+          </button>
+        </div>
       </section>
 
       <section className="account-section">
