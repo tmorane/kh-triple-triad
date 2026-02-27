@@ -320,12 +320,6 @@ export function MatchPage() {
   }, [currentMatch, state?.status])
 
   useEffect(() => {
-    if (!state || state.status === 'finished' || state.turn !== 'player') {
-      setPendingPowerTarget(null)
-    }
-  }, [state, state?.status, state?.turn, state?.turns])
-
-  useEffect(() => {
     if (!starterRevealComplete || !currentMatch || !state || state.turn !== 'cpu' || state.status === 'finished') {
       return
     }
@@ -395,7 +389,6 @@ export function MatchPage() {
       setError(message)
     }
   }, [
-    pendingPowerTarget,
     profile.settings.audioEnabled,
     selectedCard,
     starterRevealComplete,
