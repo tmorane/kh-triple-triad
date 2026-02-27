@@ -7,6 +7,7 @@ import {
   isGlobalLadderEnabled,
   type LadderEntry,
 } from '../../app/cloud/cloudLadderStore'
+import { IS_4X4_UI_ENABLED } from '../../app/matchUiConfig'
 import { useGame } from '../../app/useGame'
 import { cardPool } from '../../domain/cards/cardPool'
 import type { MissionId, RankedTierId } from '../../domain/types'
@@ -119,7 +120,8 @@ export function HomePage() {
   const ranked4x4 = profile.rankedByMode['4x4']
   const rankedTierLabel3x3 = formatTierLabelExplicit(ranked3x3.tier, ranked3x3.division)
   const rankedTierLabel4x4 = formatTierLabelExplicit(ranked4x4.tier, ranked4x4.division)
-  const rankedProgressPercent = ranked4x4.lp
+  const rankedProgressPercent = IS_4X4_UI_ENABLED ? ranked4x4.lp : ranked3x3.lp
+  const homePeakLadderMode = IS_4X4_UI_ENABLED ? '4x4' : '3x3'
 
   const panelStyle = {
     '--home-win-rate': `${winRatePercent}%`,
@@ -141,7 +143,7 @@ export function HomePage() {
       setIsLoadingLadders(true)
       setLadderError(null)
       try {
-        const [owned, peak] = await Promise.all([fetchOwnedCardsLadder(5), fetchPeakRankLadder('4x4', 5)])
+        const [owned, peak] = await Promise.all([fetchOwnedCardsLadder(5), fetchPeakRankLadder(homePeakLadderMode, 5)])
         if (!mounted) {
           return
         }
@@ -164,7 +166,7 @@ export function HomePage() {
     return () => {
       mounted = false
     }
-  }, [laddersEnabled])
+  }, [homePeakLadderMode, laddersEnabled])
 
   const metrics: ProfileMetric[] = [
     {
@@ -175,14 +177,18 @@ export function HomePage() {
       progress: ranked3x3.lp,
       testId: 'home-ranked-tier-3x3',
     },
-    {
-      icon: '4',
-      label: '4X4 Ranked',
-      value: rankedTierLabel4x4,
-      sub: `${ranked4x4.lp} LP`,
-      progress: ranked4x4.lp,
-      testId: 'home-ranked-tier-4x4',
-    },
+    ...(IS_4X4_UI_ENABLED
+      ? [
+          {
+            icon: '4',
+            label: '4X4 Ranked',
+            value: rankedTierLabel4x4,
+            sub: `${ranked4x4.lp} LP`,
+            progress: ranked4x4.lp,
+            testId: 'home-ranked-tier-4x4',
+          },
+        ]
+      : []),
     {
       icon: 'G',
       label: 'Gold Reserve',
@@ -230,10 +236,14 @@ export function HomePage() {
             <p className="home-rank-line" data-testid="home-ranked-lp-3x3">
               {ranked3x3.lp} LP
             </p>
-            <p className="lead" data-testid="home-ranked-tier-label-4x4">{`4X4 · ${rankedTierLabel4x4}`}</p>
-            <p className="home-rank-line" data-testid="home-ranked-lp-4x4">
-              {ranked4x4.lp} LP
-            </p>
+            {IS_4X4_UI_ENABLED ? (
+              <>
+                <p className="lead" data-testid="home-ranked-tier-label-4x4">{`4X4 · ${rankedTierLabel4x4}`}</p>
+                <p className="home-rank-line" data-testid="home-ranked-lp-4x4">
+                  {ranked4x4.lp} LP
+                </p>
+              </>
+            ) : null}
           </div>
         </div>
 
@@ -257,15 +267,17 @@ export function HomePage() {
             />
             <p className="home-ranked-badge-caption" data-testid="home-ranked-badge-label-3x3">{`3X3 · ${rankedTierLabel3x3}`}</p>
           </aside>
-          <aside className="home-ranked-badge-card" data-testid="home-ranked-badge-card-4x4">
-            <img
-              src={`/ranks/${ranked4x4.tier}.svg`}
-              alt={`${tierNames[ranked4x4.tier]} rank emblem 4x4`}
-              className="home-ranked-badge"
-              data-testid="home-ranked-badge-4x4"
-            />
-            <p className="home-ranked-badge-caption" data-testid="home-ranked-badge-label-4x4">{`4X4 · ${rankedTierLabel4x4}`}</p>
-          </aside>
+          {IS_4X4_UI_ENABLED ? (
+            <aside className="home-ranked-badge-card" data-testid="home-ranked-badge-card-4x4">
+              <img
+                src={`/ranks/${ranked4x4.tier}.svg`}
+                alt={`${tierNames[ranked4x4.tier]} rank emblem 4x4`}
+                className="home-ranked-badge"
+                data-testid="home-ranked-badge-4x4"
+              />
+              <p className="home-ranked-badge-caption" data-testid="home-ranked-badge-label-4x4">{`4X4 · ${rankedTierLabel4x4}`}</p>
+            </aside>
+          ) : null}
         </div>
       </div>
 

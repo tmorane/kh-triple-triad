@@ -8,6 +8,7 @@ import { getSelectedDeckSlot, starterOwnedCardIds } from '../domain/cards/decks'
 import { applyMove, listLegalMoves, listMovePowerTargetOptions } from '../domain/match/engine'
 import { createDefaultProfile, PROFILE_STORAGE_KEY } from '../domain/progression/profile'
 import { GameProvider } from './GameContext'
+import { IS_4X4_UI_ENABLED } from './matchUiConfig'
 import { useGame } from './useGame'
 
 const THEME_STORAGE_KEY = 'kh-triple-triad-theme-mode-v1'
@@ -775,7 +776,11 @@ describe('app integration', () => {
     await user.click(screen.getByRole('link', { name: 'Joueur' }))
     expect(screen.getByTestId('gold-value').textContent?.replaceAll(',', '')).toContain('1100')
     expect(screen.getByTestId('home-ranked-tier-3x3')).toHaveTextContent('Iron IV (Division 4)')
-    expect(screen.getByTestId('home-ranked-tier-4x4')).toHaveTextContent('Iron IV (Division 4)')
+    if (IS_4X4_UI_ENABLED) {
+      expect(screen.getByTestId('home-ranked-tier-4x4')).toHaveTextContent('Iron IV (Division 4)')
+    } else {
+      expect(screen.queryByTestId('home-ranked-tier-4x4')).not.toBeInTheDocument()
+    }
 
     const saved = localStorage.getItem(PROFILE_STORAGE_KEY)
     expect(saved).toBeTruthy()
