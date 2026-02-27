@@ -119,7 +119,7 @@ beforeEach(() => {
 })
 
 describe('HomePage ranked display', () => {
-  test('shows ranked tier, LP and emblem', () => {
+  test('shows 3x3 ranked tier, LP and emblem', () => {
     renderHome()
 
     expect(screen.getByTestId('home-ranked-tier-3x3')).toHaveTextContent('Iron IV')
@@ -128,13 +128,6 @@ describe('HomePage ranked display', () => {
     expect(screen.getByTestId('home-ranked-badge-label-3x3')).toHaveTextContent('Division 4')
     expect(screen.getByTestId('home-ranked-lp-3x3')).toHaveTextContent('0 LP')
     expect(screen.getByTestId('home-ranked-badge-3x3')).toHaveAttribute('src', '/ranks/iron.svg')
-
-    expect(screen.getByTestId('home-ranked-tier-4x4')).toHaveTextContent('Iron IV')
-    expect(screen.getByTestId('home-ranked-tier-4x4')).toHaveTextContent('Division 4')
-    expect(screen.getByTestId('home-ranked-tier-label-4x4')).toHaveTextContent('4X4')
-    expect(screen.getByTestId('home-ranked-badge-label-4x4')).toHaveTextContent('Division 4')
-    expect(screen.getByTestId('home-ranked-lp-4x4')).toHaveTextContent('0 LP')
-    expect(screen.getByTestId('home-ranked-badge-4x4')).toHaveAttribute('src', '/ranks/iron.svg')
     expect(screen.getByText('Pokédex')).toBeInTheDocument()
   })
 

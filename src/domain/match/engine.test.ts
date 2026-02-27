@@ -40,7 +40,7 @@ beforeAll(async () => {
         left: 5,
         rarity: 'common',
         categoryId: 'humain',
-        elementId: 'terre',
+        elementId: 'sol',
       },
       c04: {
         id: 'c04',
@@ -51,7 +51,7 @@ beforeAll(async () => {
         left: 4,
         rarity: 'common',
         categoryId: 'humain',
-        elementId: 'vent',
+        elementId: 'vol',
       },
       c05: {
         id: 'c05',
@@ -62,7 +62,7 @@ beforeAll(async () => {
         left: 2,
         rarity: 'common',
         categoryId: 'humain',
-        elementId: 'lumiere',
+        elementId: 'fee',
       },
       c06: {
         id: 'c06',
@@ -84,7 +84,7 @@ beforeAll(async () => {
         left: 5,
         rarity: 'uncommon',
         categoryId: 'humain',
-        elementId: 'lune',
+        elementId: 'psy',
       },
       c08: {
         id: 'c08',
@@ -106,7 +106,7 @@ beforeAll(async () => {
         left: 4,
         rarity: 'uncommon',
         categoryId: 'humain',
-        elementId: 'neant',
+        elementId: 'spectre',
       },
       c10: {
         id: 'c10',
@@ -117,7 +117,7 @@ beforeAll(async () => {
         left: 2,
         rarity: 'uncommon',
         categoryId: 'humain',
-        elementId: 'terre',
+        elementId: 'sol',
       },
       c11: {
         id: 'c11',
@@ -139,7 +139,7 @@ beforeAll(async () => {
         left: 5,
         rarity: 'legendary',
         categoryId: 'humain',
-        elementId: 'lumiere',
+        elementId: 'fee',
       },
       c18: {
         id: 'c18',
@@ -150,7 +150,7 @@ beforeAll(async () => {
         left: 3,
         rarity: 'legendary',
         categoryId: 'humain',
-        elementId: 'temps',
+        elementId: 'acier',
       },
     } as const
 
@@ -258,6 +258,7 @@ describe('match engine', () => {
 
     const result = play(state, [
       { actor: 'player', cardId: 'c01', cell: 8 },
+
       { actor: 'cpu', cardId: 'c06', cell: 1 },
       { actor: 'player', cardId: 'c02', cell: 7 },
       { actor: 'cpu', cardId: 'c08', cell: 3 },
@@ -561,3 +562,4 @@ describe('match engine', () => {
     expect(withSecondaryOnly.board[0]?.owner).toBe('cpu')
   })
 })
+

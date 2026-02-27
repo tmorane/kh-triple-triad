@@ -7,12 +7,14 @@ import {
   getPackPrice,
   getSpecialPackPrice,
   type OpenedPackResult,
+  type OpenedShinyTestPackResult,
   type OpenedSpecialPackResult,
   type ShopPackId,
   type SpecialPackId,
   type SpecialPackPurchaseRequest,
 } from '../../domain/progression/shop'
 import { cardPool, getCard } from '../../domain/cards/cardPool'
+import { getTotalCopies, hasShinyCopy } from '../../domain/progression/shiny'
 import type { CardCategoryId, Rarity } from '../../domain/types'
 import { TriadCard } from '../components/TriadCard'
 
@@ -28,14 +30,15 @@ const typeFocusCategoryByPack: Record<'sans_coeur_focus' | 'simili_focus', CardC
 }
 
 type AnyShopPackId = ShopPackId | SpecialPackId
-type OpenedRevealResult = OpenedPackResult | OpenedSpecialPackResult
+type DisplayPackId = AnyShopPackId | 'shiny_test'
+type OpenedRevealResult = OpenedPackResult | OpenedSpecialPackResult | OpenedShinyTestPackResult
 
 interface PackVisual {
   tagline: string
   artSrc: string
 }
 
-const packVisuals: Record<AnyShopPackId, PackVisual> = {
+const packVisuals: Record<DisplayPackId, PackVisual> = {
   common: {
     tagline: 'Reliable foundations for every deck.',
     artSrc: '/packs/common-pack.svg',
@@ -68,9 +71,13 @@ const packVisuals: Record<AnyShopPackId, PackVisual> = {
     tagline: 'Target Booster: pick a legendary target, pity ramps after each miss.',
     artSrc: '/packs/legendary-focus-pack.svg',
   },
+  shiny_test: {
+    tagline: 'Debug pack: 1 guaranteed shiny pull.',
+    artSrc: '/packs/legendary-pack.svg',
+  },
 }
 
-const packLabels: Record<AnyShopPackId, string> = {
+const packLabels: Record<DisplayPackId, string> = {
   common: 'Common Pack',
   uncommon: 'Uncommon Pack',
   rare: 'Rare Pack',
@@ -79,9 +86,10 @@ const packLabels: Record<AnyShopPackId, string> = {
   sans_coeur_focus: 'Obscur Theme Booster',
   simili_focus: 'Psy Theme Booster',
   legendary_focus: 'Legendary Target Booster',
+  shiny_test: 'Shiny Test Pack',
 }
 
-function formatPackLabel(packId: AnyShopPackId): string {
+function formatPackLabel(packId: DisplayPackId): string {
   return packLabels[packId]
 }
 
@@ -105,7 +113,8 @@ function sanitizePackQuantity(value: number): number {
 }
 
 export function ShopPage() {
-  const { profile, purchaseShopPack, purchaseShopPacks, openOwnedPack, buySpecialPack, addTestGold } = useGame()
+  const { profile, purchaseShopPack, purchaseShopPacks, openOwnedPack, openShinyTestPack, buySpecialPack, addTestGold } =
+    useGame()
   const [purchaseToast, setPurchaseToast] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [openPackId, setOpenPackId] = useState<ShopPackId | null>(null)
@@ -181,6 +190,10 @@ export function ShopPage() {
   const openedPackSubtitle = useMemo(() => {
     if (!openedPackResult) {
       return ''
+    }
+
+    if (openedPackResult.packId === 'shiny_test') {
+      return 'Guaranteed shiny pull'
     }
 
     if (isOpenedInventoryPack(openedPackResult)) {
@@ -294,6 +307,25 @@ export function ShopPage() {
     handleOpenOwnedPack(openedPackResult.packId)
   }
 
+  const handleOpenShinyTestPack = () => {
+    try {
+      if (!openShinyTestPack) {
+        throw new Error('Shiny test pack is unavailable in this context.')
+      }
+
+      const result = openShinyTestPack()
+      setOpenedPackResult(result)
+      setOpenPackId(null)
+      setOpenPackRarity(null)
+      setOpenPackPage(0)
+      setPurchaseToast(null)
+      setError(null)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unable to open shiny test pack.'
+      setError(message)
+    }
+  }
+
   useEffect(() => {
     if (!purchaseToast) {
       return
@@ -328,6 +360,14 @@ export function ShopPage() {
           data-testid="shop-add-test-gold"
         >
           +1000 Gold (Test)
+        </button>
+        <button
+          type="button"
+          className="button shop-test-shiny-pack-button"
+          onClick={handleOpenShinyTestPack}
+          data-testid="shop-open-shiny-test-pack"
+        >
+          Shiny Pack x1 (Test)
         </button>
       </div>
 
@@ -533,7 +573,8 @@ export function ShopPage() {
                             card={card}
                             context="collection-list"
                             owned
-                            copies={profile.cardCopiesById[card.id] ?? 0}
+                            copies={getTotalCopies(profile, card.id)}
+                            shiny={hasShinyCopy(profile, card.id)}
                             interactive
                             selected={legendaryFocusTargetCardId === card.id}
                             onClick={() => setLegendaryFocusTargetCardId(card.id)}
@@ -681,7 +722,8 @@ export function ShopPage() {
                             card={card}
                             context="collection-list"
                             owned={owned}
-                            copies={owned ? (profile.cardCopiesById[card.id] ?? 0) : 0}
+                            copies={owned ? getTotalCopies(profile, card.id) : 0}
+                            shiny={owned && hasShinyCopy(profile, card.id)}
                             testId={`shop-pack-modal-card-${openPackId}-${card.id}`}
                           />
                         )
@@ -769,7 +811,8 @@ export function ShopPage() {
                     card={entry.card}
                     context="collection-detail"
                     owned
-                    copies={profile.cardCopiesById[entry.pull.cardId] ?? entry.pull.copiesAfter}
+                    copies={getTotalCopies(profile, entry.pull.cardId) || entry.pull.copiesAfter}
+                    shiny={Boolean(entry.pull.isShiny) || hasShinyCopy(profile, entry.pull.cardId)}
                     showNew={entry.pull.isNewOwnership}
                     newBadgeVariant="reveal"
                     testId={`shop-opened-reveal-triad-${index}`}

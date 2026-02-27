@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { IS_4X4_UI_ENABLED } from '../../app/matchUiConfig'
 import {
   fetchOwnedCardsLadder,
   fetchPeakRankLadder,
@@ -52,7 +53,7 @@ export function RanksPage() {
         const [owned, peak3x3, peak4x4] = await Promise.all([
           fetchOwnedCardsLadder(50),
           fetchPeakRankLadder('3x3', 50),
-          fetchPeakRankLadder('4x4', 50),
+          IS_4X4_UI_ENABLED ? fetchPeakRankLadder('4x4', 50) : Promise.resolve([] as LadderEntry[]),
         ])
         if (!mounted) {
           return
@@ -166,22 +167,24 @@ export function RanksPage() {
                 </ol>
               )}
             </article>
-            <article className="ranks-ladder-card" data-testid="ranks-peak-ladder-4x4">
-              <h3>Highest Peak Rank 4X4</h3>
-              {peakRankLadder4x4.length === 0 ? (
-                <p className="small">No players yet.</p>
-              ) : (
-                <ol className="ranks-ladder-list">
-                  {peakRankLadder4x4.map((entry, index) => (
-                    <li key={entry.userId} className="ranks-ladder-row">
-                      <span className="ranks-ladder-position">#{index + 1}</span>
-                      <span className="ranks-ladder-name">{entry.playerName}</span>
-                      <span className="ranks-ladder-value">{entry.peakRankLabel}</span>
-                    </li>
-                  ))}
-                </ol>
-              )}
-            </article>
+            {IS_4X4_UI_ENABLED ? (
+              <article className="ranks-ladder-card" data-testid="ranks-peak-ladder-4x4">
+                <h3>Highest Peak Rank 4X4</h3>
+                {peakRankLadder4x4.length === 0 ? (
+                  <p className="small">No players yet.</p>
+                ) : (
+                  <ol className="ranks-ladder-list">
+                    {peakRankLadder4x4.map((entry, index) => (
+                      <li key={entry.userId} className="ranks-ladder-row">
+                        <span className="ranks-ladder-position">#{index + 1}</span>
+                        <span className="ranks-ladder-name">{entry.playerName}</span>
+                        <span className="ranks-ladder-value">{entry.peakRankLabel}</span>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </article>
+            ) : null}
           </div>
         ) : null}
       </section>

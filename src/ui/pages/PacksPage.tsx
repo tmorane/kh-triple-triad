@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useGame } from '../../app/useGame'
 import { getCard } from '../../domain/cards/cardPool'
 import type { OpenedPackBatchResult, OpenedPackResult, ShopPackId } from '../../domain/progression/shop'
+import { getTotalCopies, hasShinyCopy } from '../../domain/progression/shiny'
 import { playNewCardSound } from '../audio/newCardSound'
 import { TriadCard } from '../components/TriadCard'
 
@@ -325,7 +326,8 @@ export function PacksPage() {
                       card={entry.card}
                       context="collection-detail"
                       owned
-                      copies={profile.cardCopiesById[entry.pull.cardId] ?? entry.pull.copiesAfter}
+                      copies={getTotalCopies(profile, entry.pull.cardId) || entry.pull.copiesAfter}
+                      shiny={hasShinyCopy(profile, entry.pull.cardId)}
                       showNew={entry.pull.isNewOwnership}
                       newBadgeVariant="reveal"
                       className="is-reveal-enter"

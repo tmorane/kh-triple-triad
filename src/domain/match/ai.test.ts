@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest'
+import { beforeAll, describe, expect, test, vi } from 'vitest'
 import type { MatchConfig, Move } from '../types'
 import type { MatchState } from './types'
 
@@ -8,7 +8,6 @@ let listLegalMoves: typeof import('./engine')['listLegalMoves']
 let selectCpuMove: typeof import('./ai')['selectCpuMove']
 
 beforeAll(async () => {
-  vi.resetModules()
   vi.doMock('../cards/cardPool', () => {
     const cardById = {
       c01: {
@@ -19,7 +18,7 @@ beforeAll(async () => {
         bottom: 2,
         left: 4,
         rarity: 'common',
-        categoryId: 'humain',
+        categoryId: 'allie',
         elementId: 'feu',
       },
       c02: {
@@ -30,7 +29,7 @@ beforeAll(async () => {
         bottom: 5,
         left: 3,
         rarity: 'common',
-        categoryId: 'humain',
+        categoryId: 'allie',
         elementId: 'eau',
       },
       c03: {
@@ -41,7 +40,7 @@ beforeAll(async () => {
         bottom: 4,
         left: 5,
         rarity: 'common',
-        categoryId: 'humain',
+        categoryId: 'allie',
         elementId: 'terre',
       },
       c04: {
@@ -52,7 +51,7 @@ beforeAll(async () => {
         bottom: 3,
         left: 4,
         rarity: 'common',
-        categoryId: 'humain',
+        categoryId: 'allie',
         elementId: 'vent',
       },
       c05: {
@@ -63,7 +62,7 @@ beforeAll(async () => {
         bottom: 6,
         left: 2,
         rarity: 'common',
-        categoryId: 'humain',
+        categoryId: 'allie',
         elementId: 'lumiere',
       },
       c06: {
@@ -74,7 +73,7 @@ beforeAll(async () => {
         bottom: 5,
         left: 6,
         rarity: 'common',
-        categoryId: 'humain',
+        categoryId: 'allie',
         elementId: 'tenebres',
       },
       c07: {
@@ -85,7 +84,7 @@ beforeAll(async () => {
         bottom: 2,
         left: 5,
         rarity: 'uncommon',
-        categoryId: 'humain',
+        categoryId: 'allie',
         elementId: 'lune',
       },
       c08: {
@@ -96,7 +95,7 @@ beforeAll(async () => {
         bottom: 3,
         left: 5,
         rarity: 'uncommon',
-        categoryId: 'humain',
+        categoryId: 'allie',
         elementId: 'feu',
       },
       c15: {
@@ -107,7 +106,7 @@ beforeAll(async () => {
         bottom: 4,
         left: 6,
         rarity: 'rare',
-        categoryId: 'humain',
+        categoryId: 'allie',
         elementId: 'tenebres',
       },
       c16: {
@@ -118,7 +117,7 @@ beforeAll(async () => {
         bottom: 5,
         left: 5,
         rarity: 'legendary',
-        categoryId: 'humain',
+        categoryId: 'allie',
         elementId: 'lumiere',
       },
       c20: {
@@ -129,7 +128,7 @@ beforeAll(async () => {
         bottom: 8,
         left: 5,
         rarity: 'legendary',
-        categoryId: 'humain',
+        categoryId: 'allie',
         elementId: 'tenebres',
       },
     } as const
@@ -149,11 +148,6 @@ beforeAll(async () => {
 
   ;({ applyMove, createMatch, listLegalMoves } = await import('./engine'))
   ;({ selectCpuMove } = await import('./ai'))
-})
-
-afterAll(() => {
-  vi.doUnmock('../cards/cardPool')
-  vi.resetModules()
 })
 
 function config(overrides?: Partial<MatchConfig>): MatchConfig {

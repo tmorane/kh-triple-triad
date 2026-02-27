@@ -86,10 +86,10 @@ export function RankedLpRecap({ mode, update, animated, context, testIdPrefix }:
   const deltaClass = getDeltaClass(update.deltaLp)
   const targetLp = clampLp(update.next.lp)
   const shouldAnimate = animated && !getPrefersReducedMotion()
-  const [displayedLp, setDisplayedLp] = useState<number>(() => (shouldAnimate ? getStartLp(update) : targetLp))
+  const startLp = shouldAnimate ? getStartLp(update) : targetLp
+  const [displayedLp, setDisplayedLp] = useState<number>(() => startLp)
 
   useEffect(() => {
-    const startLp = shouldAnimate ? getStartLp(update) : targetLp
     if (!shouldAnimate || startLp === targetLp) {
       setDisplayedLp(targetLp)
       return
@@ -123,7 +123,7 @@ export function RankedLpRecap({ mode, update, animated, context, testIdPrefix }:
         window.cancelAnimationFrame(frameId)
       }
     }
-  }, [shouldAnimate, targetLp, update])
+  }, [shouldAnimate, startLp, targetLp])
 
   const currentLpLabel = useMemo(() => `${clampLp(displayedLp)} LP`, [displayedLp])
 

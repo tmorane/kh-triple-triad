@@ -11,25 +11,24 @@ export type CardCategoryId =
   | 'humain'
 
 export type CardElementId =
-  | 'lumiere'
-  | 'tenebres'
+  | 'normal'
   | 'feu'
-  | 'glace'
-  | 'foudre'
   | 'eau'
-  | 'vent'
-  | 'terre'
-  | 'magie'
-  | 'neant'
-  | 'lune'
-  | 'fleur'
-  | 'temps'
-  | 'espace'
-  | 'illusion'
-  | 'soin'
+  | 'plante'
+  | 'electrik'
+  | 'glace'
+  | 'combat'
   | 'poison'
-  | 'aube'
-  | 'neutre'
+  | 'sol'
+  | 'vol'
+  | 'psy'
+  | 'insecte'
+  | 'roche'
+  | 'spectre'
+  | 'dragon'
+  | 'tenebres'
+  | 'acier'
+  | 'fee'
 
 export type CardTypeId = 'sans_coeur' | 'simili' | 'nescient' | 'humain'
 
@@ -64,6 +63,8 @@ export interface MatchConfig {
   seed: number
   startingTurn?: Actor
   typeSynergy?: MatchTypeSynergyState
+  enableElementPowers?: boolean
+  strictPowerTargeting?: boolean
 }
 
 export type Actor = 'player' | 'cpu'
@@ -72,6 +73,12 @@ export interface Move {
   actor: Actor
   cardId: CardId
   cell: number
+  powerTarget?: MovePowerTarget
+}
+
+export interface MovePowerTarget {
+  targetCell?: number
+  targetCardCell?: number
 }
 
 export interface MatchResult {
@@ -208,11 +215,12 @@ export interface SpecialPackPityState {
 }
 
 export interface PlayerProfile {
-  version: 9
+  version: 10
   playerName: string
   gold: number
   ownedCardIds: CardId[]
   cardCopiesById: Record<CardId, number>
+  shinyCardCopiesById: Record<CardId, number>
   packInventoryByRarity: Record<Rarity, number>
   deckSlots: [DeckSlot, DeckSlot, DeckSlot]
   selectedDeckSlotId: DeckSlotId

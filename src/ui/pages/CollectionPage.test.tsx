@@ -2,10 +2,10 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ComponentProps } from 'react'
 import { MemoryRouter } from 'react-router-dom'
-import { beforeEach, describe, expect, test } from 'vitest'
+import { beforeEach, describe, expect, test, vi } from 'vitest'
 import { GameContext } from '../../app/GameContext'
 import { cardPool } from '../../domain/cards/cardPool'
-import { getTypeIdByCategory } from '../../domain/cards/taxonomy'
+import { cardElementIds, getElementLabel } from '../../domain/cards/taxonomy'
 import { createDefaultProfile } from '../../domain/progression/profile'
 import { CollectionPage } from './CollectionPage'
 
@@ -155,14 +155,6 @@ function getSectionCardIds(sectionTestId: string): string[] {
     .filter(Boolean)
 }
 
-function getCardIdByType(typeId: 'sans_coeur' | 'simili' | 'nescient' | 'humain'): string {
-  const card = cardPool.find((entry) => getTypeIdByCategory(entry.categoryId) === typeId)
-  if (!card) {
-    throw new Error(`Missing card for type ${typeId}`)
-  }
-  return card.id
-}
-
 describe('CollectionPage', () => {
   beforeEach(() => {
     localStorage.clear()
@@ -181,60 +173,17 @@ describe('CollectionPage', () => {
     expect(screen.getAllByText('Découverte').length).toBeGreaterThan(0)
   })
 
-  test('renders four compact synergy logos in detail panel', () => {
+  test('shows pokemon type filter chips from spreadsheet taxonomy with element logos', () => {
     renderCollection()
 
-    const legend = screen.getByTestId('collection-synergy-legend')
-    expect(legend).toBeInTheDocument()
-    expect(screen.getByTestId('synergy-legend-logo-sans_coeur')).toBeInTheDocument()
-    expect(screen.getByTestId('synergy-legend-logo-simili')).toBeInTheDocument()
-    expect(screen.getByTestId('synergy-legend-logo-nescient')).toBeInTheDocument()
-    expect(screen.getByTestId('synergy-legend-logo-humain')).toBeInTheDocument()
-    expect(screen.getByTestId('synergy-legend-description')).toBeInTheDocument()
-    expect(screen.getByTestId('synergy-legend-description')).toHaveTextContent('')
-  })
-
-  test('shows synergy description only on hover', async () => {
-    const user = userEvent.setup()
-    renderCollection()
-
-    const sansCoeurLogo = screen.getByTestId('synergy-legend-logo-sans_coeur')
-    await user.hover(sansCoeurLogo)
-    expect(screen.getByTestId('synergy-legend-description')).toHaveTextContent(
-      'Obscur (3+) : +1 on all 4 sides on first move.',
-    )
-
-    await user.unhover(sansCoeurLogo)
-    expect(screen.getByTestId('synergy-legend-description')).toHaveTextContent('')
-  })
-
-  test('highlights R2 row when inspecting an owned simili card', async () => {
-    const user = userEvent.setup()
-    const profile = createDefaultProfile()
-    const similiCardId = getCardIdByType('simili')
-    if (!profile.ownedCardIds.includes(similiCardId)) {
-      profile.ownedCardIds.push(similiCardId)
+    for (const elementId of cardElementIds) {
+      const filterChip = screen.getByTestId(`collection-filter-type-${elementId}`)
+      expect(filterChip).toBeInTheDocument()
+      expect(within(filterChip).getByRole('img', { name: getElementLabel(elementId) })).toHaveAttribute(
+        'src',
+        expect.stringContaining(`/logos-elements/${elementId}.png`),
+      )
     }
-    profile.cardCopiesById[similiCardId] = 1
-    renderCollection({ profile })
-
-    await user.click(screen.getByTestId(`collection-card-${similiCardId}`))
-
-    expect(screen.getByTestId('synergy-legend-logo-simili')).toHaveClass('is-active')
-    expect(screen.getByTestId('synergy-legend-logo-humain')).not.toHaveClass('is-active')
-  })
-
-  test('does not highlight legend rows when inspecting a locked card', async () => {
-    const user = userEvent.setup()
-    renderCollection()
-
-    await user.click(screen.getByTestId('collection-card-c84'))
-
-    expect(screen.getByTestId('collection-selected-type')).toHaveTextContent('Inconnu')
-    expect(screen.getByTestId('synergy-legend-logo-sans_coeur')).not.toHaveClass('is-active')
-    expect(screen.getByTestId('synergy-legend-logo-simili')).not.toHaveClass('is-active')
-    expect(screen.getByTestId('synergy-legend-logo-nescient')).not.toHaveClass('is-active')
-    expect(screen.getByTestId('synergy-legend-logo-humain')).not.toHaveClass('is-active')
   })
 
   test('shows NEW badge for recently obtained card', () => {
@@ -249,7 +198,10 @@ describe('CollectionPage', () => {
 
     const card = screen.getByTestId('collection-card-c11')
     expect(within(card).getByTestId('triad-card-type-badge')).toBeInTheDocument()
-    expect(within(card).getByTestId('triad-card-type-logo')).toHaveAttribute('src', '/logos-types/obscur.png')
+    expect(within(card).getByTestId('triad-card-type-logo')).toHaveAttribute(
+      'src',
+      expect.stringContaining('/logos-elements/poison.png'),
+    )
   })
 
   test('does not show type logo badge on locked cards in the pokedex grid', () => {
@@ -314,20 +266,46 @@ describe('CollectionPage', () => {
     )
   })
 
-  test('filters by type with multi-select chips', async () => {
+  test('focuses on one pokemon type from default state, then expands when selecting a second type', async () => {
     const user = userEvent.setup()
     renderCollection()
 
-    const typeToKeep = 'simili'
-    for (const typeId of ['sans_coeur', 'nescient', 'humain'] as const) {
-      await user.click(screen.getByTestId(`collection-filter-type-${typeId}`))
-    }
+    const firstType = 'eau'
+    const secondType = 'feu'
 
-    const expectedCount = cardPool.filter((card) => getTypeIdByCategory(card.categoryId) === typeToKeep).length
+    await user.click(screen.getByTestId(`collection-filter-type-${firstType}`))
+
+    const firstExpectedCount = cardPool.filter((card) => card.elementId === firstType).length
+    expect(getVisibleCollectionCards()).toHaveLength(firstExpectedCount)
+    expect(screen.getByTestId(`collection-filter-type-${firstType}`)).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTestId(`collection-filter-type-${secondType}`)).toHaveAttribute('aria-pressed', 'false')
+
+    await user.click(screen.getByTestId(`collection-filter-type-${secondType}`))
+
+    const expectedCount = cardPool.filter((card) => card.elementId === firstType || card.elementId === secondType).length
     expect(getVisibleCollectionCards()).toHaveLength(expectedCount)
     expect(screen.getByTestId('collection-filter-result-count')).toHaveTextContent(
       `${expectedCount} entrées affichées / ${cardPool.length} au total`,
     )
+
+    await user.click(screen.getByTestId(`collection-filter-type-${secondType}`))
+    expect(getVisibleCollectionCards()).toHaveLength(firstExpectedCount)
+
+    await user.click(screen.getByTestId(`collection-filter-type-${firstType}`))
+    expect(getVisibleCollectionCards()).toHaveLength(cardPool.length)
+    expect(screen.getByTestId('collection-filter-result-count')).toHaveTextContent(
+      `${cardPool.length} entrées affichées / ${cardPool.length} au total`,
+    )
+    expect(screen.getByTestId(`collection-filter-type-${firstType}`)).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTestId(`collection-filter-type-${secondType}`)).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  test('does not show filters for types absent from the spreadsheet', () => {
+    renderCollection()
+
+    expect(screen.queryByTestId('collection-filter-type-tenebres')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('collection-filter-type-acier')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('collection-filter-type-fee')).not.toBeInTheDocument()
   })
 
   test('filters by discovery status', async () => {
@@ -394,15 +372,15 @@ describe('CollectionPage', () => {
 
     await user.click(screen.getByTestId('collection-filter-discovery-owned'))
     await user.click(screen.getByTestId('collection-filter-rarity-common'))
-    await user.click(screen.getByTestId('collection-filter-type-humain'))
+    await user.click(screen.getByTestId('collection-filter-type-eau'))
 
     await user.click(screen.getByTestId('collection-filter-reset'))
 
     expect(screen.getByTestId('collection-filter-discovery-all')).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByTestId('collection-filter-rarity-common')).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByTestId('collection-filter-rarity-legendary')).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByTestId('collection-filter-type-humain')).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByTestId('collection-filter-type-simili')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTestId('collection-filter-type-eau')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTestId('collection-filter-type-feu')).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByTestId('collection-filter-result-count')).toHaveTextContent(
       `${cardPool.length} entrées affichées / ${cardPool.length} au total`,
     )
@@ -452,7 +430,11 @@ describe('CollectionPage', () => {
     expect(screen.getByText('Copies totales : 12')).toBeInTheDocument()
     expect(screen.getByTestId('collection-selected-category')).not.toHaveTextContent('Inconnu')
     expect(screen.getByTestId('collection-selected-element')).not.toHaveTextContent('Inconnu')
-    expect(screen.getByTestId('collection-selected-type')).not.toHaveTextContent('Inconnu')
+    const selectedElement = screen.getByTestId('collection-selected-element')
+    expect(within(selectedElement).getByRole('img', { name: /type/i })).toHaveAttribute(
+      'src',
+      expect.stringContaining('/logos-elements/poison.png'),
+    )
     expect(within(selectedCard).getByText('x2')).toBeInTheDocument()
   })
 
@@ -468,5 +450,45 @@ describe('CollectionPage', () => {
     expect(screen.getByTestId('collection-lock-hint')).toHaveTextContent(
       'Données de carte masquées. Gagne des matchs pour révéler cette entrée.',
     )
+  })
+
+  test('shows shiny detail and enables crafting when normal copies reach 50', async () => {
+    const user = userEvent.setup()
+    const profile = createDefaultProfile()
+    if (!profile.ownedCardIds.includes('c11')) {
+      profile.ownedCardIds.push('c11')
+    }
+    profile.cardCopiesById.c11 = 50
+    profile.shinyCardCopiesById.c11 = 1
+    const craftShinyCard = vi.fn()
+
+    renderCollection({ profile, craftShinyCard })
+    await user.click(screen.getByTestId('collection-card-c11'))
+
+    expect(within(screen.getByTestId('collection-inspect-card')).getByTestId('triad-card-shiny-pill')).toBeInTheDocument()
+    expect(screen.getByTestId('collection-selected-shiny-copies')).toHaveTextContent('x1')
+    expect(screen.getByTestId('collection-shiny-craft-progress')).toHaveTextContent('Normales: 50/50')
+
+    const craftButton = screen.getByTestId('collection-shiny-craft-button')
+    expect(craftButton).toBeEnabled()
+
+    await user.click(craftButton)
+    expect(craftShinyCard).toHaveBeenCalledWith('c11')
+  })
+
+  test('disables shiny crafting when normal copies are below 50', async () => {
+    const user = userEvent.setup()
+    const profile = createDefaultProfile()
+    if (!profile.ownedCardIds.includes('c11')) {
+      profile.ownedCardIds.push('c11')
+    }
+    profile.cardCopiesById.c11 = 49
+    const craftShinyCard = vi.fn()
+
+    renderCollection({ profile, craftShinyCard })
+    await user.click(screen.getByTestId('collection-card-c11'))
+
+    expect(screen.getByTestId('collection-shiny-craft-progress')).toHaveTextContent('Normales: 49/50')
+    expect(screen.getByTestId('collection-shiny-craft-button')).toBeDisabled()
   })
 })

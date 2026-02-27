@@ -1,19 +1,34 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import type { SyntheticEvent } from 'react'
 import { formatCardPokedexNumber } from '../../domain/cards/pokedex'
-import { getTypeIdByCategory } from '../../domain/cards/taxonomy'
 import type { CardDef } from '../../domain/types'
 import { getCardArtCandidates } from './cardArt'
-import { getTypeLogoMeta } from './typeLogos'
+import { getElementLogoMeta } from './elementLogos'
 
 export type TriadCardContext = 'collection-list' | 'collection-detail' | 'setup' | 'hand-player' | 'hand-cpu'
 export type NewBadgeVariant = 'default' | 'reveal' | 'claim'
+type TriadCardStatTrend = 'buff' | 'debuff' | 'neutral'
+
+interface TriadCardStatOverrides {
+  top: number
+  right: number
+  bottom: number
+  left: number
+}
+
+interface TriadCardStatTrends {
+  top: TriadCardStatTrend
+  right: TriadCardStatTrend
+  bottom: TriadCardStatTrend
+  left: TriadCardStatTrend
+}
 
 export interface TriadCardProps {
   card: CardDef
   context: TriadCardContext
   owned?: boolean
   copies?: number
+  shiny?: boolean
   selected?: boolean
   showNew?: boolean
   newBadgeVariant?: NewBadgeVariant
@@ -23,6 +38,8 @@ export interface TriadCardProps {
   className?: string
   testId?: string
   deferArtLoading?: boolean
+  statOverrides?: TriadCardStatOverrides
+  statTrends?: TriadCardStatTrends
 }
 
 function getSigil(name: string): string {
@@ -53,6 +70,7 @@ export const TriadCard = memo(function TriadCard({
   context,
   owned = true,
   copies = 0,
+  shiny = false,
   selected = false,
   showNew = false,
   newBadgeVariant = 'default',
@@ -62,17 +80,16 @@ export const TriadCard = memo(function TriadCard({
   className,
   testId,
   deferArtLoading = false,
+  statOverrides,
+  statTrends,
 }: TriadCardProps) {
   const locked = !owned
+  const hasShiny = shiny && owned
   const label = locked ? `Locked card ${formatCardPokedexNumber(card)}` : card.name
   const isMatchHandContext = context === 'hand-player' || context === 'hand-cpu'
   const hasNewPill = showNew && owned
   const isRevealNew = showNew && owned && newBadgeVariant === 'reveal'
   const artCandidates = useMemo(() => (locked ? [] : getCardArtCandidates(card.name)), [card.name, locked])
-  const typeLogoMeta = useMemo(
-    () => (locked ? null : getTypeLogoMeta(getTypeIdByCategory(card.categoryId))),
-    [card.categoryId, locked],
-  )
   const interactiveCardRef = useRef<HTMLButtonElement | null>(null)
   const artCandidateIndexRef = useRef(0)
   const [isArtVisible, setIsArtVisible] = useState(() => {
@@ -121,6 +138,8 @@ export const TriadCard = memo(function TriadCard({
     'triad-card',
     `triad-card--${context}`,
     `triad-card--${card.rarity}`,
+    `triad-card--element-${card.elementId}`,
+    hasShiny ? 'is-shiny' : '',
     locked ? 'is-locked' : '',
     selected ? 'is-selected' : '',
     interactive ? 'is-interactive' : '',
@@ -132,14 +151,19 @@ export const TriadCard = memo(function TriadCard({
     .filter(Boolean)
     .join(' ')
 
-  const top = locked ? '?' : card.top
-  const right = locked ? '?' : card.right
-  const bottom = locked ? '?' : card.bottom
-  const left = locked ? '?' : card.left
+  const top = locked ? '?' : (statOverrides?.top ?? card.top)
+  const right = locked ? '?' : (statOverrides?.right ?? card.right)
+  const bottom = locked ? '?' : (statOverrides?.bottom ?? card.bottom)
+  const left = locked ? '?' : (statOverrides?.left ?? card.left)
+  const topTrend = locked ? 'neutral' : (statTrends?.top ?? 'neutral')
+  const rightTrend = locked ? 'neutral' : (statTrends?.right ?? 'neutral')
+  const bottomTrend = locked ? 'neutral' : (statTrends?.bottom ?? 'neutral')
+  const leftTrend = locked ? 'neutral' : (statTrends?.left ?? 'neutral')
   const artSrc = !locked && isArtVisible && !artUnavailable ? (artCandidates[0] ?? null) : null
   const showSigil = locked || artUnavailable || !isArtVisible
   const useCompactName = context === 'setup' && !locked && getLongestNameSegmentLength(card.name) >= 9
   const nameClassName = useCompactName ? 'triad-card__name triad-card__name--compact' : 'triad-card__name'
+  const elementLogo = locked ? null : getElementLogoMeta(card.elementId)
 
   function handleArtError(event: SyntheticEvent<HTMLImageElement>) {
     const nextCandidateIndex = artCandidateIndexRef.current + 1
@@ -173,30 +197,30 @@ export const TriadCard = memo(function TriadCard({
         )
       ) : null}
       {owned && copies > 1 ? <span className="triad-card__copies-pill">x{copies}</span> : null}
-      {typeLogoMeta ? (
+      {elementLogo ? (
         <span
-          className={`triad-card__type-badge triad-card__type-badge--${typeLogoMeta.id}`}
-          aria-label={`Type: ${typeLogoMeta.name}`}
+          className={`triad-card__type-badge triad-card__type-badge--${card.elementId}`}
           data-testid="triad-card-type-badge"
+          aria-hidden="true"
         >
           <img
             className="triad-card__type-logo"
-            src={typeLogoMeta.imageSrc}
-            alt=""
-            aria-hidden="true"
+            src={elementLogo.imageSrc}
+            alt={elementLogo.name}
+            width={24}
+            height={24}
             loading="lazy"
             decoding="async"
-            draggable={false}
             data-testid="triad-card-type-logo"
           />
         </span>
       ) : null}
       <div className="triad-card__frame">
         <div className="triad-card__face">
-          <span className="triad-card__stat triad-card__stat--top">{top}</span>
-          <span className="triad-card__stat triad-card__stat--right">{right}</span>
-          <span className="triad-card__stat triad-card__stat--bottom">{bottom}</span>
-          <span className="triad-card__stat triad-card__stat--left">{left}</span>
+          <span className={`triad-card__stat triad-card__stat--top effect-stat--${topTrend}`}>{top}</span>
+          <span className={`triad-card__stat triad-card__stat--right effect-stat--${rightTrend}`}>{right}</span>
+          <span className={`triad-card__stat triad-card__stat--bottom effect-stat--${bottomTrend}`}>{bottom}</span>
+          <span className={`triad-card__stat triad-card__stat--left effect-stat--${leftTrend}`}>{left}</span>
 
           <div className="triad-card__art" aria-hidden="true">
             {artSrc ? (
@@ -216,6 +240,14 @@ export const TriadCard = memo(function TriadCard({
 
           {!isMatchHandContext && (
             <div className="triad-card__footer">
+              {hasShiny ? (
+                <span
+                  className="triad-card__shiny-pill triad-card__shiny-pill--footer"
+                  data-testid="triad-card-shiny-pill"
+                  aria-label="Shiny card"
+                  title="Shiny card"
+                />
+              ) : null}
               <span className={nameClassName}>{locked ? 'Locked Card' : card.name}</span>
               <span className="triad-card__meta">
                 <span className="triad-card__id">{locked ? '????' : formatCardPokedexNumber(card)}</span>

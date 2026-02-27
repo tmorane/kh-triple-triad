@@ -2,6 +2,7 @@ import { cardPool } from '../cards/cardPool'
 import type { CardCategoryId, CardId, PlayerProfile, Rarity } from '../types'
 import type { SeededRng } from '../random/seededRng'
 import { evaluateAchievements } from './achievements'
+import { rollShinyVariant } from './shiny'
 
 export type ShopPackId = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary'
 export type SpecialPackId = 'sans_coeur_focus' | 'simili_focus' | 'legendary_focus'
@@ -16,6 +17,7 @@ export interface ShopCardPull {
   rarity: Rarity
   isNewOwnership: boolean
   copiesAfter: number
+  isShiny?: boolean
 }
 
 export interface ShopPurchaseReceipt {
@@ -82,6 +84,16 @@ export interface SpecialPackProgressionResult {
   profile: PlayerProfile
   receipt: SpecialPackReceipt
   opened: OpenedSpecialPackResult
+}
+
+export interface OpenedShinyTestPackResult {
+  packId: 'shiny_test'
+  pulls: [ShopCardPull]
+}
+
+export interface ShinyTestPackProgressionResult {
+  profile: PlayerProfile
+  opened: OpenedShinyTestPackResult
 }
 
 const dropRarityOrder: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary']
@@ -174,6 +186,32 @@ export function openOwnedPack(profile: PlayerProfile, packId: ShopPackId, rng: S
   }
 }
 
+export function openShinyTestPack(profile: PlayerProfile, rng: SeededRng): ShinyTestPackProgressionResult {
+  if (cardPool.length === 0) {
+    throw new Error('No cards available for shiny test pack.')
+  }
+
+  const updatedProfile = cloneProfile(profile)
+  const card = cardPool[rng.nextInt(cardPool.length)]
+  if (!card) {
+    throw new Error('Unable to resolve shiny test pull card.')
+  }
+
+  const pull = applyPull(updatedProfile, card.id, card.rarity, true)
+  const unlocked = evaluateAchievements(updatedProfile)
+  if (unlocked.length > 0) {
+    updatedProfile.achievements.push(...unlocked)
+  }
+
+  return {
+    profile: updatedProfile,
+    opened: {
+      packId: 'shiny_test',
+      pulls: [pull],
+    },
+  }
+}
+
 export function purchaseShopPacks(
   profile: PlayerProfile,
   packId: ShopPackId,
@@ -224,7 +262,7 @@ export function openOwnedPacks(
     for (let pullIndex = 0; pullIndex < 3; pullIndex += 1) {
       const pulledRarity = chooseWeightedRarity(packId, rng)
       const cardId = chooseWeightedCard(pulledRarity, updatedProfile.cardCopiesById, rng)
-      pulls.push(applyPull(updatedProfile, cardId, pulledRarity))
+      pulls.push(applyPull(updatedProfile, cardId, pulledRarity, rollShinyVariant(rng)))
     }
   }
 
@@ -277,13 +315,13 @@ export function purchaseAndOpenSpecialPack(
     const didDropFocusedLegendary = focusRoll < focusDropChancePercent
 
     if (didDropFocusedLegendary) {
-      pulls.push(applyPull(updatedProfile, targetLegendaryCardId, 'legendary'))
+      pulls.push(applyPull(updatedProfile, targetLegendaryCardId, 'legendary', rollShinyVariant(rng)))
       updatedProfile.specialPackPity = {
         legendaryFocusChancePercent: LEGENDARY_FOCUS_BASE_DROP_CHANCE_PERCENT,
       }
     } else {
       const missPull = chooseLegendaryFocusMissPull(fillerPool, targetLegendaryCardId, updatedProfile.cardCopiesById, rng)
-      pulls.push(applyPull(updatedProfile, missPull.cardId, missPull.rarity))
+      pulls.push(applyPull(updatedProfile, missPull.cardId, missPull.rarity, rollShinyVariant(rng)))
       updatedProfile.specialPackPity = {
         legendaryFocusChancePercent: incrementLegendaryFocusDropChancePercent(focusDropChancePercent),
       }
@@ -292,7 +330,7 @@ export function purchaseAndOpenSpecialPack(
     for (let index = 0; index < 2; index += 1) {
       const rarity = chooseRemappedRarity(fillerPool, rng)
       const cardId = chooseWeightedCardFromPool(fillerPool, rarity, updatedProfile.cardCopiesById, rng)
-      pulls.push(applyPull(updatedProfile, cardId, rarity))
+      pulls.push(applyPull(updatedProfile, cardId, rarity, rollShinyVariant(rng)))
     }
   }
 
@@ -321,6 +359,7 @@ function cloneProfile(profile: PlayerProfile): PlayerProfile {
     ...profile,
     ownedCardIds: [...profile.ownedCardIds],
     cardCopiesById: { ...profile.cardCopiesById },
+    shinyCardCopiesById: { ...profile.shinyCardCopiesById },
     packInventoryByRarity: { ...profile.packInventoryByRarity },
     deckSlots: profile.deckSlots.map((slot) => ({
       ...slot,
@@ -422,7 +461,7 @@ function pullFromFocusedCategory(
   for (let index = 0; index < 3; index += 1) {
     const rarity = chooseRemappedRarity(categoryPool, rng)
     const cardId = chooseWeightedCardFromPool(categoryPool, rarity, profile.cardCopiesById, rng)
-    pulls.push(applyPull(profile, cardId, rarity))
+    pulls.push(applyPull(profile, cardId, rarity, rollShinyVariant(rng)))
   }
 }
 
@@ -449,14 +488,19 @@ function chooseRemappedRarity(pool: typeof cardPool, rng: SeededRng): Rarity {
   return availableRarities[availableRarities.length - 1]!
 }
 
-function applyPull(profile: PlayerProfile, cardId: CardId, rarity: Rarity): ShopCardPull {
-  const existingCopies = profile.cardCopiesById[cardId] ?? 0
-  const copiesAfter = existingCopies + 1
-  const isNewOwnership = existingCopies === 0
+function applyPull(profile: PlayerProfile, cardId: CardId, rarity: Rarity, isShiny: boolean): ShopCardPull {
+  const existingNormalCopies = profile.cardCopiesById[cardId] ?? 0
+  const existingShinyCopies = profile.shinyCardCopiesById[cardId] ?? 0
+  const isNewOwnership = existingNormalCopies === 0 && existingShinyCopies === 0
 
-  profile.cardCopiesById[cardId] = copiesAfter
+  const copiesAfter = (isShiny ? existingShinyCopies : existingNormalCopies) + 1
+  if (isShiny) {
+    profile.shinyCardCopiesById[cardId] = copiesAfter
+  } else {
+    profile.cardCopiesById[cardId] = copiesAfter
+  }
 
-  if (isNewOwnership && !profile.ownedCardIds.includes(cardId)) {
+  if (!profile.ownedCardIds.includes(cardId)) {
     profile.ownedCardIds.push(cardId)
   }
 
@@ -465,6 +509,7 @@ function applyPull(profile: PlayerProfile, cardId: CardId, rarity: Rarity): Shop
     rarity,
     isNewOwnership,
     copiesAfter,
+    isShiny,
   }
 }
 

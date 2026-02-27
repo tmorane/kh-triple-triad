@@ -5,7 +5,7 @@ import { MemoryRouter } from 'react-router-dom'
 import App from '../App'
 import { cardPool } from '../domain/cards/cardPool'
 import { getSelectedDeckSlot, starterOwnedCardIds } from '../domain/cards/decks'
-import { applyMove, listLegalMoves } from '../domain/match/engine'
+import { applyMove, listLegalMoves, listMovePowerTargetOptions } from '../domain/match/engine'
 import { createDefaultProfile, PROFILE_STORAGE_KEY } from '../domain/progression/profile'
 import { GameProvider } from './GameContext'
 import { useGame } from './useGame'
@@ -75,7 +75,18 @@ function RewardsHarness() {
             if (!move) {
               break
             }
-            next = applyMove(next, move)
+            const targetOptions = listMovePowerTargetOptions(next, move)
+            const targetedMove =
+              targetOptions && targetOptions.cells.length > 0
+                ? {
+                    ...move,
+                    powerTarget:
+                      targetOptions.kind === 'targetCell'
+                        ? { targetCell: targetOptions.cells[0] }
+                        : { targetCardCell: targetOptions.cells[0] },
+                  }
+                : move
+            next = applyMove(next, targetedMove)
           }
 
           updateCurrentMatch(next)
@@ -175,7 +186,18 @@ function MatchReplayHarness() {
             if (!move) {
               break
             }
-            next = applyMove(next, move)
+            const targetOptions = listMovePowerTargetOptions(next, move)
+            const targetedMove =
+              targetOptions && targetOptions.cells.length > 0
+                ? {
+                    ...move,
+                    powerTarget:
+                      targetOptions.kind === 'targetCell'
+                        ? { targetCell: targetOptions.cells[0] }
+                        : { targetCardCell: targetOptions.cells[0] },
+                  }
+                : move
+            next = applyMove(next, targetedMove)
           }
 
           updateCurrentMatch(next)
@@ -249,49 +271,15 @@ describe('app integration', () => {
     expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('pokemon')
   })
 
-  test('theme toggle is disabled and cannot switch theme', async () => {
-    const user = userEvent.setup()
+  test('theme and background selectors are hidden when locked', () => {
     renderApp('/')
 
-    const themeToggle = screen.getByTestId('theme-toggle')
-    expect(themeToggle).toBeDisabled()
     expect(document.body.dataset.theme).toBe('pokemon')
     expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('pokemon')
-
-    await user.click(themeToggle)
-    expect(document.body.dataset.theme).toBe('pokemon')
-    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('pokemon')
-  })
-
-  test('background controls are explicit and independent from theme', async () => {
-    const user = userEvent.setup()
-    renderApp('/')
-
-    expect(document.body.dataset.theme).toBe('pokemon')
-    expect(document.body.dataset.bg).toBe('bg1')
-
-    await user.click(screen.getByTestId('bg-option-bg3'))
-    expect(document.body.dataset.bg).toBe('bg3')
-    expect(document.body.dataset.theme).toBe('pokemon')
-  })
-
-  test('theme toggle is rendered under background controls', () => {
-    renderApp('/')
-
-    const controls = screen.getByTestId('visual-controls')
-    const bgControl = screen.getByTestId('bg-option-bg1').parentElement
-    const themeToggle = screen.getByTestId('theme-toggle')
-
-    expect(controls).toContainElement(bgControl)
-    expect(controls).toContainElement(themeToggle)
-    expect(themeToggle).toBeDisabled()
-
-    if (!bgControl) {
-      throw new Error('BG control group is missing.')
-    }
-
-    const children = Array.from(controls.children)
-    expect(children.indexOf(bgControl)).toBeLessThan(children.indexOf(themeToggle))
+    expect(document.body.dataset.bg).toBeUndefined()
+    expect(screen.queryByTestId('visual-controls')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('theme-toggle')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('bg-option-bg1')).not.toBeInTheDocument()
   })
 
   test('home -> setup -> match happy path from preset selection', async () => {
@@ -353,6 +341,28 @@ describe('app integration', () => {
 
     expect(screen.getByTestId('topbar-cta-link')).toHaveTextContent('Continue')
     expect(screen.getByTestId('topbar-cta-link')).toHaveAttribute('href', '/match')
+  })
+
+  test('topbar shows abandon next to continue and returns to setup when clicked', async () => {
+    const user = userEvent.setup()
+    renderApp('/setup')
+
+    expect(screen.queryByTestId('topbar-abandon-button')).not.toBeInTheDocument()
+
+    await selectPlayPreset(user, 'setup-mode-4x4')
+    await user.click(screen.getByTestId('start-match-button'))
+
+    const continueLink = screen.getByTestId('topbar-cta-link')
+    const abandonButton = screen.getByTestId('topbar-abandon-button')
+
+    expect(continueLink).toHaveTextContent('Continue')
+    expect(continueLink.compareDocumentPosition(abandonButton) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+
+    await user.click(abandonButton)
+
+    expect(await screen.findByTestId('setup-layout')).toBeInTheDocument()
+    expect(screen.getByTestId('topbar-cta-link')).toHaveTextContent('Play')
+    expect(screen.queryByTestId('topbar-abandon-button')).not.toBeInTheDocument()
   })
 
   test('player name is rendered in both topbar brand and home heading', () => {
@@ -601,6 +611,42 @@ describe('app integration', () => {
     expect(screen.getByTestId('replay-harness-current-deck')).toHaveTextContent(deckBeforeRematch ?? '')
     expect(screen.getByTestId('replay-harness-current-mode')).toHaveTextContent('4x4')
     expect(screen.getByTestId('replay-harness-played')).toHaveTextContent('1')
+  })
+
+  test('ranked rematch uses updated rank when the player promotes', async () => {
+    const user = userEvent.setup()
+    const profile = createDefaultProfile()
+    profile.rankedByMode['4x4'].tier = 'iron'
+    profile.rankedByMode['4x4'].division = 'I'
+    profile.rankedByMode['4x4'].lp = 95
+    localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile))
+
+    render(
+      <MemoryRouter initialEntries={['/setup']}>
+        <GameProvider>
+          <App />
+          <ForcedPlayerVictoryHarness />
+        </GameProvider>
+      </MemoryRouter>,
+    )
+
+    await selectPlayPreset(user, 'setup-mode-4x4-ranked')
+    await user.click(screen.getByTestId('start-match-button'))
+    await waitForStarterAnimation()
+    expect(screen.getByTestId('match-opponent-badge')).toHaveTextContent('CPU L1')
+
+    await user.click(screen.getByTestId('force-player-victory'))
+
+    const finishModal = await screen.findByTestId('match-finish-modal')
+    const claimCards = within(finishModal).getAllByTestId(/^match-claim-card-/)
+    await user.click(claimCards[0])
+    await user.click(within(finishModal).getByTestId('restart-match-button'))
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('match-finish-modal')).not.toBeInTheDocument()
+    })
+    await waitForStarterAnimation()
+    expect(screen.getByTestId('match-opponent-badge')).toHaveTextContent('CPU L2')
   })
 
   test('victory requires claiming one cpu card before continue and persists the claimed copy', async () => {

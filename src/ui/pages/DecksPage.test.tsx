@@ -3,18 +3,12 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, test } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import { GameProvider } from '../../app/GameContext'
-import { cardPool } from '../../domain/cards/cardPool'
+import { cardPool, getCard } from '../../domain/cards/cardPool'
+import { cardElementIds, getElementLabel } from '../../domain/cards/taxonomy'
+import { getElementEffectText } from '../../domain/match/elementEffectsCatalog'
 import { PROFILE_STORAGE_KEY, createDefaultProfile, saveProfile } from '../../domain/progression/profile'
-import type { CardCategoryId, PlayerProfile } from '../../domain/types'
+import type { PlayerProfile } from '../../domain/types'
 import { DecksPage } from './DecksPage'
-
-function pickCardIdsByCategory(categoryId: CardCategoryId, count: number): string[] {
-  const matching = cardPool.filter((card) => card.categoryId === categoryId).map((card) => card.id)
-  if (matching.length < count) {
-    throw new Error(`Missing ${count} cards for category ${categoryId}.`)
-  }
-  return matching.slice(0, count)
-}
 
 function createDecksProfile(): PlayerProfile {
   const profile = createDefaultProfile()
@@ -33,26 +27,6 @@ function createDecksProfile(): PlayerProfile {
   profile.deckSlots[2].mode = '4x4'
   profile.deckSlots[2].cards = []
   profile.deckSlots[2].cards4x4 = []
-
-  profile.selectedDeckSlotId = 'slot-1'
-  return profile
-}
-
-function createSynergyDecksProfile(): PlayerProfile {
-  const profile = createDecksProfile()
-
-  const obscur = pickCardIdsByCategory('sans_coeur', 4)
-  const psy = pickCardIdsByCategory('simili', 2)
-  const combat = pickCardIdsByCategory('nescient', 2)
-  const nature = pickCardIdsByCategory('humain', 5)
-
-  profile.deckSlots[0].mode = '4x4'
-  profile.deckSlots[0].cards4x4 = [...obscur.slice(0, 3), ...psy.slice(0, 2), ...nature.slice(0, 3)]
-  profile.deckSlots[0].cards = profile.deckSlots[0].cards4x4.slice(0, 5)
-
-  profile.deckSlots[1].mode = '4x4'
-  profile.deckSlots[1].cards4x4 = [...nature, obscur[3]!, psy[0]!, combat[0]!]
-  profile.deckSlots[1].cards = profile.deckSlots[1].cards4x4.slice(0, 5)
 
   profile.selectedDeckSlotId = 'slot-1'
   return profile
@@ -85,51 +59,142 @@ describe('DecksPage', () => {
     expect(screen.queryByTestId('setup-queue-tab-normal')).not.toBeInTheDocument()
   })
 
-  test('defaults to 4x4 edit mode and shows 8 selected slots', () => {
+  test('defaults to 3x3 edit mode and shows 5 selected slots', () => {
     renderDecks()
-
-    expect(screen.getByTestId('setup-mode-4x4')).toBeChecked()
-    expect(screen.getByText('Deck: 8/8 selected')).toBeInTheDocument()
-    expect(within(screen.getByTestId('setup-selected-cards')).getAllByTestId(/^setup-selected-card-/)).toHaveLength(8)
-  })
-
-  test('uses a 4-column selected preview grid in 4x4 mode', () => {
-    renderDecks()
-
-    const selectedCards = screen.getByTestId('setup-selected-cards')
-    expect(selectedCards.style.getPropertyValue('--setup-selected-columns').trim()).toBe('4')
-  })
-
-  test('switching edit mode to 3x3 uses 5-card deck list', async () => {
-    const user = userEvent.setup()
-    renderDecks()
-
-    await user.click(screen.getByTestId('setup-mode-3x3'))
 
     expect(screen.getByTestId('setup-mode-3x3')).toBeChecked()
+    expect(screen.queryByTestId('setup-mode-4x4')).not.toBeInTheDocument()
     expect(screen.getByText('Deck: 5/5 selected')).toBeInTheDocument()
     expect(within(screen.getByTestId('setup-selected-cards')).getAllByTestId(/^setup-selected-card-/)).toHaveLength(5)
   })
 
-  test('renders synergy guide with detailed type effects', () => {
-    renderDecks(createSynergyDecksProfile())
+  test('uses a 5-column selected preview grid in 3x3 mode', () => {
+    renderDecks()
 
-    expect(screen.getByTestId('decks-synergy-guide')).toBeInTheDocument()
-    expect(screen.getByTestId('decks-synergy-detail-title')).toHaveTextContent('Obscur')
-    expect(screen.getByTestId('decks-synergy-detail-primary')).toHaveTextContent('1er coup')
-    expect(screen.getByTestId('decks-synergy-detail-secondary')).toHaveTextContent('+5 or')
+    const selectedCards = screen.getByTestId('setup-selected-cards')
+    expect(selectedCards.style.getPropertyValue('--setup-selected-columns').trim()).toBe('5')
   })
 
-  test('updates synergy guide when switching deck slots', async () => {
+  test('hides 4x4 edit mode toggle', () => {
+    renderDecks()
+
+    expect(screen.getByTestId('setup-mode-3x3')).toBeChecked()
+    expect(screen.queryByTestId('setup-mode-4x4')).not.toBeInTheDocument()
+  })
+
+  test('does not render synergy guide', () => {
+    renderDecks()
+
+    expect(screen.queryByTestId('decks-synergy-guide')).not.toBeInTheDocument()
+  })
+
+  test('focuses on one type from default filters, then adds a second type in deck card list', async () => {
     const user = userEvent.setup()
-    renderDecks(createSynergyDecksProfile())
+    const profile = createDecksProfile()
+    renderDecks(profile)
 
-    expect(screen.getByTestId('decks-synergy-detail-title')).toHaveTextContent('Obscur')
+    for (const elementId of cardElementIds) {
+      const filterChip = screen.getByTestId(`setup-filter-type-${elementId}`)
+      expect(filterChip).toBeInTheDocument()
+      expect(filterChip).toHaveClass('is-active')
+      expect(within(filterChip).getByRole('img', { name: getElementLabel(elementId) })).toHaveAttribute(
+        'src',
+        expect.stringContaining(`/logos-elements/${elementId}.png`),
+      )
+    }
 
-    await user.click(screen.getByTestId('deck-slot-slot-2'))
+    const selectedDeckSet = new Set(profile.deckSlots[0].cards)
+    const firstType = 'eau'
+    const secondType = 'feu'
 
-    expect(screen.getByTestId('decks-synergy-detail-title')).toHaveTextContent('Nature')
-    expect(screen.getByTestId('decks-synergy-detail-secondary')).toHaveTextContent('pas de bonus secondaire')
+    await user.click(screen.getByTestId(`setup-filter-type-${firstType}`))
+
+    for (const elementId of cardElementIds) {
+      const filterChip = screen.getByTestId(`setup-filter-type-${elementId}`)
+      if (elementId === firstType) {
+        expect(filterChip).toHaveClass('is-active')
+        expect(filterChip).toHaveAttribute('aria-pressed', 'true')
+      } else {
+        expect(filterChip).not.toHaveClass('is-active')
+        expect(filterChip).toHaveAttribute('aria-pressed', 'false')
+      }
+    }
+
+    const firstExpectedCount = cardPool.filter(
+      (card) => profile.ownedCardIds.includes(card.id) && !selectedDeckSet.has(card.id) && card.elementId === firstType,
+    ).length
+    expect(screen.getByTestId('setup-result-count')).toHaveTextContent(
+      `${firstExpectedCount} cards shown / ${profile.ownedCardIds.length} owned`,
+    )
+
+    await user.click(screen.getByTestId(`setup-filter-type-${secondType}`))
+
+    const expectedCount = cardPool.filter(
+      (card) =>
+        profile.ownedCardIds.includes(card.id) &&
+        !selectedDeckSet.has(card.id) &&
+        (card.elementId === firstType || card.elementId === secondType),
+    ).length
+
+    expect(screen.getByTestId('setup-result-count')).toHaveTextContent(
+      `${expectedCount} cards shown / ${profile.ownedCardIds.length} owned`,
+    )
+
+    await user.click(screen.getByTestId(`setup-filter-type-${secondType}`))
+    expect(screen.getByTestId('setup-result-count')).toHaveTextContent(
+      `${firstExpectedCount} cards shown / ${profile.ownedCardIds.length} owned`,
+    )
+
+    await user.click(screen.getByTestId(`setup-filter-type-${firstType}`))
+    const allTypesCount = cardPool.filter(
+      (card) => profile.ownedCardIds.includes(card.id) && !selectedDeckSet.has(card.id),
+    ).length
+    expect(screen.getByTestId('setup-result-count')).toHaveTextContent(
+      `${allTypesCount} cards shown / ${profile.ownedCardIds.length} owned`,
+    )
+    expect(screen.getByTestId(`setup-filter-type-${firstType}`)).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTestId(`setup-filter-type-${secondType}`)).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  test('shows deck element activity with inactive types grayed and active types colored', () => {
+    const profile = createDecksProfile()
+    renderDecks(profile)
+
+    const activeElementSet = new Set(profile.deckSlots[0].cards.map((cardId) => getCard(cardId).elementId))
+    const activeRow = screen.getByTestId('decks-element-activity-active')
+    const inactiveRow = screen.getByTestId('decks-element-activity-inactive')
+
+    for (const elementId of cardElementIds) {
+      const chip = screen.getByTestId(`decks-element-activity-${elementId}`)
+      expect(chip).toBeInTheDocument()
+      if (activeElementSet.has(elementId)) {
+        expect(chip).toHaveClass('is-active')
+        expect(chip).not.toHaveClass('is-inactive')
+        expect(activeRow).toContainElement(chip)
+      } else {
+        expect(chip).toHaveClass('is-inactive')
+        expect(chip).not.toHaveClass('is-active')
+        expect(inactiveRow).toContainElement(chip)
+      }
+    }
+  })
+
+  test('shows type info panel when hovering deck element activity chips', async () => {
+    const user = userEvent.setup()
+    renderDecks()
+
+    const infoPanel = screen.getByTestId('decks-element-activity-info')
+    expect(infoPanel).toHaveTextContent('Survole un type pour voir son effet et son statut dans le deck.')
+
+    await user.hover(screen.getByTestId('decks-element-activity-feu'))
+    expect(infoPanel).toHaveTextContent('Feu')
+    expect(infoPanel).toHaveTextContent('1 carte dans le deck · Actif dans ce deck')
+    expect(infoPanel).toHaveTextContent(getElementEffectText('feu'))
+
+    await user.hover(screen.getByTestId('decks-element-activity-poison'))
+    expect(infoPanel).toHaveTextContent('Poison')
+    expect(infoPanel).toHaveTextContent('0 cartes dans le deck · Inactif dans ce deck')
+    expect(infoPanel).toHaveTextContent(getElementEffectText('poison'))
   })
 
   test('renaming slot persists in profile storage', async () => {
@@ -157,15 +222,15 @@ describe('DecksPage', () => {
     const firstPreviewCard = within(preview).getAllByTestId(/^setup-selected-card-/)[0]
     await user.click(firstPreviewCard)
 
-    expect(screen.getByText('Deck: 7/8 selected')).toBeInTheDocument()
+    expect(screen.getByText('Deck: 4/5 selected')).toBeInTheDocument()
 
     const firstAvailableCard = screen.getAllByTestId(/^setup-card-/)[0]
     await user.click(firstAvailableCard)
-    expect(screen.getByText('Deck: 8/8 selected')).toBeInTheDocument()
+    expect(screen.getByText('Deck: 5/5 selected')).toBeInTheDocument()
 
     const secondAvailableCard = screen.getAllByTestId(/^setup-card-/)[0]
     await user.click(secondAvailableCard)
-    expect(screen.getByText('Deck already has 8 cards. Remove one first.')).toBeInTheDocument()
+    expect(screen.getByText('Deck already has 5 cards. Remove one first.')).toBeInTheDocument()
   })
 
   test('paginates the card selector and allows page navigation', async () => {

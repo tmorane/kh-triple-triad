@@ -154,14 +154,18 @@ interface PlayerProfileV6WithoutCards4x4Legacy extends Omit<PlayerProfileV6Legac
 
 type PlayerProfileV6WithoutPlayerNameLegacy = Omit<PlayerProfileV6WithoutCards4x4Legacy, 'playerName'>
 
-interface PlayerProfileV7Legacy extends Omit<PlayerProfile, 'version' | 'rankedByMode'> {
+interface PlayerProfileV7Legacy extends Omit<PlayerProfile, 'version' | 'rankedByMode' | 'shinyCardCopiesById'> {
   version: 7
   ranked: RankedState
 }
 
-interface PlayerProfileV8Legacy extends Omit<PlayerProfile, 'version' | 'settings'> {
+interface PlayerProfileV8Legacy extends Omit<PlayerProfile, 'version' | 'settings' | 'shinyCardCopiesById'> {
   version: 8
   settings: { audioEnabled: false }
+}
+
+interface PlayerProfileV9Legacy extends Omit<PlayerProfile, 'version' | 'shinyCardCopiesById'> {
+  version: 9
 }
 
 interface StoredProfileEntryV1 {
@@ -245,11 +249,12 @@ function createProfileFromStarterCards(initialOwnedCardIds: CardId[], initialDec
   const initialRanked = createInitialRankedState()
 
   return {
-    version: 9,
+    version: 10,
     playerName: DEFAULT_PLAYER_NAME,
     gold: 100,
     ownedCardIds,
     cardCopiesById: createCardCopiesById(ownedCardIds),
+    shinyCardCopiesById: createEmptyShinyCardCopiesById(),
     packInventoryByRarity: createEmptyPackInventoryByRarity(),
     deckSlots: [
       createDeckSlot('slot-1', 'Deck 1', initialDeck, { same: false, plus: false }, ownedCardIds),
@@ -607,48 +612,54 @@ function parseProfileCandidate(value: unknown): PlayerProfile | null {
     return value
   }
 
+  if (isPlayerProfileV9Legacy(value)) {
+    return migrateProfileV9ToV10(value)
+  }
+
   if (isPlayerProfileV8Legacy(value)) {
-    return migrateProfileV8ToV9(value)
+    return migrateProfileV9ToV10(migrateProfileV8ToV9(value))
   }
 
   if (isPlayerProfileV7Legacy(value)) {
-    return migrateProfileV8ToV9(migrateProfileV7ToV8(value))
+    return migrateProfileV9ToV10(migrateProfileV8ToV9(migrateProfileV7ToV8(value)))
   }
 
   if (isPlayerProfileV6WithoutCards4x4Legacy(value)) {
-    return migrateProfileV8ToV9(migrateProfileV7ToV8(migrateProfileV6WithoutCards4x4ToV7(value)))
+    return migrateProfileV9ToV10(migrateProfileV8ToV9(migrateProfileV7ToV8(migrateProfileV6WithoutCards4x4ToV7(value))))
   }
 
   if (isPlayerProfileV6WithoutPlayerNameLegacy(value)) {
-    return migrateProfileV8ToV9(migrateProfileV7ToV8(migrateProfileV6WithoutPlayerNameToV7(value)))
+    return migrateProfileV9ToV10(migrateProfileV8ToV9(migrateProfileV7ToV8(migrateProfileV6WithoutPlayerNameToV7(value))))
   }
 
   if (isPlayerProfileV6Legacy(value)) {
-    return migrateProfileV8ToV9(migrateProfileV7ToV8(migrateProfileV6ToV7(value)))
+    return migrateProfileV9ToV10(migrateProfileV8ToV9(migrateProfileV7ToV8(migrateProfileV6ToV7(value))))
   }
 
   if (isPlayerProfileV5Legacy(value)) {
-    return migrateProfileV8ToV9(migrateProfileV7ToV8(migrateProfileV5ToV7(value)))
+    return migrateProfileV9ToV10(migrateProfileV8ToV9(migrateProfileV7ToV8(migrateProfileV5ToV7(value))))
   }
 
   if (isPlayerProfileV4Legacy(value)) {
-    return migrateProfileV8ToV9(migrateProfileV7ToV8(migrateProfileV5ToV7(migrateProfileV4ToV5(value))))
+    return migrateProfileV9ToV10(migrateProfileV8ToV9(migrateProfileV7ToV8(migrateProfileV5ToV7(migrateProfileV4ToV5(value)))))
   }
 
   if (isPlayerProfileV4WithoutPacksLegacy(value)) {
-    return migrateProfileV8ToV9(migrateProfileV7ToV8(migrateProfileV5ToV7(migrateProfileV4WithoutPacksToV5(value))))
+    return migrateProfileV9ToV10(
+      migrateProfileV8ToV9(migrateProfileV7ToV8(migrateProfileV5ToV7(migrateProfileV4WithoutPacksToV5(value)))),
+    )
   }
 
   if (isPlayerProfileV3Legacy(value)) {
-    return migrateProfileV8ToV9(migrateProfileV7ToV8(migrateProfileV5ToV7(migrateProfileV3ToV5(value))))
+    return migrateProfileV9ToV10(migrateProfileV8ToV9(migrateProfileV7ToV8(migrateProfileV5ToV7(migrateProfileV3ToV5(value)))))
   }
 
   if (isPlayerProfileV2Legacy(value)) {
-    return migrateProfileV8ToV9(migrateProfileV7ToV8(migrateProfileV5ToV7(migrateProfileV2ToV5(value))))
+    return migrateProfileV9ToV10(migrateProfileV8ToV9(migrateProfileV7ToV8(migrateProfileV5ToV7(migrateProfileV2ToV5(value)))))
   }
 
   if (isPlayerProfileV1Legacy(value)) {
-    return migrateProfileV8ToV9(migrateProfileV7ToV8(migrateProfileV5ToV7(migrateProfileV1ToV5(value))))
+    return migrateProfileV9ToV10(migrateProfileV8ToV9(migrateProfileV7ToV8(migrateProfileV5ToV7(migrateProfileV1ToV5(value)))))
   }
 
   return null
@@ -917,13 +928,21 @@ function migrateProfileV7ToV8(profile: PlayerProfileV7Legacy): PlayerProfileV8Le
   }
 }
 
-function migrateProfileV8ToV9(profile: PlayerProfileV8Legacy): PlayerProfile {
+function migrateProfileV8ToV9(profile: PlayerProfileV8Legacy): PlayerProfileV9Legacy {
   return {
     ...profile,
     version: 9,
     settings: {
       audioEnabled: true,
     },
+  }
+}
+
+function migrateProfileV9ToV10(profile: PlayerProfileV9Legacy): PlayerProfile {
+  return {
+    ...profile,
+    version: 10,
+    shinyCardCopiesById: createEmptyShinyCardCopiesById(),
   }
 }
 
@@ -1119,12 +1138,14 @@ function migrateAchievementsToV4(profile: PlayerProfileV5Legacy, legacyAchieveme
     (entry) => isAchievementId(entry.id) && !legacyCollectionAchievementIds.has(entry.id),
   ) as AchievementUnlock[]
 
-  const withPreservedOnly = migrateProfileV8ToV9(
-    migrateProfileV7ToV8(
-      migrateProfileV5ToV7({
-        ...profile,
-        achievements: preserved,
-      }),
+  const withPreservedOnly = migrateProfileV9ToV10(
+    migrateProfileV8ToV9(
+      migrateProfileV7ToV8(
+        migrateProfileV5ToV7({
+          ...profile,
+          achievements: preserved,
+        }),
+      ),
     ),
   )
 
@@ -1146,6 +1167,10 @@ function createCardCopiesById(ownedCardIds: CardId[]): Record<CardId, number> {
   return cardCopiesById
 }
 
+function createEmptyShinyCardCopiesById(): Record<CardId, number> {
+  return {}
+}
+
 function createEmptyPackInventoryByRarity(): Record<Rarity, number> {
   return {
     common: 0,
@@ -1162,6 +1187,37 @@ function isPlayerProfile(value: unknown): value is PlayerProfile {
   }
 
   const candidate = value as Partial<PlayerProfile>
+
+  return (
+    candidate.version === 10 &&
+    typeof candidate.playerName === 'string' &&
+    isPlayerNameValid(candidate.playerName).valid &&
+    typeof candidate.gold === 'number' &&
+    Array.isArray(candidate.ownedCardIds) &&
+    candidate.ownedCardIds.every((card) => typeof card === 'string') &&
+    isCardCopiesById(candidate.cardCopiesById) &&
+    isCardCopiesById(candidate.shinyCardCopiesById) &&
+    isPackInventoryByRarity(candidate.packInventoryByRarity) &&
+    doesOwnershipMatchCopies(candidate.ownedCardIds, candidate.cardCopiesById, candidate.shinyCardCopiesById) &&
+    isDeckSlotsLegacy(candidate.deckSlots) &&
+    isDeckSlotId(candidate.selectedDeckSlotId) &&
+    typeof candidate.stats?.played === 'number' &&
+    typeof candidate.stats?.won === 'number' &&
+    typeof candidate.stats?.streak === 'number' &&
+    typeof candidate.stats?.bestStreak === 'number' &&
+    isAchievementUnlocks(candidate.achievements) &&
+    isMissionProgressMap(candidate.missions) &&
+    isRankedByMode(candidate.rankedByMode) &&
+    typeof candidate.settings?.audioEnabled === 'boolean'
+  )
+}
+
+function isPlayerProfileV9Legacy(value: unknown): value is PlayerProfileV9Legacy {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+
+  const candidate = value as Partial<PlayerProfileV9Legacy>
 
   return (
     candidate.version === 9 &&
@@ -1624,8 +1680,12 @@ function isMissionProgressMap(value: unknown): value is PlayerProfile['missions'
 function doesOwnershipMatchCopies(
   ownedCardIds: CardId[] | undefined,
   cardCopiesById: Record<CardId, number> | undefined,
+  shinyCardCopiesById: Record<CardId, number> | undefined = {},
 ): boolean {
   if (!ownedCardIds || !cardCopiesById) {
+    return false
+  }
+  if (!shinyCardCopiesById) {
     return false
   }
 
@@ -1634,13 +1694,19 @@ function doesOwnershipMatchCopies(
     return false
   }
 
-  const copySet = new Set(Object.keys(cardCopiesById))
+  const copySet = new Set([...Object.keys(cardCopiesById), ...Object.keys(shinyCardCopiesById)])
   if (copySet.size !== ownedSet.size) {
     return false
   }
 
   for (const cardId of ownedSet) {
     if (!copySet.has(cardId)) {
+      return false
+    }
+  }
+
+  for (const cardId of copySet) {
+    if (!ownedSet.has(cardId)) {
       return false
     }
   }

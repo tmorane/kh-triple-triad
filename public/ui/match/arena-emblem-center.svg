@@ -1,0 +1,21 @@
+<svg width="420" height="420" viewBox="0 0 420 420" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <defs>
+    <radialGradient id="emblemGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(210 210) rotate(90) scale(210)">
+      <stop offset="0" stop-color="#B8DEFF" stop-opacity="0.36"/>
+      <stop offset="0.65" stop-color="#6AAEFF" stop-opacity="0.14"/>
+      <stop offset="1" stop-color="#6AAEFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="ringStroke" x1="56" y1="56" x2="364" y2="364" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#D8ECFF" stop-opacity="0.9"/>
+      <stop offset="0.5" stop-color="#9CCBFF" stop-opacity="0.72"/>
+      <stop offset="1" stop-color="#F8DA74" stop-opacity="0.84"/>
+    </linearGradient>
+  </defs>
+
+  <circle cx="210" cy="210" r="210" fill="url(#emblemGlow)"/>
+  <circle cx="210" cy="210" r="154" stroke="url(#ringStroke)" stroke-width="8" stroke-opacity="0.82"/>
+  <circle cx="210" cy="210" r="108" stroke="#A9D3FF" stroke-opacity="0.48" stroke-width="4"/>
+  <path d="M62 210H358" stroke="#D9EEFF" stroke-opacity="0.72" stroke-width="8" stroke-linecap="round"/>
+  <circle cx="210" cy="210" r="42" fill="#0E2A58" fill-opacity="0.74" stroke="#F8DD7B" stroke-opacity="0.84" stroke-width="7"/>
+  <circle cx="210" cy="210" r="16" fill="#F9E08E" fill-opacity="0.9"/>
+</svg>

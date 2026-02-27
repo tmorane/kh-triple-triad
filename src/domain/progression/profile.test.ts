@@ -48,11 +48,12 @@ describe('profile persistence', () => {
   test('creates a default profile on first launch', () => {
     const profile = loadProfile()
 
-    expect(profile.version).toBe(9)
+    expect(profile.version).toBe(10)
     expect(profile.playerName).toBe('Joueur')
     expect(profile.gold).toBe(100)
     expect(profile.ownedCardIds).toEqual(starterOwnedCardIds)
     expect(profile.cardCopiesById).toEqual(copiesFor(starterOwnedCardIds))
+    expect(profile.shinyCardCopiesById).toEqual({})
     expect(profile.packInventoryByRarity).toEqual(emptyPackInventory())
     expect(profile.selectedDeckSlotId).toBe('slot-1')
     expect(profile.deckSlots).toEqual([
@@ -109,6 +110,7 @@ describe('profile persistence', () => {
     expect(new Set(profile.ownedCardIds).size).toBe(10)
     expect(Object.keys(profile.cardCopiesById)).toHaveLength(10)
     expect(Object.values(profile.cardCopiesById)).toEqual(Array(10).fill(1))
+    expect(profile.shinyCardCopiesById).toEqual({})
 
     const rarityCounts = profile.ownedCardIds.reduce(
       (counts, cardId) => {
@@ -229,7 +231,7 @@ describe('profile persistence', () => {
     )
   })
 
-  test('migrates a v5 profile to v9, initializes missions, and resets ranked state', () => {
+  test('migrates a v5 profile to v10, initializes missions, and resets ranked state', () => {
     const v5 = {
       version: 5,
       gold: 420,
@@ -267,7 +269,7 @@ describe('profile persistence', () => {
 
     const migrated = loadProfile()
 
-    expect(migrated.version).toBe(9)
+    expect(migrated.version).toBe(10)
     expect(migrated.gold).toBe(420)
     expect(migrated.stats).toEqual(v5.stats)
     expect(migrated.deckSlots[0].cards4x4).toEqual(fillToEight(v5.deckSlots[0].cards, starterOwnedCardIds))
@@ -291,11 +293,12 @@ describe('profile persistence', () => {
     expect(migrated.rankedByMode['3x3']).toEqual(migrated.rankedByMode['4x4'])
 
     const persisted = JSON.parse(localStorage.getItem(PROFILE_STORAGE_KEY) ?? '{}') as { version?: number }
-    expect(persisted.version).toBe(9)
+    expect(persisted.version).toBe(10)
     expect(migrated.settings.audioEnabled).toBe(true)
+    expect(migrated.shinyCardCopiesById).toEqual({})
   })
 
-  test('migrates a v2 profile to v9 and preserves deck/stat data', () => {
+  test('migrates a v2 profile to v10 and preserves deck/stat data', () => {
     const v2Owned = starterOwnedCardIds
     const v2 = {
       version: 2,
@@ -331,7 +334,7 @@ describe('profile persistence', () => {
 
     const migrated = loadProfile()
 
-    expect(migrated.version).toBe(9)
+    expect(migrated.version).toBe(10)
     expect(migrated.gold).toBe(175)
     expect(migrated.ownedCardIds).toEqual(v2.ownedCardIds)
     expect(migrated.stats).toEqual(v2.stats)
@@ -340,6 +343,7 @@ describe('profile persistence', () => {
     expect(migrated.deckSlots[0].cards4x4).toEqual(fillToEight(v2.deckSlots[0].cards, v2Owned))
     expect(migrated.deckSlots[0].mode).toBe('4x4')
     expect(migrated.cardCopiesById).toEqual(copiesFor(v2Owned))
+    expect(migrated.shinyCardCopiesById).toEqual({})
     expect(migrated.packInventoryByRarity).toEqual(emptyPackInventory())
     expect(migrated.rankedByMode['4x4'].tier).toBe('iron')
   })
@@ -373,7 +377,7 @@ describe('profile persistence', () => {
 
     const migrated = loadProfile()
 
-    expect(migrated.version).toBe(9)
+    expect(migrated.version).toBe(10)
     expect(migrated.playerName).toBe('Joueur')
     expect(migrated.gold).toBe(333)
     expect(migrated.stats.played).toBe(4)
@@ -498,7 +502,7 @@ describe('profile persistence', () => {
 
   test('default profile initializes independent ranked ladders for 3x3 and 4x4', () => {
     const profile = loadProfile()
-    expect(profile.version).toBe(9)
+    expect(profile.version).toBe(10)
     expect(profile.rankedByMode['3x3']).toEqual({
       tier: 'iron',
       division: 'IV',
@@ -513,7 +517,7 @@ describe('profile persistence', () => {
     expect(profile.rankedByMode['4x4']).toEqual(profile.rankedByMode['3x3'])
   })
 
-  test('migrates v8 profile to v9 and forces audio on', () => {
+  test('migrates v8 profile to v10 and forces audio on', () => {
     const v8Profile = {
       ...createDefaultProfile(),
       version: 8 as const,
@@ -523,11 +527,26 @@ describe('profile persistence', () => {
     localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(v8Profile))
     const loaded = loadProfile()
 
-    expect(loaded.version).toBe(9)
+    expect(loaded.version).toBe(10)
     expect(loaded.settings.audioEnabled).toBe(true)
+    expect(loaded.shinyCardCopiesById).toEqual({})
   })
 
-  test('migrates v7 profile ranked into both v9 ladders', () => {
+  test('migrates v9 profile to v10 by adding shiny inventory', () => {
+    const v9Profile = {
+      ...createDefaultProfile(),
+      version: 9 as const,
+    }
+    delete (v9Profile as { shinyCardCopiesById?: unknown }).shinyCardCopiesById
+
+    localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(v9Profile))
+    const loaded = loadProfile()
+
+    expect(loaded.version).toBe(10)
+    expect(loaded.shinyCardCopiesById).toEqual({})
+  })
+
+  test('migrates v7 profile ranked into both v10 ladders', () => {
     const legacyV7 = {
       ...createDefaultProfile(),
       version: 7 as const,
@@ -549,7 +568,7 @@ describe('profile persistence', () => {
     localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(legacyV7))
     const loaded = loadProfile()
 
-    expect(loaded.version).toBe(9)
+    expect(loaded.version).toBe(10)
     expect(loaded.rankedByMode['3x3']).toEqual(legacyV7.ranked)
     expect(loaded.rankedByMode['4x4']).toEqual(legacyV7.ranked)
     expect(loaded.settings.audioEnabled).toBe(true)

@@ -1,9 +1,14 @@
-import { render, screen } from '@testing-library/react'
-import { describe, expect, test } from 'vitest'
+import { act, render, screen } from '@testing-library/react'
+import { describe, expect, test, vi } from 'vitest'
 import type { RankedMatchResultSummary } from '../../domain/progression/ranked'
 import { RankedLpRecap } from './RankedLpRecap'
 
-function makeUpdate(overrides: Partial<RankedMatchResultSummary> = {}): RankedMatchResultSummary {
+type RankedMatchResultSummaryOverrides = Omit<Partial<RankedMatchResultSummary>, 'previous' | 'next'> & {
+  previous?: Partial<RankedMatchResultSummary['previous']>
+  next?: Partial<RankedMatchResultSummary['next']>
+}
+
+function makeUpdate(overrides: RankedMatchResultSummaryOverrides = {}): RankedMatchResultSummary {
   const base: RankedMatchResultSummary = {
     previous: {
       tier: 'iron',
@@ -83,5 +88,74 @@ describe('RankedLpRecap', () => {
     render(<RankedLpRecap mode="4x4" update={makeUpdate()} animated={false} context="results" testIdPrefix="ranked" />)
 
     expect(screen.getByTestId('ranked-recap')).not.toHaveClass('is-animated')
+  })
+
+  test('does not restart animation on rerender when LP transition values stay identical', () => {
+    const rafCallbacks = new Map<number, FrameRequestCallback>()
+    let nextFrameId = 0
+    const requestAnimationFrameSpy = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((callback: FrameRequestCallback) => {
+        nextFrameId += 1
+        rafCallbacks.set(nextFrameId, callback)
+        return nextFrameId
+      })
+    const cancelAnimationFrameSpy = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation((frameId: number) => {
+      rafCallbacks.delete(frameId)
+    })
+
+    const animatedUpdateOverrides = {
+      promoted: false,
+      demoted: false,
+      deltaLp: 20,
+      previous: { tier: 'iron', division: 'IV', lp: 10 },
+      next: { tier: 'iron', division: 'IV', lp: 30 },
+    } as RankedMatchResultSummaryOverrides
+
+    const flushAnimationFrame = (timestamp: number) => {
+      const callbacks = [...rafCallbacks.values()]
+      rafCallbacks.clear()
+      callbacks.forEach((callback) => callback(timestamp))
+    }
+
+    try {
+      const { rerender } = render(
+        <RankedLpRecap
+          mode="4x4"
+          update={makeUpdate(animatedUpdateOverrides)}
+          animated
+          context="results"
+          testIdPrefix="ranked"
+        />,
+      )
+
+      expect(requestAnimationFrameSpy).toHaveBeenCalledTimes(1)
+      expect(screen.getByTestId('ranked-current-lp')).toHaveTextContent('10 LP')
+
+      act(() => {
+        flushAnimationFrame(0)
+      })
+      act(() => {
+        flushAnimationFrame(900)
+      })
+
+      expect(screen.getByTestId('ranked-current-lp')).toHaveTextContent('30 LP')
+      const callsBeforeRerender = requestAnimationFrameSpy.mock.calls.length
+
+      rerender(
+        <RankedLpRecap
+          mode="4x4"
+          update={makeUpdate(animatedUpdateOverrides)}
+          animated
+          context="results"
+          testIdPrefix="ranked"
+        />,
+      )
+
+      expect(requestAnimationFrameSpy.mock.calls.length).toBe(callsBeforeRerender)
+    } finally {
+      requestAnimationFrameSpy.mockRestore()
+      cancelAnimationFrameSpy.mockRestore()
+    }
   })
 })

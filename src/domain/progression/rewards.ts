@@ -41,6 +41,7 @@ export function applyMatchRewards(
     ...profile,
     ownedCardIds: [...profile.ownedCardIds],
     cardCopiesById: { ...profile.cardCopiesById },
+    shinyCardCopiesById: { ...profile.shinyCardCopiesById },
     packInventoryByRarity: { ...profile.packInventoryByRarity },
     deckSlots: profile.deckSlots.map((slot) => ({
       ...slot,
@@ -81,21 +82,9 @@ export function applyMatchRewards(
   const baseGold = result.winner === 'player' ? 60 : result.winner === 'draw' ? 30 : 20
   const bonusGoldFromDuplicate = 0
   const bonusGoldFromDifficulty = result.winner === 'player' ? (opponentLevel - 1) * 4 : 0
-  const playerSamePlusTriggers = result.metrics?.samePlusTriggersByActor.player ?? 0
-  const playerPrimaryTypeId = result.typeSynergy?.player.primaryTypeId ?? null
-  const bonusGoldFromComboBounty =
-    playerPrimaryTypeId === 'nescient' ? Math.min(Math.max(0, playerSamePlusTriggers), 4) * 3 : 0
-  const bonusGoldFromCleanVictory =
-    playerPrimaryTypeId !== null &&
-    playerPrimaryTypeId !== 'sans_coeur' &&
-    playerPrimaryTypeId !== 'simili' &&
-    playerPrimaryTypeId !== 'nescient' &&
-    result.winner === 'player' &&
-    result.playerCount - result.cpuCount >= 2
-      ? 10
-      : 0
-  const bonusGoldFromSecondarySynergy =
-    result.winner === 'player' && result.typeSynergy?.player.secondaryTypeId ? 5 : 0
+  const bonusGoldFromComboBounty = 0
+  const bonusGoldFromCleanVictory = 0
+  const bonusGoldFromSecondarySynergy = 0
   const safeMultiplier = Number.isFinite(rewardMultiplier) && rewardMultiplier > 0 ? rewardMultiplier : 1
   let droppedCardId: CardId | null = null
   const duplicateConverted = false

@@ -167,6 +167,20 @@ describe('match rewards difficulty bonus', () => {
     expect(result.profile.cardCopiesById[ownedCardId]).toBe(previousCopies + 1)
   })
 
+  test('captured cards are always granted as normal copies even when shiny exists', () => {
+    const profile = createDefaultProfile()
+    profile.ownedCardIds.push('c73')
+    const shinyProfile = profile as typeof profile & { shinyCardCopiesById?: Record<string, number> }
+    shinyProfile.shinyCardCopiesById = { c73: 2 }
+    delete profile.cardCopiesById.c73
+
+    const result = applyMatchRewards(profile, makeResult('player'), ['c71', 'c72', 'c73', 'c74', 'c75'], 149, 8, 1, 'c73')
+
+    expect(result.rewards.droppedCardId).toBe('c73')
+    expect(result.profile.cardCopiesById.c73).toBe(1)
+    expect((result.profile as typeof profile & { shinyCardCopiesById: Record<string, number> }).shinyCardCopiesById.c73).toBe(2)
+  })
+
   test('draw and loss do not grant a claimed card', () => {
     const profile = createDefaultProfile()
 
@@ -203,16 +217,16 @@ describe('match rewards difficulty bonus', () => {
     )
   })
 
-  test('applies R7 combo bounty at +3 per Same/Plus trigger with +12 cap', () => {
+  test('does not apply type-related bonus gold even when synergy fields are present', () => {
     const profile = createDefaultProfile()
     const result = applyMatchRewards(
       profile,
       {
         ...makeResult('player'),
-        playerCount: 5,
-        cpuCount: 4,
+        playerCount: 7,
+        cpuCount: 2,
         typeSynergy: {
-          player: { primaryTypeId: 'nescient', secondaryTypeId: null },
+          player: { primaryTypeId: 'nescient', secondaryTypeId: 'simili' },
           cpu: { primaryTypeId: null, secondaryTypeId: null },
         },
         metrics: {
@@ -226,51 +240,9 @@ describe('match rewards difficulty bonus', () => {
       1,
     )
 
-    expect(result.rewards.bonusGoldFromComboBounty).toBe(12)
-    expect(result.profile.gold).toBe(100 + 60 + 12)
-  })
-
-  test('applies R8 clean victory bonus when player wins by margin >= 2', () => {
-    const profile = createDefaultProfile()
-    const result = applyMatchRewards(
-      profile,
-      {
-        ...makeResult('player'),
-        playerCount: 7,
-        cpuCount: 2,
-        typeSynergy: {
-          player: { primaryTypeId: 'humain', secondaryTypeId: null },
-          cpu: { primaryTypeId: null, secondaryTypeId: null },
-        },
-      },
-      cpuDeck,
-      113,
-      1,
-    )
-
-    expect(result.rewards.bonusGoldFromCleanVictory).toBe(10)
-    expect(result.profile.gold).toBe(100 + 60 + 10)
-  })
-
-  test('applies secondary synergy economy bonus of +5 once on player victory', () => {
-    const profile = createDefaultProfile()
-    const result = applyMatchRewards(
-      profile,
-      {
-        ...makeResult('player'),
-        playerCount: 5,
-        cpuCount: 4,
-        typeSynergy: {
-          player: { primaryTypeId: null, secondaryTypeId: 'simili' },
-          cpu: { primaryTypeId: null, secondaryTypeId: null },
-        },
-      },
-      cpuDeck,
-      115,
-      1,
-    )
-
-    expect(result.rewards.bonusGoldFromSecondarySynergy).toBe(5)
-    expect(result.profile.gold).toBe(100 + 60 + 5)
+    expect(result.rewards.bonusGoldFromComboBounty).toBe(0)
+    expect(result.rewards.bonusGoldFromCleanVictory).toBe(0)
+    expect(result.rewards.bonusGoldFromSecondarySynergy).toBe(0)
+    expect(result.profile.gold).toBe(100 + 60)
   })
 })

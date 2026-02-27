@@ -9,6 +9,7 @@ import {
   getSpecialPackPrice,
   openOwnedPacks,
   openOwnedPack,
+  openShinyTestPack,
   purchaseAndOpenSpecialPack,
   purchaseShopPacks,
   purchaseShopPack,
@@ -19,6 +20,7 @@ function cloneProfile(profile: PlayerProfile): PlayerProfile {
     ...profile,
     ownedCardIds: [...profile.ownedCardIds],
     cardCopiesById: { ...profile.cardCopiesById },
+    shinyCardCopiesById: { ...profile.shinyCardCopiesById },
     packInventoryByRarity: { ...profile.packInventoryByRarity },
     deckSlots: profile.deckSlots.map((slot) => ({
       ...slot,
@@ -42,8 +44,9 @@ function cloneProfile(profile: PlayerProfile): PlayerProfile {
   }
 }
 
-function createFixedIntRng(values: number[]): SeededRng {
+function createFixedIntRng(values: number[], shinyRollValues: number[] = []): SeededRng {
   let index = 0
+  let shinyIndex = 0
 
   return {
     next: () => 0,
@@ -51,11 +54,22 @@ function createFixedIntRng(values: number[]): SeededRng {
       if (maxExclusive <= 0) {
         throw new Error('maxExclusive must be greater than 0')
       }
+      if (maxExclusive === 10_000) {
+        const shinyValue = shinyRollValues[shinyIndex] ?? 9_999
+        shinyIndex += 1
+        return ((shinyValue % maxExclusive) + maxExclusive) % maxExclusive
+      }
       const value = values[index] ?? 0
       index += 1
       return ((value % maxExclusive) + maxExclusive) % maxExclusive
     },
   }
+}
+
+function getTotalCopies(profile: Pick<PlayerProfile, 'cardCopiesById' | 'shinyCardCopiesById'>): number {
+  const normalCopies = Object.values(profile.cardCopiesById).reduce((sum, copies) => sum + copies, 0)
+  const shinyCopies = Object.values(profile.shinyCardCopiesById).reduce((sum, copies) => sum + copies, 0)
+  return normalCopies + shinyCopies
 }
 
 describe('shop progression', () => {
@@ -204,14 +218,14 @@ describe('shop progression', () => {
     profile.ownedCardIds = [...commonPool]
     profile.cardCopiesById = Object.fromEntries(commonPool.map((cardId) => [cardId, 1]))
     const initialOwnedCount = profile.ownedCardIds.length
-    const initialCopies = Object.values(profile.cardCopiesById).reduce((sum, copies) => sum + copies, 0)
+    const initialCopies = getTotalCopies(profile)
 
-    const result = openOwnedPack(profile, 'common', createSeededRng(31))
+    const result = openOwnedPack(profile, 'common', createFixedIntRng([0, 0, 0, 0, 0, 0]))
 
     expect(result.profile.ownedCardIds).toHaveLength(initialOwnedCount)
     expect(new Set(result.profile.ownedCardIds).size).toBe(initialOwnedCount)
 
-    const totalCopies = Object.values(result.profile.cardCopiesById).reduce((sum, copies) => sum + copies, 0)
+    const totalCopies = getTotalCopies(result.profile)
     expect(totalCopies).toBe(initialCopies + 3)
     expect(result.opened.pulls.every((pull) => pull.isNewOwnership === false)).toBe(true)
   })
@@ -250,6 +264,56 @@ describe('shop progression', () => {
     expect(result.opened.pulls[0].cardId).toBe(weightedTarget)
     expect(result.opened.pulls[0].rarity).toBe('rare')
     expect(result.opened.pulls[0].isNewOwnership).toBe(true)
+  })
+
+  test('openOwnedPack can drop shiny pulls and stores them outside normal copies', () => {
+    const profile = createDefaultProfile()
+    profile.packInventoryByRarity.common = 1
+    const normalCopiesBefore = Object.values(profile.cardCopiesById).reduce((sum, copies) => sum + copies, 0)
+
+    const result = openOwnedPack(profile, 'common', createFixedIntRng([0, 0, 0, 0, 0, 0], [0, 0, 0]))
+    const shinyMap = (result.profile as PlayerProfile & { shinyCardCopiesById: Record<string, number> }).shinyCardCopiesById
+    const shinyCopiesAfter = Object.values(shinyMap).reduce((sum, copies) => sum + copies, 0)
+    const normalCopiesAfter = Object.values(result.profile.cardCopiesById).reduce((sum, copies) => sum + copies, 0)
+
+    expect(result.opened.pulls).toHaveLength(3)
+    expect(result.opened.pulls.every((pull) => pull.isShiny)).toBe(true)
+    expect(shinyCopiesAfter).toBe(3)
+    expect(normalCopiesAfter).toBe(normalCopiesBefore)
+  })
+
+  test('shiny-first pull unlocks ownership without granting a normal copy', () => {
+    const profile = createDefaultProfile()
+    profile.ownedCardIds = []
+    profile.cardCopiesById = {}
+    profile.packInventoryByRarity.common = 1
+
+    const result = openOwnedPack(profile, 'common', createFixedIntRng([0, 0, 0, 1, 0, 2], [0, 9_999, 9_999]))
+    const shinyMap = (result.profile as PlayerProfile & { shinyCardCopiesById: Record<string, number> }).shinyCardCopiesById
+    const shinyPull = result.opened.pulls[0]
+
+    expect(shinyPull.isShiny).toBe(true)
+    expect(shinyPull.isNewOwnership).toBe(true)
+    expect(shinyPull.copiesAfter).toBe(1)
+    expect(result.profile.ownedCardIds).toContain(shinyPull.cardId)
+    expect(shinyMap[shinyPull.cardId]).toBe(1)
+  })
+
+  test('openShinyTestPack grants exactly one guaranteed shiny pull', () => {
+    const profile = createDefaultProfile()
+    const normalCopiesBefore = Object.values(profile.cardCopiesById).reduce((sum, copies) => sum + copies, 0)
+
+    const result = openShinyTestPack(profile, createFixedIntRng([0]))
+    const shinyPull = result.opened.pulls[0]
+    const shinyMap = (result.profile as PlayerProfile & { shinyCardCopiesById: Record<string, number> }).shinyCardCopiesById
+    const shinyCopiesAfter = Object.values(shinyMap).reduce((sum, copies) => sum + copies, 0)
+    const normalCopiesAfter = Object.values(result.profile.cardCopiesById).reduce((sum, copies) => sum + copies, 0)
+
+    expect(result.opened.packId).toBe('shiny_test')
+    expect(result.opened.pulls).toHaveLength(1)
+    expect(shinyPull?.isShiny).toBe(true)
+    expect(shinyCopiesAfter).toBe(1)
+    expect(normalCopiesAfter).toBe(normalCopiesBefore)
   })
 
   test('uses configured special pack prices', () => {
@@ -404,12 +468,14 @@ describe('shop progression', () => {
     profile.gold = 2000
     const result = purchaseAndOpenSpecialPack(profile, { packId: 'sans_coeur_focus' }, createSeededRng(101))
 
-    const totalCopiesBefore = Object.values(profile.cardCopiesById).reduce((sum, copies) => sum + copies, 0)
-    const totalCopiesAfter = Object.values(result.profile.cardCopiesById).reduce((sum, copies) => sum + copies, 0)
+    const totalCopiesBefore = getTotalCopies(profile)
+    const totalCopiesAfter = getTotalCopies(result.profile)
     expect(totalCopiesAfter).toBe(totalCopiesBefore + 3)
 
     for (const pull of result.opened.pulls) {
-      expect(result.profile.cardCopiesById[pull.cardId]).toBeGreaterThanOrEqual(1)
+      const normalCopies = result.profile.cardCopiesById[pull.cardId] ?? 0
+      const shinyCopies = result.profile.shinyCardCopiesById[pull.cardId] ?? 0
+      expect(normalCopies + shinyCopies).toBeGreaterThanOrEqual(1)
       if (pull.isNewOwnership) {
         expect(result.profile.ownedCardIds.includes(pull.cardId)).toBe(true)
       }

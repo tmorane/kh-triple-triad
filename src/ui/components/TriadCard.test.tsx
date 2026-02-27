@@ -15,18 +15,6 @@ const ombreCard: CardDef = {
   elementId: 'tenebres',
 }
 
-const humainCard: CardDef = {
-  id: 'c999',
-  name: 'Dresseur',
-  top: 7,
-  right: 8,
-  bottom: 7,
-  left: 8,
-  rarity: 'legendary',
-  categoryId: 'humain',
-  elementId: 'tenebres',
-}
-
 const longNameCard: CardDef = {
   id: 'c110',
   name: 'Hypnomade',
@@ -36,7 +24,7 @@ const longNameCard: CardDef = {
   left: 5,
   rarity: 'rare',
   categoryId: 'simili',
-  elementId: 'illusion',
+  elementId: 'psy',
 }
 
 const aboCard: CardDef = {
@@ -60,34 +48,30 @@ describe('TriadCard splashart', () => {
     expect(image?.getAttribute('src')).toContain('/splashart/Ombre.png')
   })
 
-  test('renders type logo badge for owned card', () => {
-    const { container } = render(<TriadCard card={ombreCard} context="collection-list" owned />)
+  test('renders type logo badge for owned card and hides it for locked card', () => {
+    const { container, rerender } = render(<TriadCard card={aboCard} context="collection-list" owned />)
 
-    const badge = container.querySelector('.triad-card__type-badge')
-    const logo = container.querySelector<HTMLImageElement>('.triad-card__type-logo')
-
+    const badge = container.querySelector('[data-testid="triad-card-type-badge"]')
+    const logo = container.querySelector<HTMLImageElement>('[data-testid="triad-card-type-logo"]')
     expect(badge).not.toBeNull()
-    expect(badge).toHaveClass('triad-card__type-badge--sans_coeur')
     expect(logo).not.toBeNull()
-    expect(logo?.getAttribute('src')).toBe('/logos-types/obscur.png')
+    expect(logo?.getAttribute('src')).toContain('/logos-elements/poison.png')
+
+    rerender(<TriadCard card={aboCard} context="collection-list" owned={false} />)
+    expect(container.querySelector('[data-testid="triad-card-type-badge"]')).toBeNull()
+    expect(container.querySelector('[data-testid="triad-card-type-logo"]')).toBeNull()
   })
 
-  test('hides type logo badge for locked card', () => {
-    const { container } = render(<TriadCard card={ombreCard} context="collection-list" owned={false} />)
+  test('adds element class on card root in collection detail context', () => {
+    const { container, rerender } = render(<TriadCard card={aboCard} context="collection-detail" owned />)
 
-    expect(container.querySelector('.triad-card__type-badge')).toBeNull()
-    expect(container.querySelector('.triad-card__type-logo')).toBeNull()
-  })
+    const cardRoot = container.querySelector('.triad-card')
+    expect(cardRoot).not.toBeNull()
+    expect(cardRoot).toHaveClass('triad-card--element-poison')
 
-  test('maps humain card type to humain logo', () => {
-    const { container } = render(<TriadCard card={humainCard} context="collection-list" owned />)
-
-    const badge = container.querySelector('.triad-card__type-badge')
-    const logo = container.querySelector<HTMLImageElement>('.triad-card__type-logo')
-
-    expect(badge).not.toBeNull()
-    expect(badge).toHaveClass('triad-card__type-badge--humain')
-    expect(logo?.getAttribute('src')).toBe('/logos-types/nature.png')
+    rerender(<TriadCard card={longNameCard} context="collection-detail" owned />)
+    expect(cardRoot).toHaveClass('triad-card--element-psy')
+    expect(cardRoot).not.toHaveClass('triad-card--element-poison')
   })
 
   test('applies NEW collision classes per variant', () => {
@@ -126,5 +110,40 @@ describe('TriadCard splashart', () => {
     const id = container.querySelector('.triad-card__id')
     expect(id).not.toBeNull()
     expect(id).toHaveTextContent('#023')
+  })
+
+  test('renders stat overrides and trend classes when provided', () => {
+    const { container } = render(
+      <TriadCard
+        card={aboCard}
+        context="hand-player"
+        owned
+        statOverrides={{ top: 1, right: 1, bottom: 1, left: 2 }}
+        statTrends={{ top: 'debuff', right: 'debuff', bottom: 'debuff', left: 'neutral' }}
+      />,
+    )
+
+    const topStat = container.querySelector('.triad-card__stat--top')
+    const rightStat = container.querySelector('.triad-card__stat--right')
+    const leftStat = container.querySelector('.triad-card__stat--left')
+    expect(topStat).toHaveTextContent('1')
+    expect(topStat).toHaveClass('effect-stat--debuff')
+    expect(rightStat).toHaveTextContent('1')
+    expect(rightStat).toHaveClass('effect-stat--debuff')
+    expect(leftStat).toHaveTextContent('2')
+    expect(leftStat).toHaveClass('effect-stat--neutral')
+  })
+
+  test('adds shiny class and badge when shiny prop is enabled', () => {
+    const { container, rerender } = render(<TriadCard card={aboCard} context="collection-detail" owned shiny />)
+
+    const cardRoot = container.querySelector('.triad-card')
+    expect(cardRoot).not.toBeNull()
+    expect(cardRoot).toHaveClass('is-shiny')
+    expect(container.querySelector('[data-testid="triad-card-shiny-pill"]')).toHaveAttribute('aria-label', 'Shiny card')
+
+    rerender(<TriadCard card={aboCard} context="collection-detail" owned shiny={false} />)
+    expect(cardRoot).not.toHaveClass('is-shiny')
+    expect(container.querySelector('[data-testid="triad-card-shiny-pill"]')).toBeNull()
   })
 })

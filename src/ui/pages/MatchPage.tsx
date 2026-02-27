@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useGame } from '../../app/useGame'
 import { getCard } from '../../domain/cards/cardPool'
@@ -132,7 +132,7 @@ function isEditableElement(target: EventTarget | null): boolean {
 
 export function MatchPage() {
   const navigate = useNavigate()
-  const { profile, currentMatch, startMatch, updateCurrentMatch, finalizeCurrentMatch } = useGame()
+  const { profile, currentMatch, startMatch, updateCurrentMatch, finalizeCurrentMatch, abandonCurrentMatch, abandonTowerRun } = useGame()
   const [selectedCard, setSelectedCard] = useState<CardId | null>(null)
   const [keyboardTargetCell, setKeyboardTargetCell] = useState<number | null>(null)
   const [selectedClaimCardId, setSelectedClaimCardId] = useState<CardId | null>(null)
@@ -320,6 +320,12 @@ export function MatchPage() {
   }, [currentMatch, state?.status])
 
   useEffect(() => {
+    if (!state || state.status === 'finished' || state.turn !== 'player') {
+      setPendingPowerTarget(null)
+    }
+  }, [state, state?.status, state?.turn, state?.turns])
+
+  useEffect(() => {
     if (!starterRevealComplete || !currentMatch || !state || state.turn !== 'cpu' || state.status === 'finished') {
       return
     }
@@ -365,7 +371,7 @@ export function MatchPage() {
     setSelectedCard(topCardId)
   }, [isKeyboardControlEnabled, selectedCard, state])
 
-  const handleCellClick = (cell: number) => {
+  const handleCellClick = useCallback((cell: number) => {
     if (!state || !starterRevealComplete || state.turn !== 'player' || state.status === 'finished') {
       return
     }
@@ -388,7 +394,14 @@ export function MatchPage() {
       const message = err instanceof Error ? err.message : 'Move failed.'
       setError(message)
     }
-  }
+  }, [
+    pendingPowerTarget,
+    profile.settings.audioEnabled,
+    selectedCard,
+    starterRevealComplete,
+    state,
+    updateCurrentMatch,
+  ])
 
   useEffect(() => {
     if (!selectedCard) {
@@ -512,6 +525,28 @@ export function MatchPage() {
     }
   }
 
+  const handleAbandon = () => {
+    if (!currentMatch || state.status === 'finished') {
+      return
+    }
+
+    if (currentMatch.queue === 'tower') {
+      if (abandonTowerRun) {
+        abandonTowerRun()
+      } else {
+        abandonCurrentMatch?.()
+      }
+    } else {
+      abandonCurrentMatch?.()
+    }
+
+    setSelectedCard(null)
+    setKeyboardTargetCell(null)
+    setSelectedClaimCardId(null)
+    setError(null)
+    navigate('/setup')
+  }
+
   return (
     <section className={`panel match-panel ${isFourByFourMatch ? 'match-panel--4x4' : 'match-panel--3x3'}`}>
       <div className="match-arena">
@@ -556,6 +591,16 @@ export function MatchPage() {
                   Relics {Object.values(currentMatch.tower.relics).reduce((sum, count) => sum + count, 0)}
                 </p>
               </>
+            ) : null}
+            {state.status !== 'finished' ? (
+              <button
+                type="button"
+                className="button button-danger match-abandon-button"
+                onClick={handleAbandon}
+                data-testid="abandon-match-button"
+              >
+                Abandonner
+              </button>
             ) : null}
             <RuleBadges rules={state.rules} />
           </div>

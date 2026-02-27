@@ -1,10 +1,10 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ComponentProps } from 'react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import { GameContext } from '../../app/GameContext'
-import { cardPool } from '../../domain/cards/cardPool'
+import { cardPool, getCard } from '../../domain/cards/cardPool'
 import { createMatchRuntime } from '../../domain/match/runtimeEcs'
 import type { MatchState } from '../../domain/match/types'
 import { createDefaultProfile } from '../../domain/progression/profile'
@@ -150,6 +150,39 @@ function makeActivePlayerTurnStateWithCapture(): MatchState {
   }
 }
 
+function makeActivePlayerTurnStateWithGroundAnimation(): MatchState {
+  const state = attachEffectsState(makeActivePlayerTurnState(), {
+    strictPowerTargeting: false,
+    usedOnPoseByActor: { player: {}, cpu: {} },
+  })
+  state.hands.player = ['c13']
+  state.board = [{ owner: 'cpu', cardId: 'c71' }, null, null, null, null, null, null, null, null]
+  return state
+}
+
+function makeActivePlayerTurnStateWithWaterCastAnimation(): MatchState {
+  const state = attachEffectsState(makeActivePlayerTurnState(), {
+    strictPowerTargeting: true,
+    usedOnPoseByActor: { player: {}, cpu: {} },
+  })
+  state.hands.player = ['c03']
+  state.board = Array.from({ length: 9 }, () => null)
+  state.lastMove = null
+  return state
+}
+
+function makeActivePlayerTurnStateWithFloodPenaltyAnimation(): MatchState {
+  const state = attachEffectsState(makeActivePlayerTurnState(), {
+    strictPowerTargeting: false,
+    usedOnPoseByActor: { player: {}, cpu: {} },
+    floodedCell: 4,
+  })
+  state.hands.player = ['c43']
+  state.board = [null, null, null, null, null, { owner: 'cpu', cardId: 'c71' }, null, null, null]
+  state.lastMove = { actor: 'cpu', cardId: 'c71', cell: 5 }
+  return state
+}
+
 function makeActiveCpuTurnStateWithCapture(): MatchState {
   return {
     config: {
@@ -235,6 +268,25 @@ function makeActivePlayerTurnState4x4(): MatchState {
     status: 'active',
     lastMove: null,
   }
+}
+
+function attachEffectsState(
+  state: MatchState,
+  overrides?: Partial<NonNullable<MatchState['elementState']>>,
+): MatchState {
+  state.elementState = {
+    enabled: true,
+    mode: 'effects',
+    strictPowerTargeting: false,
+    usedOnPoseByActor: { player: {}, cpu: {} },
+    actorTurnCount: { player: 1, cpu: 1 },
+    frozenCellByActor: {},
+    floodedCell: null,
+    poisonedHandByActor: { player: [], cpu: [] },
+    boardEffectsByCell: {},
+    ...(overrides ?? {}),
+  }
+  return state
 }
 
 function makeFinishedState4x4(ownerByCell: Array<'player' | 'cpu'>): MatchState {
@@ -473,20 +525,30 @@ describe('MatchPage gameplay sounds', () => {
   })
 
   test('plays placement + capture sounds on a valid player move that flips cards', async () => {
-    const user = userEvent.setup()
-    const updateCurrentMatch = vi.fn()
-    renderMatchPageWithContext(
-      buildContextValue(makeActivePlayerTurnStateWithCapture(), 'normal', 1, {
-        updateCurrentMatch: updateCurrentMatch as unknown as GameContextValue['updateCurrentMatch'],
-      }),
-    )
+    vi.useFakeTimers()
+    try {
+      const updateCurrentMatch = vi.fn()
+      renderMatchPageWithContext(
+        buildContextValue(makeActivePlayerTurnStateWithCapture(), 'normal', 1, {
+          updateCurrentMatch: updateCurrentMatch as unknown as GameContextValue['updateCurrentMatch'],
+        }),
+      )
 
-    await user.click(screen.getByTestId('player-card-c110'))
-    await user.click(screen.getByTestId('board-cell-1'))
+      fireEvent.click(screen.getByTestId('player-card-c110'))
+      fireEvent.click(screen.getByTestId('board-cell-1'))
 
-    expect(updateCurrentMatch).toHaveBeenCalledTimes(1)
-    expect(playCardPlacementSound).toHaveBeenCalledTimes(1)
-    expect(playCaptureSound).toHaveBeenCalledTimes(1)
+      expect(updateCurrentMatch).not.toHaveBeenCalled()
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1_000)
+      })
+
+      expect(updateCurrentMatch).toHaveBeenCalledTimes(1)
+      expect(playCardPlacementSound).toHaveBeenCalledTimes(1)
+      expect(playCaptureSound).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   test('plays placement + capture sounds on cpu turn moves', async () => {
@@ -500,7 +562,7 @@ describe('MatchPage gameplay sounds', () => {
       )
 
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(900)
+        await vi.advanceTimersByTimeAsync(1_350)
       })
 
       expect(updateCurrentMatch).toHaveBeenCalledTimes(1)
@@ -707,6 +769,48 @@ describe('MatchPage claimed card selection', () => {
 })
 
 describe('MatchPage cpu pacing', () => {
+  test('allows switching opponent reaction to 2 sec delay', async () => {
+    vi.useFakeTimers()
+
+    try {
+      const updateCurrentMatch = vi.fn()
+      const state = makeActiveCpuTurnState()
+      renderMatchPageWithContext(
+        buildContextValue(state, 'normal', 8, {
+          updateCurrentMatch: updateCurrentMatch as unknown as GameContextValue['updateCurrentMatch'],
+        }),
+      )
+
+      const instantTab = screen.getByTestId('match-cpu-reaction-tab-instant')
+      const twoSecondsTab = screen.getByTestId('match-cpu-reaction-tab-2s')
+      const testControls = screen.getByTestId('match-test-controls')
+      const boardHud = screen.getByTestId('match-turn-indicator').closest('.match-board-hud')
+
+      expect(instantTab).toHaveAttribute('aria-selected', 'true')
+      expect(twoSecondsTab).toHaveAttribute('aria-selected', 'false')
+      expect(within(testControls).getByTestId('match-cpu-reaction-tabs')).toBeInTheDocument()
+      expect(within(boardHud as HTMLElement).queryByTestId('match-cpu-reaction-tabs')).not.toBeInTheDocument()
+
+      await act(async () => {
+        twoSecondsTab.click()
+      })
+      expect(instantTab).toHaveAttribute('aria-selected', 'false')
+      expect(twoSecondsTab).toHaveAttribute('aria-selected', 'true')
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2_999)
+      })
+      expect(updateCurrentMatch).not.toHaveBeenCalled()
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1)
+      })
+      expect(updateCurrentMatch).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   test('does not replay starter roll after turn 0 and keeps cpu move responsive', async () => {
     vi.useFakeTimers()
 
@@ -720,7 +824,7 @@ describe('MatchPage cpu pacing', () => {
       )
 
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(900)
+        await vi.advanceTimersByTimeAsync(1_350)
       })
 
       expect(updateCurrentMatch).toHaveBeenCalledTimes(1)
@@ -753,6 +857,54 @@ describe('MatchPage hand layout classes by mode', () => {
     expect(screen.getByLabelText('CPU hand')).toHaveClass('hand-row--cpu-3x3')
     expect(screen.getByLabelText('CPU hand')).not.toHaveClass('hand-row--two-columns')
     expect(screen.getByLabelText('Player hand')).not.toHaveClass('hand-row--two-columns')
+  })
+})
+
+describe('MatchPage abandon action', () => {
+  test('shows abandon button during active matches and calls abandonCurrentMatch on click', async () => {
+    const user = userEvent.setup()
+    const abandonCurrentMatch = vi.fn()
+    const contextValue = buildContextValue(makeActivePlayerTurnState(), 'normal')
+    contextValue.abandonCurrentMatch = abandonCurrentMatch as unknown as GameContextValue['abandonCurrentMatch']
+
+    renderMatchPageWithContext(contextValue)
+
+    const abandonButton = screen.getByTestId('abandon-match-button')
+    expect(abandonButton).toHaveTextContent('Abandonner')
+
+    await user.click(abandonButton)
+    expect(abandonCurrentMatch).toHaveBeenCalledTimes(1)
+  })
+
+  test('calls abandonTowerRun in tower queue', async () => {
+    const user = userEvent.setup()
+    const abandonTowerRun = vi.fn()
+    const contextValue = buildContextValue(makeActivePlayerTurnState4x4(), 'tower', 8, {
+      abandonTowerRun: abandonTowerRun as unknown as GameContextValue['abandonTowerRun'],
+    })
+    if (!contextValue.currentMatch) {
+      throw new Error('Expected current match in context fixture.')
+    }
+    contextValue.currentMatch.tower = {
+      floor: 3,
+      checkpointFloor: 0,
+      boss: false,
+      relics: createEmptyRelics(),
+    }
+
+    renderMatchPageWithContext(contextValue)
+
+    await user.click(screen.getByTestId('abandon-match-button'))
+    expect(abandonTowerRun).toHaveBeenCalledTimes(1)
+  })
+
+  test('hides abandon button when match is already finished', async () => {
+    const state = makeFinishedState(['player', 'player', 'player', 'player', 'player', 'player', 'player', 'player', 'cpu'])
+
+    renderMatchPageWithContext(buildContextValue(state, 'normal'))
+
+    await waitFor(() => expect(screen.getByTestId('match-finish-modal')).toBeInTheDocument())
+    expect(screen.queryByTestId('abandon-match-button')).not.toBeInTheDocument()
   })
 })
 
@@ -855,21 +1007,32 @@ describe('MatchPage keyboard gameplay', () => {
   })
 
   test('Enter places selected card on keyboard target cell and updates match state', async () => {
-    const user = userEvent.setup()
-    const updateCurrentMatch = vi.fn()
-    const state = makeActivePlayerTurnState()
-    renderMatchPageWithContext(
-      buildContextValue(state, 'normal', 8, {
-        updateCurrentMatch: updateCurrentMatch as unknown as GameContextValue['updateCurrentMatch'],
-      }),
-    )
+    vi.useFakeTimers()
+    try {
+      const updateCurrentMatch = vi.fn()
+      const state = makeActivePlayerTurnState()
+      renderMatchPageWithContext(
+        buildContextValue(state, 'normal', 8, {
+          updateCurrentMatch: updateCurrentMatch as unknown as GameContextValue['updateCurrentMatch'],
+        }),
+      )
 
-    await user.keyboard('{Enter}')
+      await act(async () => {
+        window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Enter' }))
+      })
+      expect(updateCurrentMatch).not.toHaveBeenCalled()
 
-    expect(updateCurrentMatch).toHaveBeenCalledTimes(1)
-    const nextState = updateCurrentMatch.mock.calls[0]?.[0] as MatchState
-    expect(nextState.board[1]).toEqual({ owner: 'player', cardId: 'c42' })
-    expect(nextState.hands.player).not.toContain('c42')
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1_000)
+      })
+
+      expect(updateCurrentMatch).toHaveBeenCalledTimes(1)
+      const nextState = updateCurrentMatch.mock.calls[0]?.[0] as MatchState
+      expect(nextState.board[1]).toEqual({ owner: 'player', cardId: 'c42' })
+      expect(nextState.hands.player).not.toContain('c42')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   test('keyboard controls are inactive during cpu turn', async () => {
@@ -896,5 +1059,358 @@ describe('MatchPage keyboard gameplay', () => {
     renderMatchPageWithContext(buildContextValue(state, 'normal'))
 
     expect(screen.getByText(/Clavier: 1-8 carte/i)).toBeInTheDocument()
+  })
+
+  test('switches board style tabs between V1 and V2', async () => {
+    const user = userEvent.setup()
+    const state = makeActivePlayerTurnState()
+    renderMatchPageWithContext(buildContextValue(state, 'normal'))
+
+    const grid = screen.getByRole('grid', { name: 'Match board' })
+    const v1Tab = screen.getByTestId('match-board-style-tab-v1')
+    const v2Tab = screen.getByTestId('match-board-style-tab-v2')
+
+    expect(v1Tab).toHaveAttribute('aria-selected', 'false')
+    expect(v2Tab).toHaveAttribute('aria-selected', 'true')
+    expect(grid).toHaveClass('is-arena-v2')
+
+    await user.click(v1Tab)
+
+    expect(v1Tab).toHaveAttribute('aria-selected', 'true')
+    expect(v2Tab).toHaveAttribute('aria-selected', 'false')
+    expect(grid).toHaveClass('is-arena-v1')
+  })
+})
+
+describe('MatchPage effects visualization', () => {
+  test('shows effects panel in effects mode', () => {
+    const state = attachEffectsState(makeActivePlayerTurnState(), {
+      floodedCell: 4,
+    })
+    renderMatchPageWithContext(buildContextValue(state, 'normal'))
+    const expectedPlayerTypes = new Set(state.config.playerDeck.map((cardId) => getCard(cardId).elementId))
+    const expectedCpuTypes = new Set(state.config.cpuDeck.map((cardId) => getCard(cardId).elementId))
+
+    expect(screen.getByTestId('match-effects-panel-mode')).toHaveTextContent('Mode effets')
+    expect(screen.getByTestId('match-effects-panel-hazards')).toBeInTheDocument()
+    expect(screen.getAllByTestId(/match-lane-type-strip-icon-player-/)).toHaveLength(expectedPlayerTypes.size)
+    expect(screen.getAllByTestId(/match-lane-type-strip-icon-cpu-/)).toHaveLength(expectedCpuTypes.size)
+  })
+
+  test('shows explicit normal-mode badge in vanilla mode', () => {
+    const state = attachEffectsState(makeActivePlayerTurnState(), {
+      mode: 'normal',
+      floodedCell: 4,
+      frozenCellByActor: { player: 5 },
+    })
+    renderMatchPageWithContext(buildContextValue(state, 'normal'))
+
+    expect(screen.getByTestId('match-effects-panel-mode')).toHaveTextContent('Mode normal')
+    expect(screen.queryByTestId('match-effects-panel-hazards')).not.toBeInTheDocument()
+
+    const disabledIcons = screen.getAllByTestId(/match-lane-type-strip-icon-player-/)
+    expect(disabledIcons.every((icon) => icon.classList.contains('is-disabled'))).toBe(true)
+  })
+
+  test('updates live effect feed after a move with active power', async () => {
+    vi.useFakeTimers()
+    try {
+      const updateCurrentMatch = vi.fn()
+      const state = attachEffectsState(makeActivePlayerTurnState(), {
+        strictPowerTargeting: false,
+      })
+      state.hands.player = ['c03']
+      state.board = [
+        { owner: 'cpu', cardId: 'c71' },
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+      ]
+
+      renderMatchPageWithContext(
+        buildContextValue(state, 'normal', 1, {
+          updateCurrentMatch: updateCurrentMatch as unknown as GameContextValue['updateCurrentMatch'],
+        }),
+      )
+      fireEvent.click(screen.getByTestId('player-card-c03'))
+      fireEvent.click(screen.getByTestId('board-cell-1'))
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1500)
+        await vi.runOnlyPendingTimersAsync()
+      })
+
+      expect(updateCurrentMatch).toHaveBeenCalledTimes(1)
+      expect(screen.getByTestId('match-effects-panel-feed')).toHaveTextContent('inondée')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('shows VS on any combat before resolving the move', async () => {
+    vi.useFakeTimers()
+    try {
+      const updateCurrentMatch = vi.fn()
+      const state = makeActivePlayerTurnStateWithCapture()
+      renderMatchPageWithContext(
+        buildContextValue(state, 'normal', 1, {
+          updateCurrentMatch: updateCurrentMatch as unknown as GameContextValue['updateCurrentMatch'],
+        }),
+      )
+
+      fireEvent.click(screen.getByTestId('player-card-c110'))
+      fireEvent.click(screen.getByTestId('board-cell-1'))
+
+      expect(updateCurrentMatch).not.toHaveBeenCalled()
+      expect(screen.getByTestId('match-vs-overlay')).toBeInTheDocument()
+      expect(screen.getByTestId('match-vs-badge-0')).toHaveTextContent('VS')
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(999)
+      })
+
+      expect(updateCurrentMatch).not.toHaveBeenCalled()
+      expect(screen.getByTestId('match-vs-overlay')).toBeInTheDocument()
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1)
+      })
+
+      expect(updateCurrentMatch).toHaveBeenCalledTimes(1)
+      expect(screen.queryByTestId('match-vs-overlay')).not.toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('animates eau cast marker before applying flooded cell state', async () => {
+    vi.useFakeTimers()
+    try {
+      const updateCurrentMatch = vi.fn()
+      const state = makeActivePlayerTurnStateWithWaterCastAnimation()
+      renderMatchPageWithContext(
+        buildContextValue(state, 'normal', 1, {
+          updateCurrentMatch: updateCurrentMatch as unknown as GameContextValue['updateCurrentMatch'],
+        }),
+      )
+
+      fireEvent.click(screen.getByTestId('player-card-c03'))
+      fireEvent.click(screen.getByTestId('board-cell-8'))
+      fireEvent.click(screen.getByTestId('board-cell-4'))
+
+      expect(updateCurrentMatch).not.toHaveBeenCalled()
+      expect(screen.getByTestId('board-cell-4')).toHaveClass('fallback-cell--flood-cast')
+      expect(screen.getByTestId('board-cell-4-flood-cast-logo')).toHaveAttribute(
+        'src',
+        expect.stringContaining('/logos-elements/eau.png'),
+      )
+      expect(screen.queryByTestId('match-vs-overlay')).not.toBeInTheDocument()
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(900)
+      })
+
+      expect(updateCurrentMatch).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('shows placed-card preview while choosing eau flood target', () => {
+    const updateCurrentMatch = vi.fn()
+    const state = makeActivePlayerTurnStateWithWaterCastAnimation()
+    renderMatchPageWithContext(
+      buildContextValue(state, 'normal', 1, {
+        updateCurrentMatch: updateCurrentMatch as unknown as GameContextValue['updateCurrentMatch'],
+      }),
+    )
+
+    fireEvent.click(screen.getByTestId('player-card-c03'))
+    fireEvent.click(screen.getByTestId('board-cell-8'))
+
+    expect(updateCurrentMatch).not.toHaveBeenCalled()
+    expect(screen.getByTestId('board-cell-8-stat-top')).toHaveTextContent('2')
+    expect(screen.getByTestId('board-cell-8')).toBeDisabled()
+    expect(screen.getByTestId('board-cell-0')).toHaveClass('fallback-cell--flood-target')
+    expect(screen.getByTestId('board-cell-0-flood-target-logo')).toHaveAttribute(
+      'src',
+      expect.stringContaining('/logos-elements/eau.png'),
+    )
+    expect(screen.getByTestId('board-cell-0-flood-target-badge')).toHaveTextContent('CIBLE')
+    expect(screen.getByTestId('match-flood-target-hint')).toHaveTextContent('inonder')
+    expect(screen.getByText('Choose a power target.')).toBeInTheDocument()
+  })
+
+  test('animates eau flooded malus then clash before applying resolved state', async () => {
+    vi.useFakeTimers()
+    try {
+      const updateCurrentMatch = vi.fn()
+      const state = makeActivePlayerTurnStateWithFloodPenaltyAnimation()
+      renderMatchPageWithContext(
+        buildContextValue(state, 'normal', 1, {
+          updateCurrentMatch: updateCurrentMatch as unknown as GameContextValue['updateCurrentMatch'],
+        }),
+      )
+
+      fireEvent.click(screen.getByTestId('player-card-c43'))
+      fireEvent.click(screen.getByTestId('board-cell-4'))
+
+      expect(updateCurrentMatch).not.toHaveBeenCalled()
+      expect(screen.getByTestId('board-cell-4')).toHaveClass('fallback-cell--water-penalty')
+      expect(screen.getByTestId('board-cell-4-water-penalty-logo')).toHaveAttribute(
+        'src',
+        expect.stringContaining('/logos-elements/eau.png'),
+      )
+      expect(screen.getByTestId('board-cell-4-water-penalty-badge')).toHaveTextContent('-2')
+      expect(screen.queryByTestId('match-vs-overlay')).not.toBeInTheDocument()
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(900)
+      })
+
+      expect(updateCurrentMatch).not.toHaveBeenCalled()
+      expect(screen.getByTestId('board-cell-4')).toHaveClass('fallback-cell--clash')
+      expect(screen.getByTestId('board-cell-5')).toHaveClass('fallback-cell--clash')
+      expect(screen.getByTestId('match-vs-overlay')).toBeInTheDocument()
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(600)
+        await vi.runOnlyPendingTimersAsync()
+      })
+
+      expect(updateCurrentMatch).toHaveBeenCalledTimes(1)
+      expect(screen.queryByTestId('match-vs-overlay')).not.toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('animates sol debuff and clash with 1s VS before applying resolved state', async () => {
+    vi.useFakeTimers()
+    try {
+      const updateCurrentMatch = vi.fn()
+      const state = makeActivePlayerTurnStateWithGroundAnimation()
+      renderMatchPageWithContext(
+        buildContextValue(state, 'normal', 1, {
+          updateCurrentMatch: updateCurrentMatch as unknown as GameContextValue['updateCurrentMatch'],
+        }),
+      )
+
+      fireEvent.click(screen.getByTestId('player-card-c13'))
+      fireEvent.click(screen.getByTestId('board-cell-1'))
+
+      expect(updateCurrentMatch).not.toHaveBeenCalled()
+      expect(screen.getByTestId('board-cell-1')).toHaveClass('fallback-cell--ground-preview-placement')
+      expect(screen.getByTestId('board-cell-0')).toHaveClass('fallback-cell--ground-debuffed')
+      expect(screen.queryByTestId('match-vs-overlay')).not.toBeInTheDocument()
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(900)
+      })
+
+      expect(updateCurrentMatch).not.toHaveBeenCalled()
+      expect(screen.getByTestId('board-cell-0')).toHaveClass('fallback-cell--clash')
+      expect(screen.getByTestId('match-vs-overlay')).toBeInTheDocument()
+      expect(screen.getByTestId('match-vs-badge-0')).toHaveTextContent('VS')
+      expect(screen.queryByTestId('board-cell-0-ground-badge')).not.toBeInTheDocument()
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(999)
+      })
+
+      expect(updateCurrentMatch).not.toHaveBeenCalled()
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1)
+      })
+
+      expect(updateCurrentMatch).toHaveBeenCalledTimes(1)
+      expect(screen.queryByTestId('match-vs-overlay')).not.toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('renders poisoned-hand markers for both actors', () => {
+    const state = attachEffectsState(makeActivePlayerTurnState(), {
+      strictPowerTargeting: false,
+      poisonedHandByActor: { player: ['c42'], cpu: ['c72'] },
+    })
+
+    renderMatchPageWithContext(buildContextValue(state, 'normal'))
+
+    const playerCard = screen.getByTestId('player-card-c42')
+    const playerShell = playerCard.closest('.match-hand-card-shell')
+    const playerTopStat = playerCard.querySelector('.triad-card__stat--top')
+    expect(playerShell).toHaveClass('match-hand-card-shell--poisoned')
+    expect(playerTopStat).toHaveTextContent('2')
+    expect(playerTopStat).toHaveClass('effect-stat--debuff')
+    expect(screen.getByTestId('hand-poison-badge-player-c42')).toHaveAttribute(
+      'src',
+      expect.stringContaining('/logos-elements/poison.png'),
+    )
+
+    const cpuCard = screen.getByLabelText('Gravalanch')
+    const cpuShell = cpuCard.closest('.match-hand-card-shell')
+    expect(cpuShell).toHaveClass('match-hand-card-shell--poisoned')
+    expect(screen.getByTestId('hand-poison-badge-cpu-c72')).toHaveAttribute(
+      'src',
+      expect.stringContaining('/logos-elements/poison.png'),
+    )
+  })
+
+  test('renders active board stats instead of base values in fallback board', () => {
+    const state = attachEffectsState(makeActivePlayerTurnState(), {
+      boardEffectsByCell: {
+        0: {
+          permanentDelta: { top: 2, right: 0, bottom: 0, left: 0 },
+          burnTicksRemaining: 0,
+          volatileAllStatsMinusOneUntilEndOfOwnerNextTurn: null,
+          unflippableUntilEndOfOpponentNextTurn: null,
+          swappedHighLowUntilMatchEnd: false,
+          rockShieldCharges: 0,
+          poisonFirstCombatPending: false,
+          insectEntryStacks: 0,
+          dragonApplied: false,
+        },
+      },
+    })
+    state.board = [{ owner: 'cpu', cardId: 'c71' }, null, null, null, null, null, null, null, null]
+
+    renderMatchPageWithContext(buildContextValue(state, 'normal'))
+
+    expect(screen.getByTestId('board-cell-0-stat-top')).toHaveTextContent('5')
+    expect(screen.getByTestId('board-cell-0-stat-top')).toHaveClass('effect-stat--buff')
+  })
+
+  test('renders unique lane type slots per actor in 4x4 mode', () => {
+    const state = attachEffectsState(makeActivePlayerTurnState4x4())
+    renderMatchPageWithContext(buildContextValue(state, 'normal'))
+    const expectedPlayerTypes = new Set(state.config.playerDeck.map((cardId) => getCard(cardId).elementId))
+    const expectedCpuTypes = new Set(state.config.cpuDeck.map((cardId) => getCard(cardId).elementId))
+
+    expect(screen.getAllByTestId(/match-lane-type-strip-icon-player-/)).toHaveLength(expectedPlayerTypes.size)
+    expect(screen.getAllByTestId(/match-lane-type-strip-icon-cpu-/)).toHaveLength(expectedCpuTypes.size)
+  })
+
+  test('renders one icon per duplicated type and grays it when consumed', () => {
+    const state = attachEffectsState(makeActivePlayerTurnState(), {
+      usedOnPoseByActor: { player: {}, cpu: {} },
+    })
+    state.config.playerDeck = ['c11', 'c14', 'c43', 'c44', 'c45']
+    state.hands.player = ['c14', 'c43', 'c44', 'c45']
+
+    renderMatchPageWithContext(buildContextValue(state, 'normal'))
+
+    const icons = screen.getAllByTestId(/match-lane-type-strip-icon-player-/)
+    const poisonIcons = icons.filter((icon) => (icon.getAttribute('aria-label') ?? '').includes('Poison:'))
+
+    expect(poisonIcons).toHaveLength(1)
+    expect(poisonIcons[0]).toHaveClass('is-used')
   })
 })

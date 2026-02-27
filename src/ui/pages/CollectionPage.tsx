@@ -3,15 +3,16 @@ import { Link } from 'react-router-dom'
 import { useGame } from '../../app/useGame'
 import { cardPool } from '../../domain/cards/cardPool'
 import { compareCardsByPokedexNumber, formatCardPokedexNumber } from '../../domain/cards/pokedex'
-import { cardTypeIds, getCategoryLabel, getElementLabel, getTypeIdByCategory, getTypeLabel } from '../../domain/cards/taxonomy'
-import type { CardDef, CardId, CardTypeId, Rarity } from '../../domain/types'
-import { SynergyBonusLegend } from '../components/SynergyBonusLegend'
+import { cardElementIds, getCategoryLabel, getElementLabel } from '../../domain/cards/taxonomy'
+import { SHINY_CRAFT_COST, getNormalCopies, getShinyCopies, getTotalCopies, hasShinyCopy } from '../../domain/progression/shiny'
+import type { CardDef, CardElementId, CardId, Rarity } from '../../domain/types'
 import { TriadCard } from '../components/TriadCard'
+import { getElementLogoMeta } from '../components/elementLogos'
 
 type CollectionDiscoveryFilter = 'all' | 'owned' | 'locked'
 
 const rarityFilterOrder: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary']
-const collectionFiltersStorageKey = 'kh-triple-triad.collection-filters.v1'
+const collectionFiltersStorageKey = 'kh-triple-triad.collection-filters.v2'
 
 const discoveryFilterOptions: Array<{ value: CollectionDiscoveryFilter; label: string }> = [
   { value: 'all', label: 'Tous' },
@@ -59,7 +60,7 @@ const getStatusSectionCountLabel = (sectionId: CollectionStatusSectionId, count:
 
 type PersistedCollectionFilters = {
   selectedRarities: Rarity[]
-  selectedTypes: CardTypeId[]
+  selectedTypes: CardElementId[]
   discoveryFilter: CollectionDiscoveryFilter
 }
 
@@ -79,18 +80,14 @@ function createEmptyRarityCardGroups(): Record<Rarity, CardDef[]> {
   }
 }
 
-const cardTypeByCardId = new Map<CardId, CardTypeId>()
 const cardsByRarityInPool = createEmptyRarityCardGroups()
 
 for (const card of cardPool) {
-  const typeId = getTypeIdByCategory(card.categoryId)
-  cardTypeByCardId.set(card.id, typeId)
   cardsByRarityInPool[card.rarity].push(card)
 }
 
 const availableRaritiesInPool = rarityFilterOrder.filter((rarity) => cardsByRarityInPool[rarity].length > 0)
-const availableTypeSetInPool = new Set<CardTypeId>(cardTypeByCardId.values())
-const availableTypesInPool = cardTypeIds.filter((typeId) => availableTypeSetInPool.has(typeId))
+const availableTypesInPool = cardElementIds
 const cardsByDexOrder = [...cardPool].sort(compareCardsByPokedexNumber)
 
 function isCollectionDiscoveryFilter(value: unknown): value is CollectionDiscoveryFilter {
@@ -101,13 +98,13 @@ function isRarity(value: unknown): value is Rarity {
   return typeof value === 'string' && rarityFilterOrder.includes(value as Rarity)
 }
 
-function isCardType(value: unknown): value is CardTypeId {
-  return typeof value === 'string' && cardTypeIds.includes(value as CardTypeId)
+function isCardElement(value: unknown): value is CardElementId {
+  return typeof value === 'string' && cardElementIds.includes(value as CardElementId)
 }
 
 function readPersistedCollectionFilters(
   availableRarities: Rarity[],
-  availableTypes: CardTypeId[],
+  availableTypes: CardElementId[],
 ): PersistedCollectionFilters | null {
   if (typeof window === 'undefined') {
     return null
@@ -131,7 +128,7 @@ function readPersistedCollectionFilters(
       Array.isArray(rarityCandidates) ? rarityCandidates.filter((value) => isRarity(value)) : [],
     )
     const selectedTypeSet = new Set(
-      Array.isArray(typeCandidates) ? typeCandidates.filter((value) => isCardType(value)) : [],
+      Array.isArray(typeCandidates) ? typeCandidates.filter((value) => isCardElement(value)) : [],
     )
     const selectedRarities = availableRarities.filter((rarity) => selectedRaritySet.has(rarity))
     const selectedTypes = availableTypes.filter((typeId) => selectedTypeSet.has(typeId))
@@ -231,6 +228,7 @@ type CollectionStatusSectionProps = {
   recent: Set<CardId>
   selectedCardId: CardId
   cardCopiesById: Record<CardId, number>
+  shinyCardCopiesById: Record<CardId, number>
   selectCardHandlers: Map<CardId, () => void>
   virtualizationEnabled: boolean
   viewport: ViewportSnapshot
@@ -249,6 +247,7 @@ function CollectionStatusSection({
   recent,
   selectedCardId,
   cardCopiesById,
+  shinyCardCopiesById,
   selectCardHandlers,
   virtualizationEnabled,
   viewport,
@@ -421,13 +420,16 @@ function CollectionStatusSection({
         {visibleCards.map((card) => {
           const isOwned = owned.has(card.id)
           const isNew = recent.has(card.id)
+          const normalCopies = cardCopiesById[card.id] ?? 0
+          const shinyCopies = shinyCardCopiesById[card.id] ?? 0
           return (
             <TriadCard
               key={card.id}
               card={card}
               context="collection-list"
               owned={isOwned}
-              copies={cardCopiesById[card.id] ?? 0}
+              copies={normalCopies + shinyCopies}
+              shiny={shinyCopies > 0}
               selected={selectedCardId === card.id}
               showNew={isNew}
               interactive
@@ -450,14 +452,17 @@ function CollectionStatusSection({
 }
 
 export function CollectionPage() {
-  const { profile, lastMatchSummary } = useGame()
+  const { profile, lastMatchSummary, craftShinyCard } = useGame()
   const [virtualizationEnabled] = useState(
     () => typeof window !== 'undefined' && !window.navigator.userAgent.toLowerCase().includes('jsdom'),
   )
   const viewport = useViewportSnapshot(virtualizationEnabled)
   const owned = useMemo(() => new Set(profile.ownedCardIds), [profile.ownedCardIds])
   const recent = useMemo(() => new Set(lastMatchSummary?.newlyOwnedCards ?? []), [lastMatchSummary?.newlyOwnedCards])
-  const totalCopies = useMemo(() => Object.values(profile.cardCopiesById).reduce((sum, copies) => sum + copies, 0), [profile.cardCopiesById])
+  const totalCopies = useMemo(
+    () => cardPool.reduce((sum, card) => sum + getTotalCopies(profile, card.id), 0),
+    [profile],
+  )
   const [initialFilters] = useState<PersistedCollectionFilters | null>(() =>
     readPersistedCollectionFilters(availableRaritiesInPool, availableTypesInPool),
   )
@@ -465,7 +470,7 @@ export function CollectionPage() {
     cardsByDexOrder.find((card) => owned.has(card.id))?.id ?? cardsByDexOrder[0]?.id ?? 'c01',
   )
   const [selectedRarities, setSelectedRarities] = useState<Rarity[]>(initialFilters?.selectedRarities ?? availableRaritiesInPool)
-  const [selectedTypes, setSelectedTypes] = useState<CardTypeId[]>(initialFilters?.selectedTypes ?? availableTypesInPool)
+  const [selectedTypes, setSelectedTypes] = useState<CardElementId[]>(initialFilters?.selectedTypes ?? availableTypesInPool)
   const [discoveryFilter, setDiscoveryFilter] = useState<CollectionDiscoveryFilter>(initialFilters?.discoveryFilter ?? 'all')
   const selectCardHandlers = useMemo(() => {
     const handlers = new Map<CardId, () => void>()
@@ -488,8 +493,7 @@ export function CollectionPage() {
           continue
         }
 
-        const typeId = cardTypeByCardId.get(card.id)
-        if (!typeId || !selectedTypeSet.has(typeId)) {
+        if (!selectedTypeSet.has(card.elementId)) {
           continue
         }
 
@@ -562,7 +566,12 @@ export function CollectionPage() {
   const selectedCard = filteredCards.find((card) => card.id === selectedCardId) ?? filteredCards[0] ?? null
   const selectedOwned = selectedCard ? owned.has(selectedCard.id) : false
   const selectedNew = selectedCard ? recent.has(selectedCard.id) : false
-  const selectedInspectTypeId = selectedCard && selectedOwned ? (cardTypeByCardId.get(selectedCard.id) ?? null) : null
+  const selectedElementLogo = selectedCard ? getElementLogoMeta(selectedCard.elementId) : null
+  const selectedNormalCopies = selectedCard ? getNormalCopies(profile, selectedCard.id) : 0
+  const selectedShinyCopies = selectedCard ? getShinyCopies(profile, selectedCard.id) : 0
+  const selectedTotalCopies = selectedNormalCopies + selectedShinyCopies
+  const selectedDisplayShiny = selectedCard ? hasShinyCopy(profile, selectedCard.id) : false
+  const canCraftSelected = selectedOwned && selectedNormalCopies >= SHINY_CRAFT_COST
 
   const isDefaultFilterState =
     discoveryFilter === 'all' &&
@@ -583,11 +592,15 @@ export function CollectionPage() {
     })
   }
 
-  const toggleTypeFilter = (typeId: CardTypeId) => {
+  const toggleTypeFilter = (typeId: CardElementId) => {
     setSelectedTypes((current) => {
+      if (current.length === availableTypesInPool.length && current.every((value) => availableTypesInPool.includes(value))) {
+        return [typeId]
+      }
+
       if (current.includes(typeId)) {
         if (current.length === 1) {
-          return current
+          return availableTypesInPool
         }
         return current.filter((value) => value !== typeId)
       }
@@ -640,16 +653,30 @@ export function CollectionPage() {
               <span className="collection-filter-label">Type</span>
               {availableTypesInPool.map((typeId) => {
                 const isActive = selectedTypes.includes(typeId)
+                const logo = getElementLogoMeta(typeId)
                 return (
                   <button
                     key={typeId}
                     type="button"
-                    className={`collection-filter-chip ${isActive ? 'is-active' : ''}`}
+                    className={`collection-filter-chip collection-filter-chip--element ${isActive ? 'is-active' : ''}`}
                     aria-pressed={isActive}
                     onClick={() => toggleTypeFilter(typeId)}
                     data-testid={`collection-filter-type-${typeId}`}
                   >
-                    {getTypeLabel(typeId)}
+                    <span className="element-chip-content">
+                      {logo ? (
+                        <img
+                          className="element-chip-icon"
+                          src={logo.imageSrc}
+                          alt={logo.name}
+                          width={16}
+                          height={16}
+                          loading="lazy"
+                          decoding="async"
+                        />
+                      ) : null}
+                      <span>{getElementLabel(typeId)}</span>
+                    </span>
                   </button>
                 )
               })}
@@ -700,6 +727,7 @@ export function CollectionPage() {
                   recent={recent}
                   selectedCardId={selectedCardId}
                   cardCopiesById={profile.cardCopiesById}
+                  shinyCardCopiesById={profile.shinyCardCopiesById}
                   selectCardHandlers={selectCardHandlers}
                   virtualizationEnabled={virtualizationEnabled}
                   viewport={viewport}
@@ -715,14 +743,14 @@ export function CollectionPage() {
 
         <aside className="collection-inspect" data-testid="collection-inspect">
           <h2>Fiche</h2>
-          <SynergyBonusLegend highlightTypeId={selectedInspectTypeId} isTypeHidden={!selectedOwned} />
           {selectedCard ? (
             <>
               <TriadCard
                 card={selectedCard}
                 context="collection-detail"
                 owned={selectedOwned}
-                copies={profile.cardCopiesById[selectedCard.id] ?? 0}
+                copies={selectedTotalCopies}
+                shiny={selectedDisplayShiny}
                 showNew={selectedNew}
                 testId="collection-inspect-card"
               />
@@ -751,24 +779,56 @@ export function CollectionPage() {
                   </dd>
                 </div>
                 <div className="collection-meta-row">
-                  <dt>Élément</dt>
+                  <dt>Type Pokémon</dt>
                   <dd data-testid="collection-selected-element">
-                    {selectedOwned ? getElementLabel(selectedCard.elementId) : 'Inconnu'}
+                    {selectedOwned ? (
+                      <span className="collection-element-value">
+                        {selectedElementLogo ? (
+                          <img
+                            className="collection-element-icon"
+                            src={selectedElementLogo.imageSrc}
+                            alt={`Type ${selectedElementLogo.name}`}
+                            width={18}
+                            height={18}
+                            loading="lazy"
+                            decoding="async"
+                          />
+                        ) : null}
+                        <span>{getElementLabel(selectedCard.elementId)}</span>
+                      </span>
+                    ) : (
+                      'Inconnu'
+                    )}
                   </dd>
                 </div>
                 <div className="collection-meta-row">
                   <dt>Copies</dt>
                   <dd data-testid="collection-selected-copies">
-                    {selectedOwned ? profile.cardCopiesById[selectedCard.id] ?? 1 : LOCKED_COPIES_PLACEHOLDER}
+                    {selectedOwned ? selectedTotalCopies : LOCKED_COPIES_PLACEHOLDER}
                   </dd>
                 </div>
                 <div className="collection-meta-row">
-                  <dt>Type</dt>
-                  <dd data-testid="collection-selected-type">
-                    {selectedOwned ? getTypeLabel(getTypeIdByCategory(selectedCard.categoryId)) : 'Inconnu'}
-                  </dd>
+                  <dt>Shiny</dt>
+                  <dd data-testid="collection-selected-shiny-copies">{selectedOwned ? `x${selectedShinyCopies}` : LOCKED_COPIES_PLACEHOLDER}</dd>
                 </div>
               </dl>
+
+              {selectedOwned ? (
+                <div className="collection-shiny-craft" data-testid="collection-shiny-craft">
+                  <p className="small" data-testid="collection-shiny-craft-progress">
+                    Normales: {selectedNormalCopies}/{SHINY_CRAFT_COST}
+                  </p>
+                  <button
+                    type="button"
+                    className="button collection-shiny-craft-button"
+                    onClick={() => craftShinyCard?.(selectedCard.id)}
+                    disabled={!canCraftSelected || !craftShinyCard}
+                    data-testid="collection-shiny-craft-button"
+                  >
+                    Forger 1 Shiny
+                  </button>
+                </div>
+              ) : null}
 
               {!selectedOwned ? (
                 <p className="small collection-lock-hint" data-testid="collection-lock-hint">

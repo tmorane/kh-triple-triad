@@ -1,13 +1,16 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { PRIMARY_MATCH_MODE, VISIBLE_MATCH_MODES } from '../../app/matchUiConfig'
 import { getCard } from '../../domain/cards/cardPool'
 import { getDeckForMode, getSelectedDeckSlot } from '../../domain/cards/decks'
-import { resolveDeckTypeSynergy } from '../../domain/cards/typeSynergy'
+import { cardElementIds, getElementLabel } from '../../domain/cards/taxonomy'
 import { cardPool } from '../../domain/cards/cardPool'
-import { DEFAULT_MATCH_MODE, getModeSpec } from '../../domain/match/modeSpec'
-import type { CardDef, CardId, MatchMode, Rarity } from '../../domain/types'
+import { getElementEffectText } from '../../domain/match/elementEffectsCatalog'
+import { getModeSpec } from '../../domain/match/modeSpec'
+import { hasShinyCopy } from '../../domain/progression/shiny'
+import type { CardDef, CardElementId, CardId, MatchMode, Rarity } from '../../domain/types'
 import { useGame } from '../../app/useGame'
-import { DeckSynergyGuide } from '../components/DeckSynergyGuide'
 import { TriadCard } from '../components/TriadCard'
+import { getElementLogoMeta } from '../components/elementLogos'
 
 type DecksSortMode = 'selected-first' | 'power-desc' | 'name-asc'
 
@@ -41,6 +44,20 @@ function compareByPower(left: CardDef, right: CardDef): number {
   return compareByName(left, right)
 }
 
+function formatDeckElementCount(count: number): string {
+  return `${count} carte${count === 1 ? '' : 's'} dans le deck`
+}
+
+function buildElementInfoLabel(elementId: CardElementId, count: number): string {
+  const status = count > 0 ? 'actif' : 'inactif'
+  return `${getElementLabel(elementId)}. ${formatDeckElementCount(count)}. ${status}. ${getElementEffectText(elementId, 'plain')}`
+}
+
+const deckModeLabelByMode: Record<MatchMode, string> = {
+  '3x3': '3x3 (5 cards)',
+  '4x4': '4x4 (8 cards)',
+}
+
 export function DecksPage() {
   const { profile, selectDeckSlot, renameDeckSlot, toggleDeckSlotCard } = useGame()
   const selectedSlot = getSelectedDeckSlot(profile)
@@ -48,7 +65,7 @@ export function DecksPage() {
   const [error, setError] = useState<string | null>(null)
   const [deckNameError, setDeckNameError] = useState<string | null>(null)
   const [deckNameDraft, setDeckNameDraft] = useState(selectedSlot.name)
-  const [editMode, setEditMode] = useState<MatchMode>(DEFAULT_MATCH_MODE)
+  const [editMode, setEditMode] = useState<MatchMode>(PRIMARY_MATCH_MODE)
 
   const ownedCards = useMemo(
     () => cardPool.filter((card) => profile.ownedCardIds.includes(card.id)),
@@ -62,13 +79,35 @@ export function DecksPage() {
 
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedRarities, setSelectedRarities] = useState<Rarity[]>(availableRarities)
+  const [selectedElements, setSelectedElements] = useState<CardElementId[]>(cardElementIds)
+  const [hoveredElementId, setHoveredElementId] = useState<CardElementId | null>(null)
   const [sortMode, setSortMode] = useState<DecksSortMode>('power-desc')
   const [currentPage, setCurrentPage] = useState(1)
 
   const modeSpec = useMemo(() => getModeSpec(editMode), [editMode])
   const selectedDeckPreviewColumns = modeSpec.deckSize === 8 ? 4 : modeSpec.deckSize
   const selectedDeck = useMemo(() => getDeckForMode(selectedSlot, editMode), [editMode, selectedSlot])
-  const selectedDeckSynergy = useMemo(() => resolveDeckTypeSynergy(selectedDeck), [selectedDeck])
+  const selectedDeckElementCounts = useMemo(() => {
+    const counts = Object.fromEntries(cardElementIds.map((elementId) => [elementId, 0])) as Record<CardElementId, number>
+    for (const cardId of selectedDeck) {
+      const elementId = getCard(cardId).elementId
+      counts[elementId] += 1
+    }
+    return counts
+  }, [selectedDeck])
+  const selectedDeckElementSet = useMemo(
+    () => new Set(selectedDeck.map((cardId) => getCard(cardId).elementId)),
+    [selectedDeck],
+  )
+  const activeDeckElementIds = useMemo(
+    () => cardElementIds.filter((elementId) => selectedDeckElementSet.has(elementId)),
+    [selectedDeckElementSet],
+  )
+  const inactiveDeckElementIds = useMemo(
+    () => cardElementIds.filter((elementId) => !selectedDeckElementSet.has(elementId)),
+    [selectedDeckElementSet],
+  )
+  const hoveredElementCount = hoveredElementId ? selectedDeckElementCounts[hoveredElementId] : 0
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -89,6 +128,7 @@ export function DecksPage() {
 
   const selectedCardSet = useMemo(() => new Set(selectedDeck), [selectedDeck])
   const selectedRaritySet = useMemo(() => new Set(selectedRarities), [selectedRarities])
+  const selectedElementSet = useMemo(() => new Set(selectedElements), [selectedElements])
 
   const normalizedSearch = searchTerm.trim().toLowerCase()
 
@@ -103,6 +143,10 @@ export function DecksPage() {
           return false
         }
 
+        if (!selectedElementSet.has(card.elementId)) {
+          return false
+        }
+
         if (!normalizedSearch) {
           return true
         }
@@ -111,7 +155,7 @@ export function DecksPage() {
         const idMatches = card.id.toLowerCase().includes(normalizedSearch)
         return nameMatches || idMatches
       }),
-    [normalizedSearch, ownedCards, selectedCardSet, selectedRaritySet],
+    [normalizedSearch, ownedCards, selectedCardSet, selectedElementSet, selectedRaritySet],
   )
 
   const visibleCards = useMemo(() => {
@@ -149,12 +193,14 @@ export function DecksPage() {
     normalizedSearch.length === 0 &&
     sortMode === 'power-desc' &&
     selectedRarities.length === availableRarities.length &&
-    availableRarities.every((rarity) => selectedRaritySet.has(rarity))
+    availableRarities.every((rarity) => selectedRaritySet.has(rarity)) &&
+    selectedElements.length === cardElementIds.length &&
+    cardElementIds.every((elementId) => selectedElementSet.has(elementId))
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setCurrentPage(1)
-  }, [editMode, normalizedSearch, selectedRarities, selectedSlot.id, sortMode])
+  }, [editMode, normalizedSearch, selectedElements, selectedRarities, selectedSlot.id, sortMode])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -186,9 +232,28 @@ export function DecksPage() {
     })
   }
 
+  const handleElementToggle = (elementId: CardElementId) => {
+    setSelectedElements((current) => {
+      if (current.length === cardElementIds.length && current.every((value) => cardElementIds.includes(value))) {
+        return [elementId]
+      }
+
+      if (current.includes(elementId)) {
+        if (current.length === 1) {
+          return cardElementIds
+        }
+        return current.filter((value) => value !== elementId)
+      }
+
+      const next = [...current, elementId]
+      return cardElementIds.filter((value) => next.includes(value))
+    })
+  }
+
   const handleResetFilters = () => {
     setSearchTerm('')
     setSelectedRarities(availableRarities)
+    setSelectedElements(cardElementIds)
     setSortMode('power-desc')
   }
 
@@ -256,44 +321,114 @@ export function DecksPage() {
           <fieldset className="setup-rule-block">
             <legend>Deck Format</legend>
             <div className="rule-toggle-group setup-deck-mode-group">
-              <label className="setup-rule-toggle setup-rule-toggle--deck-mode">
-                <input
-                  type="radio"
-                  name="decks-edit-mode"
-                  checked={editMode === '3x3'}
-                  onChange={() => {
-                    setError(null)
-                    setEditMode('3x3')
-                  }}
-                  data-testid="setup-mode-3x3"
-                />
-                <span>3x3 (5 cards)</span>
-              </label>
-              <label className="setup-rule-toggle setup-rule-toggle--deck-mode">
-                <input
-                  type="radio"
-                  name="decks-edit-mode"
-                  checked={editMode === '4x4'}
-                  onChange={() => {
-                    setError(null)
-                    setEditMode('4x4')
-                  }}
-                  data-testid="setup-mode-4x4"
-                />
-                <span>4x4 (8 cards)</span>
-              </label>
+              {VISIBLE_MATCH_MODES.map((mode) => (
+                <label className="setup-rule-toggle setup-rule-toggle--deck-mode" key={mode}>
+                  <input
+                    type="radio"
+                    name="decks-edit-mode"
+                    checked={editMode === mode}
+                    onChange={() => {
+                      setError(null)
+                      setEditMode(mode)
+                    }}
+                    data-testid={`setup-mode-${mode}`}
+                  />
+                  <span>{deckModeLabelByMode[mode]}</span>
+                </label>
+              ))}
             </div>
           </fieldset>
 
           <p className="small setup-deck-count">
             Deck: {selectedDeck.length}/{modeSpec.deckSize} selected
           </p>
-          <DeckSynergyGuide
-            countsByType={selectedDeckSynergy.countsByType}
-            primaryTypeId={selectedDeckSynergy.primaryTypeId}
-            secondaryTypeId={selectedDeckSynergy.secondaryTypeId}
-            testIdPrefix="decks-synergy"
-          />
+          <div className="decks-element-activity" data-testid="decks-element-activity" aria-label="Deck element activity">
+            <div className="decks-element-activity-row decks-element-activity-row--active" data-testid="decks-element-activity-active">
+              {activeDeckElementIds.map((elementId) => {
+                const logo = getElementLogoMeta(elementId)
+                const elementCount = selectedDeckElementCounts[elementId]
+                return (
+                  <span
+                    key={elementId}
+                    className="decks-element-activity-chip is-active"
+                    data-testid={`decks-element-activity-${elementId}`}
+                    title={buildElementInfoLabel(elementId, elementCount)}
+                    aria-label={buildElementInfoLabel(elementId, elementCount)}
+                    tabIndex={0}
+                    onMouseEnter={() => setHoveredElementId(elementId)}
+                    onMouseLeave={() => setHoveredElementId((currentElementId) => (currentElementId === elementId ? null : currentElementId))}
+                    onFocus={() => setHoveredElementId(elementId)}
+                    onBlur={() => setHoveredElementId((currentElementId) => (currentElementId === elementId ? null : currentElementId))}
+                  >
+                    {logo ? (
+                      <img
+                        className="decks-element-activity-icon"
+                        src={logo.imageSrc}
+                        alt=""
+                        width={16}
+                        height={16}
+                        loading="lazy"
+                        decoding="async"
+                        aria-hidden="true"
+                      />
+                    ) : null}
+                  </span>
+                )
+              })}
+            </div>
+            <div className="decks-element-activity-row decks-element-activity-row--inactive" data-testid="decks-element-activity-inactive">
+              {inactiveDeckElementIds.map((elementId) => {
+                const logo = getElementLogoMeta(elementId)
+                const elementCount = selectedDeckElementCounts[elementId]
+                return (
+                  <span
+                    key={elementId}
+                    className="decks-element-activity-chip is-inactive"
+                    data-testid={`decks-element-activity-${elementId}`}
+                    title={buildElementInfoLabel(elementId, elementCount)}
+                    aria-label={buildElementInfoLabel(elementId, elementCount)}
+                    tabIndex={0}
+                    onMouseEnter={() => setHoveredElementId(elementId)}
+                    onMouseLeave={() => setHoveredElementId((currentElementId) => (currentElementId === elementId ? null : currentElementId))}
+                    onFocus={() => setHoveredElementId(elementId)}
+                    onBlur={() => setHoveredElementId((currentElementId) => (currentElementId === elementId ? null : currentElementId))}
+                  >
+                    {logo ? (
+                      <img
+                        className="decks-element-activity-icon"
+                        src={logo.imageSrc}
+                        alt=""
+                        width={16}
+                        height={16}
+                        loading="lazy"
+                        decoding="async"
+                        aria-hidden="true"
+                      />
+                    ) : null}
+                  </span>
+                )
+              })}
+            </div>
+            <div className={`decks-element-activity-info ${hoveredElementId ? 'is-visible' : ''}`} data-testid="decks-element-activity-info">
+              {hoveredElementId ? (
+                <>
+                  <p className="decks-element-activity-info-title">{getElementLabel(hoveredElementId)}</p>
+                  <p
+                    className={`decks-element-activity-info-meta ${hoveredElementCount > 0 ? 'is-active' : 'is-inactive'}`}
+                    data-testid="decks-element-activity-info-meta"
+                  >
+                    {formatDeckElementCount(hoveredElementCount)} ·{' '}
+                    {hoveredElementCount > 0 ? 'Actif dans ce deck' : 'Inactif dans ce deck'}
+                  </p>
+                  <p className="decks-element-activity-info-effect">{getElementEffectText(hoveredElementId)}</p>
+                </>
+              ) : (
+                <p className="decks-element-activity-info-placeholder">
+                  Survole un type pour voir son effet et son statut dans le deck.
+                </p>
+              )}
+            </div>
+          </div>
 
           <div
             className="setup-selected-cards"
@@ -317,6 +452,7 @@ export function DecksPage() {
                   key={cardId}
                   card={card}
                   context="setup"
+                  shiny={hasShinyCopy(profile, cardId)}
                   selected
                   interactive
                   onClick={() => handleCardToggle(cardId)}
@@ -361,6 +497,41 @@ export function DecksPage() {
                       data-testid={`setup-filter-rarity-${rarity}`}
                     >
                       {rarity}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div className="setup-filter-row">
+              <span className="setup-filter-label">Type</span>
+              <div className="setup-rarity-filters" role="group" aria-label="Setup type filters">
+                {cardElementIds.map((elementId) => {
+                  const isActive = selectedElementSet.has(elementId)
+                  const logo = getElementLogoMeta(elementId)
+                  return (
+                    <button
+                      key={elementId}
+                      type="button"
+                      className={`setup-rarity-chip setup-rarity-chip--element ${isActive ? 'is-active' : ''}`}
+                      aria-pressed={isActive}
+                      onClick={() => handleElementToggle(elementId)}
+                      data-testid={`setup-filter-type-${elementId}`}
+                    >
+                      <span className="element-chip-content">
+                        {logo ? (
+                          <img
+                            className="element-chip-icon"
+                            src={logo.imageSrc}
+                            alt={logo.name}
+                            width={16}
+                            height={16}
+                            loading="lazy"
+                            decoding="async"
+                          />
+                        ) : null}
+                        <span className="element-chip-label">{getElementLabel(elementId)}</span>
+                      </span>
                     </button>
                   )
                 })}
@@ -431,6 +602,7 @@ export function DecksPage() {
                   key={card.id}
                   card={card}
                   context="setup"
+                  shiny={hasShinyCopy(profile, card.id)}
                   selected={selected}
                   interactive
                   onClick={() => handleCardToggle(card.id)}

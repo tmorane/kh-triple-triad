@@ -3,14 +3,14 @@ import { createDefaultProfile } from './profile'
 import { applyMatchMissions } from './missions'
 
 describe('applyMatchMissions', () => {
-  test('progresses type specialist from wins with primary synergy and secondary bonus link', () => {
+  test('progresses type specialist from player victories only', () => {
     const profile = createDefaultProfile()
 
     const first = applyMatchMissions(
       profile,
       {
         winner: 'player',
-        playerPrimarySynergyActive: true,
+        playerPrimarySynergyActive: false,
         playerSecondarySynergyActive: true,
         playerSamePlusTriggers: 0,
         playerCornerPlays: 0,
@@ -18,7 +18,7 @@ describe('applyMatchMissions', () => {
       101,
     )
 
-    expect(first.profile.missions.m1_type_specialist.progress).toBe(2)
+    expect(first.profile.missions.m1_type_specialist.progress).toBe(1)
   })
 
   test('completes combo practitioner once and grants exactly one rare pack reward', () => {

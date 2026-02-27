@@ -39,7 +39,7 @@ interface ProfileMetric {
 const missionOrder: MissionId[] = ['m1_type_specialist', 'm2_combo_practitioner', 'm3_corner_tactician']
 
 const missionTitles: Record<MissionId, string> = {
-  m1_type_specialist: 'Type Specialist',
+  m1_type_specialist: 'Win 5 Matches',
   m2_combo_practitioner: 'Combo Practitioner',
   m3_corner_tactician: 'Corner Tactician',
 }

@@ -62,7 +62,7 @@ describe('card pool integrity', () => {
       bottom: 2,
       left: 2,
       categoryId: 'humain',
-      elementId: 'fleur',
+      elementId: 'plante',
     })
 
     expect(cardPool.find((card) => card.id === 'c75')).toMatchObject({
@@ -74,7 +74,7 @@ describe('card pool integrity', () => {
       bottom: 4,
       left: 3,
       categoryId: 'nescient',
-      elementId: 'terre',
+      elementId: 'roche',
     })
 
     expect(cardPool.find((card) => card.id === 'c151')).toMatchObject({
@@ -86,7 +86,7 @@ describe('card pool integrity', () => {
       bottom: 8,
       left: 8,
       categoryId: 'simili',
-      elementId: 'illusion',
+      elementId: 'psy',
     })
   })
 })

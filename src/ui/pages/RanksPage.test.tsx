@@ -78,7 +78,7 @@ describe('RanksPage', () => {
     )
   })
 
-  test('renders both global ladders when global ladder mode is enabled (mock without cloud)', async () => {
+  test('renders owned cards ladder and 3x3 peak ladder when global ladder mode is enabled (mock without cloud)', async () => {
     vi.mocked(cloudLadderStore.isGlobalLadderEnabled).mockReturnValue(true)
     vi.mocked(cloudLadderStore.fetchOwnedCardsLadder).mockResolvedValue([
       {
@@ -110,6 +110,6 @@ describe('RanksPage', () => {
     expect(screen.getByTestId('ranks-owned-ladder')).toHaveTextContent('Alice')
     expect(screen.getByTestId('ranks-owned-ladder')).toHaveTextContent('120')
     expect(screen.getByTestId('ranks-peak-ladder-3x3')).toHaveTextContent('Diamond II')
-    expect(screen.getByTestId('ranks-peak-ladder-4x4')).toHaveTextContent('Diamond II')
+    expect(screen.queryByTestId('ranks-peak-ladder-4x4')).not.toBeInTheDocument()
   })
 })

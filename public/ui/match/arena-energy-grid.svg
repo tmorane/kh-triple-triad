@@ -1,0 +1,33 @@
+<svg width="1200" height="1200" viewBox="0 0 1200 1200" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <defs>
+    <linearGradient id="gridBase" x1="0" y1="0" x2="1200" y2="1200" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2D5CA8" stop-opacity="0.34"/>
+      <stop offset="0.55" stop-color="#0F2D5E" stop-opacity="0.14"/>
+      <stop offset="1" stop-color="#7AB5FF" stop-opacity="0.28"/>
+    </linearGradient>
+    <pattern id="diagA" width="36" height="36" patternUnits="userSpaceOnUse" patternTransform="rotate(35)">
+      <line x1="0" y1="0" x2="0" y2="36" stroke="#A2D2FF" stroke-opacity="0.14" stroke-width="4"/>
+    </pattern>
+    <pattern id="diagB" width="48" height="48" patternUnits="userSpaceOnUse" patternTransform="rotate(-35)">
+      <line x1="0" y1="0" x2="0" y2="48" stroke="#F7D56A" stroke-opacity="0.1" stroke-width="3"/>
+    </pattern>
+    <radialGradient id="coreGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(600 600) rotate(90) scale(560)">
+      <stop offset="0" stop-color="#9FD4FF" stop-opacity="0.28"/>
+      <stop offset="0.65" stop-color="#6DB5FF" stop-opacity="0.08"/>
+      <stop offset="1" stop-color="#6DB5FF" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1200" height="1200" fill="url(#gridBase)"/>
+  <rect width="1200" height="1200" fill="url(#diagA)"/>
+  <rect width="1200" height="1200" fill="url(#diagB)"/>
+
+  <g opacity="0.45">
+    <circle cx="600" cy="600" r="168" stroke="#CFE9FF" stroke-opacity="0.34" stroke-width="4"/>
+    <circle cx="600" cy="600" r="256" stroke="#A8D0FF" stroke-opacity="0.24" stroke-width="3"/>
+    <circle cx="600" cy="600" r="352" stroke="#84BEFF" stroke-opacity="0.18" stroke-width="2"/>
+    <circle cx="600" cy="600" r="448" stroke="#F8DE83" stroke-opacity="0.12" stroke-width="2"/>
+  </g>
+
+  <rect width="1200" height="1200" fill="url(#coreGlow)"/>
+</svg>

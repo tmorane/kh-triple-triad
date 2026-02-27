@@ -112,26 +112,25 @@ function createMissionProgress(missionId: MissionId): MissionProgress {
 
 function computeMissionDelta(missionId: MissionId, metrics: MatchMissionMetrics): number {
   const isPlayerVictory = metrics.winner === 'player'
-  const missionLinkBonus = isPlayerVictory && metrics.playerSecondarySynergyActive ? 1 : 0
 
   if (missionId === 'm1_type_specialist') {
-    if (!isPlayerVictory || !metrics.playerPrimarySynergyActive) {
+    if (!isPlayerVictory) {
       return 0
     }
-    return 1 + missionLinkBonus
+    return 1
   }
 
   if (missionId === 'm2_combo_practitioner') {
     if (metrics.playerSamePlusTriggers <= 0) {
       return 0
     }
-    return metrics.playerSamePlusTriggers + missionLinkBonus
+    return metrics.playerSamePlusTriggers
   }
 
   if (metrics.playerCornerPlays <= 0) {
     return 0
   }
-  return metrics.playerCornerPlays + missionLinkBonus
+  return metrics.playerCornerPlays
 }
 
 function applyMissionReward(
@@ -168,6 +167,7 @@ function cloneProfile(profile: PlayerProfile): PlayerProfile {
     ...profile,
     ownedCardIds: [...profile.ownedCardIds],
     cardCopiesById: { ...profile.cardCopiesById },
+    shinyCardCopiesById: { ...profile.shinyCardCopiesById },
     packInventoryByRarity: { ...profile.packInventoryByRarity },
     deckSlots: profile.deckSlots.map((slot) => ({
       ...slot,

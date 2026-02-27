@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { CloudProfileAutoSync } from './app/cloud/CloudProfileAutoSync'
 import { useGame } from './app/useGame'
 import { AchievementsPage } from './ui/pages/AchievementsPage'
@@ -17,31 +17,39 @@ import { ShopPage } from './ui/pages/ShopPage'
 import { SetupPage } from './ui/pages/SetupPage'
 import './index.css'
 
-const BACKGROUNDS = ['bg1', 'bg2', 'bg3', 'bg4'] as const
-type BackgroundMode = (typeof BACKGROUNDS)[number]
 const THEME_STORAGE_KEY = 'kh-triple-triad-theme-mode-v1'
 const LOCKED_THEME_MODE = 'pokemon' as const
 
 function App() {
-  const { profile, currentMatch } = useGame()
+  const { profile, currentMatch, abandonCurrentMatch, abandonTowerRun } = useGame()
   const location = useLocation()
-  const [backgroundMode, setBackgroundMode] = useState<BackgroundMode>('bg1')
+  const navigate = useNavigate()
   const [isMoreOpen, setIsMoreOpen] = useState(false)
   const ctaLabel = currentMatch ? 'Continue' : 'Play'
   const ctaTarget = currentMatch ? '/match' : '/setup'
+
+  const handleTopbarAbandon = () => {
+    if (!currentMatch) {
+      return
+    }
+
+    if (currentMatch.queue === 'tower') {
+      if (abandonTowerRun) {
+        abandonTowerRun()
+      } else {
+        abandonCurrentMatch?.()
+      }
+    } else {
+      abandonCurrentMatch?.()
+    }
+
+    navigate('/setup')
+  }
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsMoreOpen(false)
   }, [location.pathname])
-
-  useEffect(() => {
-    document.body.dataset.bg = backgroundMode
-
-    return () => {
-      delete document.body.dataset.bg
-    }
-  }, [backgroundMode])
 
   useEffect(() => {
     document.body.dataset.theme = LOCKED_THEME_MODE
@@ -75,35 +83,6 @@ function App() {
     <div className="app-shell">
       <CloudProfileAutoSync />
 
-      <div className="visual-controls" data-testid="visual-controls" aria-label="Visual controls">
-        <div className="bg-options" role="group" aria-label="Background selection">
-          {BACKGROUNDS.map((background) => {
-            const isActive = backgroundMode === background
-            return (
-              <button
-                key={background}
-                type="button"
-                className={`bg-option ${isActive ? 'is-active' : ''}`}
-                data-testid={`bg-option-${background}`}
-                aria-pressed={isActive}
-                onClick={() => setBackgroundMode(background)}
-              >
-                {background.toUpperCase()}
-              </button>
-            )
-          })}
-        </div>
-        <button
-          type="button"
-          className="theme-toggle"
-          data-testid="theme-toggle"
-          aria-label="Theme locked to Pokemon"
-          disabled
-        >
-          Theme: Pokemon only
-        </button>
-      </div>
-
       <header className="topbar">
         <div className="brand-block">
           <NavLink to="/" className="brand brand-link">
@@ -118,6 +97,11 @@ function App() {
           <NavLink to={ctaTarget} className="topbar-cta" data-testid="topbar-cta-link">
             {ctaLabel}
           </NavLink>
+          {currentMatch ? (
+            <button type="button" className="topbar-abandon" data-testid="topbar-abandon-button" onClick={handleTopbarAbandon}>
+              Abandonner
+            </button>
+          ) : null}
           <NavLink to="/decks" data-testid="topbar-link-decks">
             Decks
           </NavLink>

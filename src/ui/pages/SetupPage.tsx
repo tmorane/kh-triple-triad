@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { IS_4X4_UI_ENABLED, IS_TOWER_UI_ENABLED } from '../../app/matchUiConfig'
 import { useGame } from '../../app/useGame'
 import { getCard } from '../../domain/cards/cardPool'
 import { getDeckForMode, getSelectedDeckSlot, hasExactlyDeckSizeUniqueCards } from '../../domain/cards/decks'
-import { resolveDeckTypeSynergy } from '../../domain/cards/typeSynergy'
 import { getModeSpec } from '../../domain/match/modeSpec'
+import { hasShinyCopy } from '../../domain/progression/shiny'
 import {
   getCpuOpponentPreview,
   getCpuOpponentPreviewForLevel,
@@ -16,7 +17,6 @@ import {
 } from '../../domain/match/opponents'
 import { resolveTowerFloorSpec } from '../../domain/tower/floorPlan'
 import type { MatchMode, MatchQueue, Rarity } from '../../domain/types'
-import { DeckSynergyGuide } from '../components/DeckSynergyGuide'
 import { TriadCard } from '../components/TriadCard'
 
 type SetupDeckMode = 'manual' | 'auto'
@@ -33,7 +33,7 @@ interface SetupPreset {
   artwork: string
 }
 
-const setupPresets: SetupPreset[] = [
+const allSetupPresets: SetupPreset[] = [
   {
     id: '3x3-normal',
     mode: '3x3',
@@ -76,7 +76,17 @@ const setupPresets: SetupPreset[] = [
   },
 ]
 
-const presetById = Object.fromEntries(setupPresets.map((preset) => [preset.id, preset])) as Record<SetupPresetId, SetupPreset>
+const setupPresets = allSetupPresets.filter((preset) => {
+  if (preset.mode === '4x4' && !IS_4X4_UI_ENABLED) {
+    return false
+  }
+  if (preset.queue === 'tower' && !IS_TOWER_UI_ENABLED) {
+    return false
+  }
+  return true
+})
+
+const presetById = Object.fromEntries(setupPresets.map((preset) => [preset.id, preset])) as Partial<Record<SetupPresetId, SetupPreset>>
 
 function toOpponentLevel(value: number): OpponentLevel {
   return Math.max(1, Math.min(MAX_NORMAL_OPPONENT_LEVEL, value)) as OpponentLevel
@@ -140,7 +150,7 @@ export function SetupPage() {
   const defaultRankedOpponentLevel = getOpponentLevelForProfile(profile, selectedSlot.mode)
   const [selectedNormalOpponentLevel, setSelectedNormalOpponentLevel] = useState<OpponentLevel>(defaultRankedOpponentLevel)
 
-  const selectedPreset = selectedPresetId ? presetById[selectedPresetId] : null
+  const selectedPreset = selectedPresetId ? (presetById[selectedPresetId] ?? null) : null
   const selectedMode = selectedPreset?.mode ?? null
   const selectedQueue = selectedPreset?.queue ?? null
   const isTowerPreset = selectedQueue === 'tower'
@@ -161,7 +171,6 @@ export function SetupPage() {
     }
     return getDeckForMode(selectedSlot, selectedMode)
   }, [selectedMode, selectedSlot])
-  const selectedDeckSynergy = useMemo(() => resolveDeckTypeSynergy(selectedDeck), [selectedDeck])
 
   useEffect(() => {
     if (deckMode === 'auto' && !canUseAutoDeck) {
@@ -223,6 +232,9 @@ export function SetupPage() {
 
   const handlePresetSelect = (presetId: SetupPresetId) => {
     const preset = presetById[presetId]
+    if (!preset) {
+      return
+    }
     setError(null)
     setSelectedPresetId(presetId)
     setDeckSlotMode(selectedSlot.id, preset.mode)
@@ -499,13 +511,6 @@ export function SetupPage() {
 
               {shouldShowManualDeckPreview ? (
                 <>
-                  <DeckSynergyGuide
-                    countsByType={selectedDeckSynergy.countsByType}
-                    primaryTypeId={selectedDeckSynergy.primaryTypeId}
-                    secondaryTypeId={selectedDeckSynergy.secondaryTypeId}
-                    testIdPrefix="setup-synergy"
-                  />
-
                   <p className="small setup-deck-count">
                     Deck: {selectedDeck.length}/{modeSpec?.deckSize ?? 0} selected ({selectedMode})
                   </p>
@@ -536,6 +541,7 @@ export function SetupPage() {
                           key={`${cardId}-${index}`}
                           card={card}
                           context="setup"
+                          shiny={hasShinyCopy(profile, cardId)}
                           className="setup-preview-card"
                           testId={`setup-selected-card-${cardId}`}
                         />

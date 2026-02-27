@@ -1,7 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useCallback, useMemo, useState } from 'react'
+import { createContext, useCallback, useMemo, useRef, useState } from 'react'
 import { isDeckNameValid, toggleCardInDeck, validateDeck } from '../domain/cards/decks'
-import { resolveDeckTypeSynergy } from '../domain/cards/typeSynergy'
 import {
   buildAutoPlayerDeck,
   buildCpuOpponent,
@@ -32,6 +31,7 @@ import { evaluateAchievements } from '../domain/progression/achievements'
 import { applyMatchMissions } from '../domain/progression/missions'
 import { applyMatchRewards, type RewardBreakdown } from '../domain/progression/rewards'
 import { applyRankedMatchResult, type RankedMatchResultSummary } from '../domain/progression/ranked'
+import { craftShinyCard as applyShinyCraft } from '../domain/progression/shiny'
 import { resolveTowerFloorSpec } from '../domain/tower/floorPlan'
 import { resolveTowerRelicEffects } from '../domain/tower/relics'
 import { applyTowerCheckpointRewards } from '../domain/tower/rewards'
@@ -40,10 +40,12 @@ import type { TowerMatchSummary, TowerProgressState, TowerRunState } from '../do
 import {
   openOwnedPack as applyOpenPack,
   openOwnedPacks as applyOpenPacks,
+  openShinyTestPack as applyShinyTestPack,
   purchaseAndOpenSpecialPack as applySpecialPackPurchase,
   purchaseShopPacks as applyBulkShopPurchase,
   purchaseShopPack as applyShopPurchase,
   type OpenedPackBatchResult,
+  type OpenedShinyTestPackResult,
   type OpenedSpecialPackResult,
   type OpenedPackResult,
   type SpecialPackPurchaseRequest,
@@ -107,6 +109,7 @@ interface GameContextValue {
   resumeTowerRun?(): void
   continueTowerRun?(): void
   selectTowerReward?(choiceId: string, swapOutCardId?: CardId): void
+  abandonCurrentMatch?(): void
   abandonTowerRun?(): void
   selectDeckSlot(slotId: DeckSlotId): void
   renamePlayer(name: string): { valid: boolean; reason?: string }
@@ -122,7 +125,9 @@ interface GameContextValue {
   purchaseShopPacks?(packId: ShopPackId, quantity: number): ShopBulkPurchaseReceipt
   openOwnedPack(packId: ShopPackId): OpenedPackResult
   openOwnedPacks?(packId: ShopPackId, quantity: number): OpenedPackBatchResult
+  openShinyTestPack?(): OpenedShinyTestPackResult
   buySpecialPack(request: SpecialPackPurchaseRequest): OpenedSpecialPackResult
+  craftShinyCard?(cardId: CardId): void
   addTestGold(amount: number): void
   createStoredProfile(name: string): { valid: boolean; reason?: string }
   switchStoredProfile(profileId: string): void
@@ -137,6 +142,7 @@ function cloneProfile(profile: PlayerProfile): PlayerProfile {
     ...profile,
     ownedCardIds: [...profile.ownedCardIds],
     cardCopiesById: { ...profile.cardCopiesById },
+    shinyCardCopiesById: { ...profile.shinyCardCopiesById },
     packInventoryByRarity: { ...profile.packInventoryByRarity },
     deckSlots: profile.deckSlots.map((slot) => ({
       ...slot,
@@ -175,12 +181,14 @@ function resolveProfileTowerRun(profile: PlayerProfile): TowerRunState | null {
 
 export function GameProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<PlayerProfile>(() => loadProfile())
+  const profileRef = useRef<PlayerProfile>(profile)
   const [currentMatch, setCurrentMatch] = useState<CurrentMatch | null>(null)
   const [lastMatchSummary, setLastMatchSummary] = useState<LastMatchSummary | null>(null)
   const towerProgress = resolveProfileTowerProgress(profile)
   const towerRun = resolveProfileTowerRun(profile)
 
   const commitComputedProfile = useCallback((nextProfile: PlayerProfile) => {
+    profileRef.current = nextProfile
     saveProfile(nextProfile)
     setProfile(nextProfile)
     return nextProfile
@@ -190,6 +198,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     setProfile((existingProfile) => {
       const nextProfile = cloneProfile(existingProfile)
       mutator(nextProfile)
+      profileRef.current = nextProfile
       saveProfile(nextProfile)
       return nextProfile
     })
@@ -223,9 +232,6 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       usedAutoDeck: boolean
       tower?: CurrentMatch['tower']
     }) => {
-      const playerSynergy = resolveDeckTypeSynergy(playerDeck)
-      const cpuSynergy = resolveDeckTypeSynergy(cpuDeck)
-
       const state = createMatch({
         playerDeck,
         cpuDeck,
@@ -235,14 +241,16 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         startingTurn,
         typeSynergy: {
           player: {
-            primaryTypeId: playerSynergy.primaryTypeId,
-            secondaryTypeId: playerSynergy.secondaryTypeId,
+            primaryTypeId: null,
+            secondaryTypeId: null,
           },
           cpu: {
-            primaryTypeId: cpuSynergy.primaryTypeId,
-            secondaryTypeId: cpuSynergy.secondaryTypeId,
+            primaryTypeId: null,
+            secondaryTypeId: null,
           },
         },
+        enableElementPowers: true,
+        strictPowerTargeting: true,
       })
 
       const runtime = createMatchRuntime(state)
@@ -311,28 +319,29 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           throw new Error('Tower matches must be started via startTowerRun/resumeTowerRun.')
         }
 
+        const activeProfile = profileRef.current
         const modeSpec = getModeSpec(mode)
         const useAutoDeck = options?.useAutoDeck ?? false
         const requestedNormalOpponentLevel = options?.normalOpponentLevel
-        const ownedUniqueCount = new Set(profile.ownedCardIds).size
+        const ownedUniqueCount = new Set(activeProfile.ownedCardIds).size
         if (useAutoDeck && ownedUniqueCount < modeSpec.deckSize) {
           throw new Error(`Auto Deck requires at least ${modeSpec.deckSize} owned cards for ${mode}.`)
         }
 
         if (!useAutoDeck) {
-          const validation = validateDeck(deck, profile.ownedCardIds, mode)
+          const validation = validateDeck(deck, activeProfile.ownedCardIds, mode)
           if (!validation.valid) {
             throw new Error(validation.reason)
           }
         }
 
-        const referenceDeck = deck.length === modeSpec.deckSize ? deck : profile.ownedCardIds.slice(0, modeSpec.deckSize)
+        const referenceDeck = deck.length === modeSpec.deckSize ? deck : activeProfile.ownedCardIds.slice(0, modeSpec.deckSize)
         if (referenceDeck.length !== modeSpec.deckSize) {
           throw new Error('Unable to determine a reference deck for CPU matching.')
         }
 
         const seed = Date.now()
-        const rankedOpponentLevel = getOpponentLevelForProfile(profile, mode)
+        const rankedOpponentLevel = getOpponentLevelForProfile(activeProfile, mode)
         const normalOpponentLevel = requestedNormalOpponentLevel ?? rankedOpponentLevel
         if (queue === 'normal' && (normalOpponentLevel < 1 || normalOpponentLevel > MAX_NORMAL_OPPONENT_LEVEL)) {
           throw new Error(`Normal opponent level must be between L1 and L${MAX_NORMAL_OPPONENT_LEVEL}. Received L${normalOpponentLevel}.`)
@@ -340,10 +349,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
         const opponent =
           queue === 'ranked'
-            ? buildCpuOpponent(profile, referenceDeck, seed, mode)
+            ? buildCpuOpponent(activeProfile, referenceDeck, seed, mode)
             : buildCpuOpponentForLevel(normalOpponentLevel, referenceDeck, seed, mode)
         const cpuDeck = [...opponent.deck]
-        const playerDeck = useAutoDeck ? buildAutoPlayerDeck(opponent.scoreRange, seed + 1, mode, profile.ownedCardIds) : [...deck]
+        const playerDeck = useAutoDeck ? buildAutoPlayerDeck(opponent.scoreRange, seed + 1, mode, activeProfile.ownedCardIds) : [...deck]
         const rewardMultiplier = useAutoDeck ? 1.5 : 1
         const effectiveRules: RuleSet =
           queue === 'ranked'
@@ -429,6 +438,16 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
             },
           }
         })
+      },
+      abandonCurrentMatch: () => {
+        if (currentMatch?.queue === 'tower') {
+          const nextProfile = cloneProfile(profile)
+          nextProfile.towerProgress = towerProgress
+          nextProfile.towerRun = null
+          commitComputedProfile(nextProfile)
+          setLastMatchSummary((existingSummary) => (existingSummary?.queue === 'tower' ? null : existingSummary))
+        }
+        setCurrentMatch(null)
       },
       abandonTowerRun: () => {
         const nextProfile = cloneProfile(profile)
@@ -549,8 +568,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           progression.profile,
           {
             winner: result.winner,
-            playerPrimarySynergyActive: Boolean(result.typeSynergy?.player.primaryTypeId),
-            playerSecondarySynergyActive: Boolean(result.typeSynergy?.player.secondaryTypeId),
+            playerPrimarySynergyActive: false,
+            playerSecondarySynergyActive: false,
             playerSamePlusTriggers: result.metrics?.samePlusTriggersByActor.player ?? 0,
             playerCornerPlays: result.metrics?.cornerPlaysByActor.player ?? 0,
           },
@@ -676,10 +695,19 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         commitComputedProfile(progression.profile)
         return progression.opened
       },
+      openShinyTestPack: () => {
+        const progression = applyShinyTestPack(profile, createSeededRng(Date.now()))
+        commitComputedProfile(progression.profile)
+        return progression.opened
+      },
       buySpecialPack: (request) => {
         const progression = applySpecialPackPurchase(profile, request, createSeededRng(Date.now()))
         commitComputedProfile(progression.profile)
         return progression.opened
+      },
+      craftShinyCard: (cardId) => {
+        const crafted = applyShinyCraft(profile, cardId)
+        commitComputedProfile(crafted)
       },
       addTestGold: (amount) => {
         if (!Number.isFinite(amount) || amount <= 0) {
@@ -696,6 +724,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           return { valid: false, reason: result.reason }
         }
 
+        profileRef.current = result.profile
         setProfile(result.profile)
         setCurrentMatch(null)
         setLastMatchSummary(null)
@@ -704,6 +733,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       },
       switchStoredProfile: (profileId) => {
         const nextProfile = switchStoredProfileInStorage(profileId)
+        profileRef.current = nextProfile
         setProfile(nextProfile)
         setCurrentMatch(null)
         setLastMatchSummary(null)
@@ -714,6 +744,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           return { valid: false, reason: result.reason }
         }
 
+        profileRef.current = result.profile
         setProfile(result.profile)
         setCurrentMatch(null)
         setLastMatchSummary(null)
@@ -723,6 +754,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       resetProfile: () => {
         const next = createResetProfile()
         saveProfile(next)
+        profileRef.current = next
         setProfile(next)
         setCurrentMatch(null)
         setLastMatchSummary(null)
