@@ -3,11 +3,12 @@ import { useNavigate } from 'react-router-dom'
 import { useGame } from '../../app/useGame'
 import { getCard } from '../../domain/cards/cardPool'
 import { selectCpuMove } from '../../domain/match/ai'
-import { applyMove, listLegalMoves, resolveMatchResult } from '../../domain/match/engine'
+import { applyMove, applyMoveDetailed, listLegalMoves, listMovePowerTargetOptions, resolveMatchResult } from '../../domain/match/engine'
+import { buildMatchEffectsViewModel } from '../../domain/match/effectsViewModel'
 import { getModeSpec } from '../../domain/match/modeSpec'
 import { applyMatchRewards } from '../../domain/progression/rewards'
 import { applyRankedMatchResult } from '../../domain/progression/ranked'
-import type { Actor, CardId } from '../../domain/types'
+import type { Actor, CardId, Move } from '../../domain/types'
 import { playCriticalVictorySound } from '../audio/criticalVictorySound'
 import { PixiBoard } from '../components/PixiBoard'
 import { RankedLpRecap } from '../components/RankedLpRecap'
@@ -51,8 +52,24 @@ function formatGoldBonusDetails(rewards: {
 const STARTER_SPIN_DURATION_MS = 1600
 const STARTER_REVEAL_HOLD_MS = 340
 const STARTER_BASE_TURNS = 6
+const WATER_CAST_DELAY_MS = 220
+const WATER_PENALTY_DELAY_MS = 900
+const WATER_CLASH_DELAY_MS = 600
+const WATER_TARGET_PROMPT = 'Choose a power target.'
+const matchLaneAssetBasePath = `${import.meta.env.BASE_URL}ui/setup/`
+
+const matchLaneArtwork = {
+  cpuHand: `${matchLaneAssetBasePath}cpu-hand.jpg`,
+  playerHand: `${matchLaneAssetBasePath}player-hand.jpg`,
+}
 
 type KeyboardDirection = 'up' | 'down' | 'left' | 'right'
+
+type WaterTargetingState = {
+  cardId: CardId
+  placementCell: number
+  targetCells: number[]
+}
 
 function getOutcomeLabel(winner: 'player' | 'cpu' | 'draw'): 'WIN' | 'LOSE' | 'DRAW' {
   if (winner === 'player') {
@@ -132,7 +149,7 @@ function isEditableElement(target: EventTarget | null): boolean {
 
 export function MatchPage() {
   const navigate = useNavigate()
-  const { profile, currentMatch, startMatch, updateCurrentMatch, finalizeCurrentMatch, abandonCurrentMatch, abandonTowerRun } = useGame()
+  const { profile, currentMatch, startMatch, updateCurrentMatch, finalizeCurrentMatch } = useGame()
   const [selectedCard, setSelectedCard] = useState<CardId | null>(null)
   const [keyboardTargetCell, setKeyboardTargetCell] = useState<number | null>(null)
   const [selectedClaimCardId, setSelectedClaimCardId] = useState<CardId | null>(null)
@@ -141,7 +158,15 @@ export function MatchPage() {
   const [starterNeedleAngleDeg, setStarterNeedleAngleDeg] = useState(0)
   const [starterSpinSettled, setStarterSpinSettled] = useState(false)
   const [starterRevealComplete, setStarterRevealComplete] = useState(true)
+  const [waterTargeting, setWaterTargeting] = useState<WaterTargetingState | null>(null)
+  const [transientFloodTargetCells, setTransientFloodTargetCells] = useState<number[]>([])
+  const [transientFloodCastCells, setTransientFloodCastCells] = useState<number[]>([])
+  const [transientWaterPenaltyCells, setTransientWaterPenaltyCells] = useState<number[]>([])
+  const [transientClashCells, setTransientClashCells] = useState<number[]>([])
+  const [showVsOverlay, setShowVsOverlay] = useState(false)
+  const [vsCells, setVsCells] = useState<number[]>([])
   const criticalVictorySoundPlayedMatchKeyRef = useRef<string | null>(null)
+  const animationTimeoutIdsRef = useRef<number[]>([])
 
   const state = currentMatch?.state ?? null
 
@@ -161,6 +186,49 @@ export function MatchPage() {
     )
   }, [currentMatch])
 
+  const clearAnimationTimeouts = useCallback(() => {
+    for (const timeoutId of animationTimeoutIdsRef.current) {
+      window.clearTimeout(timeoutId)
+    }
+    animationTimeoutIdsRef.current = []
+  }, [])
+
+  const scheduleAnimationTimeout = useCallback((callback: () => void, delayMs: number) => {
+    const timeoutId = window.setTimeout(() => {
+      animationTimeoutIdsRef.current = animationTimeoutIdsRef.current.filter((id) => id !== timeoutId)
+      callback()
+    }, delayMs)
+    animationTimeoutIdsRef.current.push(timeoutId)
+  }, [])
+
+  const clearPowerTargetPrompt = useCallback(() => {
+    setError((currentError) => (currentError === WATER_TARGET_PROMPT ? null : currentError))
+  }, [])
+
+  const resetTransientEffects = useCallback(() => {
+    setTransientFloodTargetCells([])
+    setTransientFloodCastCells([])
+    setTransientWaterPenaltyCells([])
+    setTransientClashCells([])
+    setShowVsOverlay(false)
+    setVsCells([])
+  }, [])
+
+  const boardForRender = useMemo(() => {
+    if (!waterTargeting) {
+      return board
+    }
+    if (waterTargeting.placementCell < 0 || waterTargeting.placementCell >= board.length) {
+      return board
+    }
+    if (board[waterTargeting.placementCell] !== null) {
+      return board
+    }
+    const previewBoard = [...board]
+    previewBoard[waterTargeting.placementCell] = { owner: 'player', cardId: waterTargeting.cardId }
+    return previewBoard
+  }, [board, waterTargeting])
+
   const legalPlayerMoves = useMemo(() => {
     if (!state) {
       return []
@@ -177,6 +245,8 @@ export function MatchPage() {
     return legalPlayerMoves.filter((move) => move.cardId === selectedCard).map((move) => move.cell)
   }, [legalPlayerMoves, selectedCard, state])
 
+  const effectsView = useMemo(() => (state ? buildMatchEffectsViewModel(state) : undefined), [state])
+
   const legalMovesForSelectedCard = useMemo(() => {
     if (!selectedCard) {
       return []
@@ -189,6 +259,12 @@ export function MatchPage() {
     () => new Set(legalMovesForSelectedCard.map((move) => move.cell)),
     [legalMovesForSelectedCard],
   )
+
+  useEffect(() => {
+    return () => {
+      clearAnimationTimeouts()
+    }
+  }, [clearAnimationTimeouts])
 
   const finishPreview = useMemo(() => {
     if (!currentMatch || !state || state.status !== 'finished') {
@@ -320,6 +396,17 @@ export function MatchPage() {
   }, [currentMatch, state?.status])
 
   useEffect(() => {
+    if (!waterTargeting) {
+      return
+    }
+    if (!state || state.turn !== 'player' || state.status === 'finished' || selectedCard !== waterTargeting.cardId) {
+      setWaterTargeting(null)
+      setTransientFloodTargetCells([])
+      clearPowerTargetPrompt()
+    }
+  }, [clearPowerTargetPrompt, selectedCard, state, waterTargeting])
+
+  useEffect(() => {
     if (!starterRevealComplete || !currentMatch || !state || state.turn !== 'cpu' || state.status === 'finished') {
       return
     }
@@ -365,36 +452,125 @@ export function MatchPage() {
     setSelectedCard(topCardId)
   }, [isKeyboardControlEnabled, selectedCard, state])
 
-  const handleCellClick = useCallback((cell: number) => {
-    if (!state || !starterRevealComplete || state.turn !== 'player' || state.status === 'finished') {
-      return
-    }
-    if (!selectedCard) {
-      setError('Select a card first.')
-      return
-    }
+  const resolvePlayerMove = useCallback(
+    (move: Move) => {
+      if (!state) {
+        return
+      }
 
-    try {
-      const nextState = applyMove(state, {
-        actor: 'player',
-        cardId: selectedCard,
-        cell,
-      })
-      setSelectedCard(null)
-      setKeyboardTargetCell(null)
-      setError(null)
-      updateCurrentMatch(nextState)
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Move failed.'
-      setError(message)
-    }
-  }, [
-    profile.settings.audioEnabled,
-    selectedCard,
-    starterRevealComplete,
-    state,
-    updateCurrentMatch,
-  ])
+      const card = getCard(move.cardId)
+      const isWaterPenaltyMove =
+        state.elementState?.mode === 'effects' &&
+        state.elementState.floodedCell === move.cell &&
+        card.elementId !== 'spectre'
+
+      const commitResolvedState = (nextState: typeof state) => {
+        setSelectedCard(null)
+        setKeyboardTargetCell(null)
+        setError(null)
+        updateCurrentMatch(nextState)
+      }
+
+      if (isWaterPenaltyMove) {
+        const resolution = applyMoveDetailed(state, move)
+        setTransientWaterPenaltyCells([move.cell])
+        setTransientClashCells([])
+        setVsCells([])
+        setShowVsOverlay(false)
+
+        scheduleAnimationTimeout(() => {
+          setTransientWaterPenaltyCells([])
+          if (resolution.combatCells.length > 0) {
+            setTransientClashCells(resolution.combatCells)
+            setVsCells(resolution.combatCells)
+            setShowVsOverlay(true)
+            scheduleAnimationTimeout(() => {
+              setTransientClashCells([])
+              setShowVsOverlay(false)
+              setVsCells([])
+              commitResolvedState(resolution.state)
+            }, WATER_CLASH_DELAY_MS)
+            return
+          }
+          commitResolvedState(resolution.state)
+        }, WATER_PENALTY_DELAY_MS)
+        return
+      }
+
+      const nextState = applyMove(state, move)
+      commitResolvedState(nextState)
+    },
+    [scheduleAnimationTimeout, state, updateCurrentMatch],
+  )
+
+  const handleCellClick = useCallback(
+    (cell: number) => {
+      if (!state || !starterRevealComplete || state.turn !== 'player' || state.status === 'finished') {
+        return
+      }
+
+      if (waterTargeting) {
+        if (!waterTargeting.targetCells.includes(cell)) {
+          return
+        }
+        const targetedMove: Move = {
+          actor: 'player',
+          cardId: waterTargeting.cardId,
+          cell: waterTargeting.placementCell,
+          powerTarget: { targetCell: cell },
+        }
+        setWaterTargeting(null)
+        setTransientFloodTargetCells([])
+        clearPowerTargetPrompt()
+        setTransientFloodCastCells([cell])
+        scheduleAnimationTimeout(() => {
+          setTransientFloodCastCells([])
+          resolvePlayerMove(targetedMove)
+        }, WATER_CAST_DELAY_MS)
+        return
+      }
+
+      if (!selectedCard) {
+        setError('Select a card first.')
+        return
+      }
+
+      try {
+        const moveBase: Move = {
+          actor: 'player',
+          cardId: selectedCard,
+          cell,
+        }
+        const card = getCard(selectedCard)
+        const targetOptions = listMovePowerTargetOptions(state, moveBase)
+
+        if (card.elementId === 'eau' && targetOptions && targetOptions.kind === 'targetCell' && targetOptions.cells.length > 0) {
+          setWaterTargeting({
+            cardId: selectedCard,
+            placementCell: cell,
+            targetCells: [...targetOptions.cells],
+          })
+          setTransientFloodTargetCells([...targetOptions.cells])
+          setError(WATER_TARGET_PROMPT)
+          return
+        }
+
+        resolvePlayerMove(moveBase)
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Move failed.'
+        setError(message)
+      }
+    },
+    [
+      clearPowerTargetPrompt,
+      resolvePlayerMove,
+      scheduleAnimationTimeout,
+      selectedCard,
+      starterRevealComplete,
+      state,
+      waterTargeting,
+    ],
+  )
 
   useEffect(() => {
     if (!selectedCard) {
@@ -473,6 +649,8 @@ export function MatchPage() {
   }
 
   const focusedCell = isKeyboardControlEnabled && selectedCard ? keyboardTargetCell : null
+  const previewPlacementCell = waterTargeting?.placementCell ?? null
+  const vsBoardSize = getModeSpec(state.config.mode).boardSize
 
   const handleFinish = () => {
     const isTowerQueue = currentMatch.queue === 'tower'
@@ -509,6 +687,9 @@ export function MatchPage() {
       setSelectedCard(null)
       setSelectedClaimCardId(null)
       setError(null)
+      setWaterTargeting(null)
+      clearAnimationTimeouts()
+      resetTransientEffects()
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unable to start rematch.'
       setError(message)
@@ -518,33 +699,21 @@ export function MatchPage() {
     }
   }
 
-  const handleAbandon = () => {
-    if (!currentMatch || state.status === 'finished') {
-      return
-    }
-
-    if (currentMatch.queue === 'tower') {
-      if (abandonTowerRun) {
-        abandonTowerRun()
-      } else {
-        abandonCurrentMatch?.()
-      }
-    } else {
-      abandonCurrentMatch?.()
-    }
-
-    setSelectedCard(null)
-    setKeyboardTargetCell(null)
-    setSelectedClaimCardId(null)
-    setError(null)
-    navigate('/setup')
-  }
-
   return (
     <section className={`panel match-panel ${isFourByFourMatch ? 'match-panel--4x4' : 'match-panel--3x3'}`}>
       <div className="match-arena">
         <aside className="match-lane match-lane--cpu" data-testid="match-lane-cpu">
+          <img
+            className="match-lane-hand-art match-lane-hand-art--cpu"
+            src={matchLaneArtwork.cpuHand}
+            alt=""
+            aria-hidden="true"
+            data-testid="match-lane-art-cpu"
+          />
           <h2>CPU Hand (Open)</h2>
+          <p className="small match-opponent-badge match-opponent-badge--lane" data-testid="match-opponent-badge">
+            CPU L{currentMatch.opponent.level} • Score {currentMatch.opponent.deckScore}
+          </p>
           <div
             className={`hand-row hand-row--cpu ${isFourByFourMatch ? 'hand-row--two-columns' : 'hand-row--cpu-3x3'}`}
             aria-label="CPU hand"
@@ -563,15 +732,6 @@ export function MatchPage() {
                 ? 'Determining first turn...'
                 : `Turn ${state.turns + 1}: ${state.turn === 'player' ? 'Player' : 'CPU'}`}
             </p>
-            {isKeyboardControlEnabled ? (
-              <p className="small match-keyboard-help" data-testid="match-keyboard-help">
-                Clavier: 1-8 carte • Flèches case • Entrée poser
-                {selectedCard && focusedCell !== null ? ` • Cible ${focusedCell + 1}` : ''}
-              </p>
-            ) : null}
-            <p className="small" data-testid="match-opponent-badge">
-              CPU L{currentMatch.opponent.level} • Score {currentMatch.opponent.deckScore}
-            </p>
             {currentMatch.queue === 'tower' && currentMatch.tower ? (
               <>
                 <p className="small" data-testid="match-tower-floor">
@@ -585,27 +745,71 @@ export function MatchPage() {
                 </p>
               </>
             ) : null}
-            {state.status !== 'finished' ? (
-              <button
-                type="button"
-                className="button button-danger match-abandon-button"
-                onClick={handleAbandon}
-                data-testid="abandon-match-button"
-              >
-                Abandonner
-              </button>
-            ) : null}
-            <RuleBadges rules={state.rules} />
+            <div className="match-rules-row">
+              <RuleBadges rules={state.rules} />
+              {isKeyboardControlEnabled ? (
+                <div className="match-keyboard-help" data-testid="match-keyboard-help">
+                  <button
+                    type="button"
+                    className="match-keyboard-help__trigger"
+                    data-testid="match-keyboard-help-trigger"
+                    aria-label="Aide clavier"
+                  >
+                    ?
+                  </button>
+                  <p className="small match-keyboard-help__tooltip">
+                    Clavier: 1-8 carte • Flèches case • Entrée poser
+                    {selectedCard && focusedCell !== null ? ` • Cible ${focusedCell + 1}` : ''}
+                  </p>
+                </div>
+              ) : null}
+            </div>
           </div>
-          <PixiBoard
-            board={board}
-            highlightedCells={highlightedCells}
-            interactive={starterRevealComplete && state.turn === 'player' && state.status !== 'finished'}
-            onCellClick={handleCellClick}
-            turnActor={state.turn}
-            status={state.status}
-            focusedCell={focusedCell}
-          />
+          <div className="match-board-viewport">
+            <PixiBoard
+              board={boardForRender}
+              highlightedCells={highlightedCells}
+              interactive={starterRevealComplete && state.turn === 'player' && state.status !== 'finished'}
+              onCellClick={handleCellClick}
+              turnActor={state.turn}
+              status={state.status}
+              focusedCell={focusedCell}
+              effectsView={effectsView}
+              transientFloodTargetCells={transientFloodTargetCells}
+              transientFloodCastCells={transientFloodCastCells}
+              transientWaterPenaltyCells={transientWaterPenaltyCells}
+              transientClashCells={transientClashCells}
+              previewPlacementCell={previewPlacementCell}
+            />
+            {showVsOverlay ? (
+              <div className="match-vs-overlay" data-testid="match-vs-overlay">
+                {vsCells.map((cell, index) => {
+                  const row = Math.floor(cell / vsBoardSize)
+                  const col = cell % vsBoardSize
+                  return (
+                    <span
+                      key={`${cell}:${index}`}
+                      className="match-vs-badge"
+                      data-testid={`match-vs-badge-${index}`}
+                      style={{
+                        left: `${((col + 0.5) / vsBoardSize) * 100}%`,
+                        top: `${((row + 0.5) / vsBoardSize) * 100}%`,
+                      }}
+                    >
+                      VS
+                    </span>
+                  )
+                })}
+              </div>
+            ) : null}
+          </div>
+          {waterTargeting ? (
+            <>
+              <p className="match-flood-target-hint" data-testid="match-flood-target-hint">
+                Choisissez la case a inonder.
+              </p>
+            </>
+          ) : null}
           {isStarterRollActive && (
             <div
               className={`match-starter-overlay ${isStarterRollSpinning ? 'is-rolling' : 'is-reveal'}`}
@@ -654,6 +858,13 @@ export function MatchPage() {
         </section>
 
         <aside className="match-lane match-lane--player" data-testid="match-lane-player">
+          <img
+            className="match-lane-hand-art match-lane-hand-art--player"
+            src={matchLaneArtwork.playerHand}
+            alt=""
+            aria-hidden="true"
+            data-testid="match-lane-art-player"
+          />
           <h2>Your Hand</h2>
           <div
             className={`hand-row hand-row--player ${isFourByFourMatch ? 'hand-row--two-columns' : ''}`}

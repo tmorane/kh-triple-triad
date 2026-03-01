@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
-import type { SyntheticEvent } from 'react'
+import type { CSSProperties, PointerEvent as ReactPointerEvent, SyntheticEvent } from 'react'
 import { formatCardPokedexNumber } from '../../domain/cards/pokedex'
 import type { CardDef } from '../../domain/types'
 import { getCardArtCandidates } from './cardArt'
@@ -89,7 +89,7 @@ export const TriadCard = memo(function TriadCard({
   const isMatchHandContext = context === 'hand-player' || context === 'hand-cpu'
   const hasNewPill = showNew && owned
   const isRevealNew = showNew && owned && newBadgeVariant === 'reveal'
-  const artCandidates = useMemo(() => (locked ? [] : getCardArtCandidates(card.name)), [card.name, locked])
+  const artCandidates = useMemo(() => (locked ? [] : getCardArtCandidates(card.name, { shiny: hasShiny })), [card.name, hasShiny, locked])
   const interactiveCardRef = useRef<HTMLButtonElement | null>(null)
   const artCandidateIndexRef = useRef(0)
   const [isArtVisible, setIsArtVisible] = useState(() => {
@@ -164,6 +164,36 @@ export const TriadCard = memo(function TriadCard({
   const useCompactName = context === 'setup' && !locked && getLongestNameSegmentLength(card.name) >= 9
   const nameClassName = useCompactName ? 'triad-card__name triad-card__name--compact' : 'triad-card__name'
   const elementLogo = locked ? null : getElementLogoMeta(card.elementId)
+  const shouldTrackShinyPointer = hasShiny && context === 'collection-detail'
+  const shinyPointerStyle = shouldTrackShinyPointer
+    ? ({ '--shiny-pointer-x': '50%', '--shiny-pointer-y': '50%' } as CSSProperties)
+    : undefined
+
+  function updateShinyPointerPosition(target: HTMLElement, clientX: number, clientY: number) {
+    const rect = target.getBoundingClientRect()
+    if (rect.width <= 0 || rect.height <= 0) {
+      return
+    }
+    const x = Math.min(100, Math.max(0, ((clientX - rect.left) / rect.width) * 100))
+    const y = Math.min(100, Math.max(0, ((clientY - rect.top) / rect.height) * 100))
+    target.style.setProperty('--shiny-pointer-x', `${x.toFixed(2)}%`)
+    target.style.setProperty('--shiny-pointer-y', `${y.toFixed(2)}%`)
+  }
+
+  function handleShinyPointerMove(event: ReactPointerEvent<HTMLElement>) {
+    if (!shouldTrackShinyPointer || event.pointerType === 'touch') {
+      return
+    }
+    updateShinyPointerPosition(event.currentTarget, event.clientX, event.clientY)
+  }
+
+  function handleShinyPointerLeave(event: ReactPointerEvent<HTMLElement>) {
+    if (!shouldTrackShinyPointer) {
+      return
+    }
+    event.currentTarget.style.setProperty('--shiny-pointer-x', '50%')
+    event.currentTarget.style.setProperty('--shiny-pointer-y', '50%')
+  }
 
   function handleArtError(event: SyntheticEvent<HTMLImageElement>) {
     const nextCandidateIndex = artCandidateIndexRef.current + 1
@@ -267,10 +297,13 @@ export const TriadCard = memo(function TriadCard({
         type="button"
         className={classes}
         onClick={onClick}
+        onPointerMove={handleShinyPointerMove}
+        onPointerLeave={handleShinyPointerLeave}
         disabled={disabled}
         aria-label={label}
         aria-pressed={selected}
         data-testid={testId}
+        style={shinyPointerStyle}
       >
         {content}
       </button>
@@ -278,7 +311,14 @@ export const TriadCard = memo(function TriadCard({
   }
 
   return (
-    <article className={classes} aria-label={label} data-testid={testId}>
+    <article
+      className={classes}
+      aria-label={label}
+      data-testid={testId}
+      onPointerMove={handleShinyPointerMove}
+      onPointerLeave={handleShinyPointerLeave}
+      style={shinyPointerStyle}
+    >
       {content}
     </article>
   )

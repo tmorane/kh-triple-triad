@@ -24,3 +24,7 @@ dist-ssr
 *.sw?
 .vercel
 .tmp-*.png
+
+# Local secrets and Python virtualenv
+.env
+.venv/

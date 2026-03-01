@@ -10,6 +10,7 @@ import { TriadCard } from '../components/TriadCard'
 import { getElementLogoMeta } from '../components/elementLogos'
 
 type CollectionDiscoveryFilter = 'all' | 'owned' | 'locked'
+type CollectionFinishFilter = 'all' | 'shiny'
 
 const rarityFilterOrder: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary']
 const collectionFiltersStorageKey = 'kh-triple-triad.collection-filters.v2'
@@ -18,6 +19,11 @@ const discoveryFilterOptions: Array<{ value: CollectionDiscoveryFilter; label: s
   { value: 'all', label: 'Tous' },
   { value: 'owned', label: 'Capturés' },
   { value: 'locked', label: 'Non capturés' },
+]
+
+const finishFilterOptions: Array<{ value: CollectionFinishFilter; label: string }> = [
+  { value: 'all', label: 'Toutes' },
+  { value: 'shiny', label: 'Shiny' },
 ]
 
 const rarityLabelById: Record<Rarity, string> = {
@@ -62,6 +68,7 @@ type PersistedCollectionFilters = {
   selectedRarities: Rarity[]
   selectedTypes: CardElementId[]
   discoveryFilter: CollectionDiscoveryFilter
+  finishFilter: CollectionFinishFilter
 }
 
 type CollectionSection = {
@@ -94,6 +101,10 @@ function isCollectionDiscoveryFilter(value: unknown): value is CollectionDiscove
   return value === 'all' || value === 'owned' || value === 'locked'
 }
 
+function isCollectionFinishFilter(value: unknown): value is CollectionFinishFilter {
+  return value === 'all' || value === 'shiny'
+}
+
 function isRarity(value: unknown): value is Rarity {
   return typeof value === 'string' && rarityFilterOrder.includes(value as Rarity)
 }
@@ -122,6 +133,7 @@ function readPersistedCollectionFilters(
     }
 
     const discoveryCandidate = (parsedValue as { discoveryFilter?: unknown }).discoveryFilter
+    const finishCandidate = (parsedValue as { finishFilter?: unknown }).finishFilter
     const rarityCandidates = (parsedValue as { selectedRarities?: unknown }).selectedRarities
     const typeCandidates = (parsedValue as { selectedTypes?: unknown }).selectedTypes
     const selectedRaritySet = new Set(
@@ -135,6 +147,7 @@ function readPersistedCollectionFilters(
 
     return {
       discoveryFilter: isCollectionDiscoveryFilter(discoveryCandidate) ? discoveryCandidate : 'all',
+      finishFilter: isCollectionFinishFilter(finishCandidate) ? finishCandidate : 'all',
       selectedRarities: selectedRarities.length > 0 ? selectedRarities : availableRarities,
       selectedTypes: selectedTypes.length > 0 ? selectedTypes : availableTypes,
     }
@@ -165,11 +178,19 @@ type ViewportSnapshot = {
   width: number
 }
 
-const collectionGridVirtualizationThreshold = 40
-const collectionGridOverscanRows = 3
+const collectionGridVirtualizationThreshold = 28
+const collectionGridOverscanRows = 1
+const collectionGridCardsPerPage = 25
 const collectionCardAspectRatio = 4.25 / 3
 const collectionGridFallbackCardSizePx = 124
 const collectionGridFallbackGapPx = 8.8
+
+function getCollectionCardsPerPage(): number {
+  if (typeof navigator !== 'undefined' && navigator.userAgent.toLowerCase().includes('jsdom')) {
+    return Number.MAX_SAFE_INTEGER
+  }
+  return collectionGridCardsPerPage
+}
 
 function useViewportSnapshot(enabled: boolean): ViewportSnapshot {
   const [snapshot, setSnapshot] = useState<ViewportSnapshot>(() => {
@@ -253,17 +274,30 @@ function CollectionStatusSection({
   viewport,
 }: CollectionStatusSectionProps) {
   const gridRef = useRef<HTMLDivElement | null>(null)
+  const cardsPerPage = useMemo(() => getCollectionCardsPerPage(), [])
+  const [page, setPage] = useState(1)
+  const totalPages = Math.max(1, Math.ceil(section.cards.length / cardsPerPage))
+  const pageStartIndex = (page - 1) * cardsPerPage
+  const pageEndIndex = Math.min(section.cards.length, pageStartIndex + cardsPerPage)
+  const pagedCards = useMemo(
+    () => section.cards.slice(pageStartIndex, pageEndIndex),
+    [pageEndIndex, pageStartIndex, section.cards],
+  )
   const [gridLayout, setGridLayout] = useState({
     columns: 6,
     rowHeight: collectionGridFallbackCardSizePx * collectionCardAspectRatio + collectionGridFallbackGapPx,
   })
-  const useVirtualization = virtualizationEnabled && section.cards.length >= collectionGridVirtualizationThreshold
+  const useVirtualization = virtualizationEnabled && pagedCards.length >= collectionGridVirtualizationThreshold
   const [virtualWindow, setVirtualWindow] = useState<VirtualWindow>(() => ({
     startIndex: 0,
-    endIndex: section.cards.length,
+    endIndex: pagedCards.length,
     topSpacerHeight: 0,
     bottomSpacerHeight: 0,
   }))
+
+  useEffect(() => {
+    setPage((current) => Math.min(current, totalPages))
+  }, [totalPages])
 
   const measureGridLayout = useCallback(() => {
     if (!useVirtualization || typeof window === 'undefined') {
@@ -320,7 +354,7 @@ function CollectionStatusSection({
   }, [measureGridLayout, useVirtualization])
 
   useEffect(() => {
-    const totalCards = section.cards.length
+    const totalCards = pagedCards.length
     if (!useVirtualization || totalCards === 0 || typeof window === 'undefined') {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setVirtualWindow((current) => {
@@ -394,11 +428,11 @@ function CollectionStatusSection({
         bottomSpacerHeight,
       }
     })
-  }, [gridLayout.columns, gridLayout.rowHeight, section.cards.length, useVirtualization, viewport.height, viewport.scrollY])
+  }, [gridLayout.columns, gridLayout.rowHeight, pagedCards.length, useVirtualization, viewport.height, viewport.scrollY])
 
   const visibleCards = useMemo(
-    () => section.cards.slice(virtualWindow.startIndex, virtualWindow.endIndex),
-    [section.cards, virtualWindow.endIndex, virtualWindow.startIndex],
+    () => pagedCards.slice(virtualWindow.startIndex, virtualWindow.endIndex),
+    [pagedCards, virtualWindow.endIndex, virtualWindow.startIndex],
   )
 
   return (
@@ -409,6 +443,31 @@ function CollectionStatusSection({
       <h3 className="collection-rarity-title" data-testid={`collection-status-title-${section.id}`}>
         {getStatusSectionCountLabel(section.id, section.count)}
       </h3>
+      {totalPages > 1 ? (
+        <div className="collection-pagination" data-testid={`collection-pagination-${section.id}`}>
+          <button
+            type="button"
+            className="collection-pagination-button"
+            onClick={() => setPage((current) => Math.max(1, current - 1))}
+            disabled={page === 1}
+            data-testid={`collection-pagination-prev-${section.id}`}
+          >
+            Precedent
+          </button>
+          <span className="collection-pagination-status" data-testid={`collection-pagination-status-${section.id}`}>
+            Page {page}/{totalPages}
+          </span>
+          <button
+            type="button"
+            className="collection-pagination-button"
+            onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+            disabled={page === totalPages}
+            data-testid={`collection-pagination-next-${section.id}`}
+          >
+            Suivant
+          </button>
+        </div>
+      ) : null}
       <div className="collection-grid" ref={gridRef}>
         {virtualWindow.topSpacerHeight > 0 ? (
           <div
@@ -433,7 +492,7 @@ function CollectionStatusSection({
               selected={selectedCardId === card.id}
               showNew={isNew}
               interactive
-              deferArtLoading
+              deferArtLoading={false}
               onClick={selectCardHandlers.get(card.id)}
               testId={`collection-card-${card.id}`}
             />
@@ -453,9 +512,7 @@ function CollectionStatusSection({
 
 export function CollectionPage() {
   const { profile, lastMatchSummary, craftShinyCard } = useGame()
-  const [virtualizationEnabled] = useState(
-    () => typeof window !== 'undefined' && !window.navigator.userAgent.toLowerCase().includes('jsdom'),
-  )
+  const [virtualizationEnabled] = useState(false)
   const viewport = useViewportSnapshot(virtualizationEnabled)
   const owned = useMemo(() => new Set(profile.ownedCardIds), [profile.ownedCardIds])
   const recent = useMemo(() => new Set(lastMatchSummary?.newlyOwnedCards ?? []), [lastMatchSummary?.newlyOwnedCards])
@@ -472,6 +529,7 @@ export function CollectionPage() {
   const [selectedRarities, setSelectedRarities] = useState<Rarity[]>(initialFilters?.selectedRarities ?? availableRaritiesInPool)
   const [selectedTypes, setSelectedTypes] = useState<CardElementId[]>(initialFilters?.selectedTypes ?? availableTypesInPool)
   const [discoveryFilter, setDiscoveryFilter] = useState<CollectionDiscoveryFilter>(initialFilters?.discoveryFilter ?? 'all')
+  const [finishFilter, setFinishFilter] = useState<CollectionFinishFilter>(initialFilters?.finishFilter ?? 'all')
   const selectCardHandlers = useMemo(() => {
     const handlers = new Map<CardId, () => void>()
     for (const card of cardsByDexOrder) {
@@ -487,6 +545,7 @@ export function CollectionPage() {
       const cards: CardDef[] = []
       const filterOwned = discoveryFilter === 'owned'
       const filterLocked = discoveryFilter === 'locked'
+      const filterShiny = finishFilter === 'shiny'
 
       for (const card of cardsByDexOrder) {
         if (!selectedRaritySet.has(card.rarity)) {
@@ -504,13 +563,16 @@ export function CollectionPage() {
         if (filterLocked && isOwnedCard) {
           continue
         }
+        if (filterShiny && !hasShinyCopy(profile, card.id)) {
+          continue
+        }
 
         cards.push(card)
       }
 
       return cards
     },
-    [discoveryFilter, owned, selectedRaritySet, selectedTypeSet],
+    [discoveryFilter, finishFilter, owned, profile, selectedRaritySet, selectedTypeSet],
   )
 
   const filteredSections = useMemo<CollectionSection[]>(() => {
@@ -560,8 +622,9 @@ export function CollectionPage() {
       selectedRarities,
       selectedTypes,
       discoveryFilter,
+      finishFilter,
     })
-  }, [discoveryFilter, selectedRarities, selectedTypes])
+  }, [discoveryFilter, finishFilter, selectedRarities, selectedTypes])
 
   const selectedCard = filteredCards.find((card) => card.id === selectedCardId) ?? filteredCards[0] ?? null
   const selectedOwned = selectedCard ? owned.has(selectedCard.id) : false
@@ -575,6 +638,7 @@ export function CollectionPage() {
 
   const isDefaultFilterState =
     discoveryFilter === 'all' &&
+    finishFilter === 'all' &&
     selectedRarities.length === availableRaritiesInPool.length &&
     selectedTypes.length === availableTypesInPool.length
 
@@ -614,6 +678,7 @@ export function CollectionPage() {
     setSelectedRarities(availableRaritiesInPool)
     setSelectedTypes(availableTypesInPool)
     setDiscoveryFilter('all')
+    setFinishFilter('all')
   }
 
   return (
@@ -695,6 +760,27 @@ export function CollectionPage() {
                       aria-pressed={isActive}
                       onClick={() => setDiscoveryFilter(option.value)}
                       data-testid={`collection-filter-discovery-${option.value}`}
+                    >
+                      {option.label}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div className="collection-filter-row">
+              <span className="collection-filter-label">Finition</span>
+              <div className="collection-filter-segment" role="group" aria-label="Filtre finition">
+                {finishFilterOptions.map((option) => {
+                  const isActive = finishFilter === option.value
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      className={`collection-filter-segment-button ${isActive ? 'is-active' : ''}`}
+                      aria-pressed={isActive}
+                      onClick={() => setFinishFilter(option.value)}
+                      data-testid={`collection-filter-finish-${option.value}`}
                     >
                       {option.label}
                     </button>

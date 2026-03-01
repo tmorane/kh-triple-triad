@@ -146,4 +146,12 @@ describe('TriadCard splashart', () => {
     expect(cardRoot).not.toHaveClass('is-shiny')
     expect(container.querySelector('[data-testid="triad-card-shiny-pill"]')).toBeNull()
   })
+
+  test('uses shiny splashart path when the card is shiny', () => {
+    const { container } = render(<TriadCard card={aboCard} context="collection-list" owned shiny />)
+
+    const image = container.querySelector<HTMLImageElement>('.triad-card__art-image')
+    expect(image).not.toBeNull()
+    expect(image?.getAttribute('src')).toContain('/splashart-shiny/Abo_Shiny.png')
+  })
 })

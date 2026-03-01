@@ -12,6 +12,32 @@ import { IS_4X4_UI_ENABLED } from './matchUiConfig'
 import { useGame } from './useGame'
 
 const THEME_STORAGE_KEY = 'kh-triple-triad-theme-mode-v1'
+const BACKGROUND_MODE_STORAGE_KEY = 'kh-triple-triad-background-mode-v1'
+
+function mockPrefersDarkMode(matchesDark: boolean) {
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    configurable: true,
+    value: (query: string) => ({
+      matches: query === '(prefers-color-scheme: dark)' ? matchesDark : false,
+      media: query,
+      onchange: null,
+      addListener: () => {
+        // deprecated no-op for compatibility
+      },
+      removeListener: () => {
+        // deprecated no-op for compatibility
+      },
+      addEventListener: () => {
+        // no-op
+      },
+      removeEventListener: () => {
+        // no-op
+      },
+      dispatchEvent: () => false,
+    }),
+  })
+}
 
 function renderApp(initialPath = '/') {
   return render(
@@ -256,6 +282,7 @@ function ForcedPlayerVictoryHarness() {
 describe('app integration', () => {
   beforeEach(() => {
     localStorage.clear()
+    mockPrefersDarkMode(false)
   })
 
   test('theme defaults to pokemon when no preference exists', () => {
@@ -281,6 +308,37 @@ describe('app integration', () => {
     expect(screen.queryByTestId('visual-controls')).not.toBeInTheDocument()
     expect(screen.queryByTestId('theme-toggle')).not.toBeInTheDocument()
     expect(screen.queryByTestId('bg-option-bg1')).not.toBeInTheDocument()
+  })
+
+  test('background mode follows system preference when no stored value exists', () => {
+    mockPrefersDarkMode(true)
+    renderApp('/')
+
+    expect(document.body.dataset.backgroundMode).toBe('dark')
+  })
+
+  test('background mode toggle updates body dataset', async () => {
+    const user = userEvent.setup()
+    renderApp('/')
+
+    expect(document.body.dataset.backgroundMode).toBe('light')
+    await user.click(screen.getByTestId('background-mode-toggle'))
+    expect(document.body.dataset.backgroundMode).toBe('dark')
+  })
+
+  test('background mode toggle persists preference across remounts', async () => {
+    const user = userEvent.setup()
+    const firstRender = renderApp('/')
+
+    expect(document.body.dataset.backgroundMode).toBe('light')
+    await user.click(screen.getByTestId('background-mode-toggle'))
+    expect(document.body.dataset.backgroundMode).toBe('dark')
+    expect(localStorage.getItem(BACKGROUND_MODE_STORAGE_KEY)).toBe('dark')
+
+    firstRender.unmount()
+    renderApp('/')
+
+    expect(document.body.dataset.backgroundMode).toBe('dark')
   })
 
   test('home -> setup -> match happy path from preset selection', async () => {
@@ -1080,6 +1138,17 @@ describe('app integration', () => {
     expect(screen.getByTestId('missions-summary')).toHaveTextContent('0/3 completed')
   })
 
+  test('changelogs page is reachable from more menu', async () => {
+    const user = userEvent.setup()
+    renderApp('/')
+
+    await user.click(screen.getByTestId('topbar-more-toggle'))
+    await user.click(screen.getByTestId('topbar-more-link-changelogs'))
+
+    expect(screen.getByRole('heading', { name: 'Changelogs' })).toBeInTheDocument()
+    expect(screen.getByTestId('changelogs-release-count')).toBeInTheDocument()
+  })
+
   test('more menu keeps only secondary links and mobile nav includes decks and packs', async () => {
     const user = userEvent.setup()
     renderApp('/')
@@ -1093,6 +1162,7 @@ describe('app integration', () => {
     expect(screen.getByTestId('topbar-more-link-missions')).toHaveAttribute('href', '/missions')
     expect(screen.getByTestId('topbar-more-link-rules')).toHaveAttribute('href', '/rules')
     expect(screen.getByTestId('topbar-more-link-ranks')).toHaveAttribute('href', '/ranks')
+    expect(screen.getByTestId('topbar-more-link-changelogs')).toHaveAttribute('href', '/changelogs')
     expect(screen.queryByTestId('topbar-more-link-packs')).not.toBeInTheDocument()
     expect(screen.queryByTestId('topbar-more-link-home')).not.toBeInTheDocument()
 

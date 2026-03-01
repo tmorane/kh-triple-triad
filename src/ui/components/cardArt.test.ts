@@ -22,6 +22,13 @@ describe('getCardArtCandidates', () => {
     expect(candidates).toContain('/splashart/Robot%20de%20Surveillance.png')
   })
 
+  test('prioritizes shiny splashart and keeps normal fallback candidates when shiny is requested', () => {
+    const candidates = getCardArtCandidates('Abo', { shiny: true })
+
+    expect(candidates[0]).toBe('/splashart-shiny/Abo_Shiny.png')
+    expect(candidates).toContain('/splashart/Abo.png')
+  })
+
   test('keeps candidate list compact to avoid excessive failed image requests', () => {
     const candidates = getCardArtCandidates('Larve Rampante')
 

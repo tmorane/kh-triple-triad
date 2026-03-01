@@ -221,6 +221,31 @@ describe('CollectionPage', () => {
     )
   })
 
+  test('paginates cards in browser runtime to reduce grid rendering cost', async () => {
+    const user = userEvent.setup()
+    const profile = createDefaultProfile()
+    profile.ownedCardIds = cardPool.map((card) => card.id)
+    profile.cardCopiesById = Object.fromEntries(cardPool.map((card) => [card.id, 1]))
+
+    const userAgentSpy = vi.spyOn(window.navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0')
+    try {
+      renderCollection({ profile })
+
+      expect(screen.getByTestId('collection-pagination-owned')).toBeInTheDocument()
+      expect(screen.getByTestId('collection-pagination-status-owned')).toHaveTextContent('Page 1/')
+      expect(getVisibleCollectionCards()).toHaveLength(25)
+      expect(screen.getByTestId('collection-card-c01')).toBeInTheDocument()
+
+      await user.click(screen.getByTestId('collection-pagination-next-owned'))
+
+      expect(screen.getByTestId('collection-pagination-status-owned')).toHaveTextContent('Page 2/')
+      expect(getVisibleCollectionCards()).toHaveLength(25)
+      expect(screen.queryByTestId('collection-card-c01')).not.toBeInTheDocument()
+    } finally {
+      userAgentSpy.mockRestore()
+    }
+  })
+
   test('groups cards by captured status and sorts captured cards by real pokedex number', () => {
     const profile = createDefaultProfile()
     profile.ownedCardIds = ['c52', 'c02']
@@ -338,6 +363,29 @@ describe('CollectionPage', () => {
       (card) => card.rarity === 'legendary' && profile.ownedCardIds.includes(card.id),
     ).length
     expect(getVisibleCollectionCards()).toHaveLength(expectedCount)
+  })
+
+  test('filters to shiny cards only', async () => {
+    const user = userEvent.setup()
+    const profile = createDefaultProfile()
+    for (const cardId of ['c11', 'c84'] as const) {
+      if (!profile.ownedCardIds.includes(cardId)) {
+        profile.ownedCardIds.push(cardId)
+      }
+      profile.shinyCardCopiesById[cardId] = 1
+    }
+    profile.shinyCardCopiesById.c01 = 0
+    renderCollection({ profile })
+
+    await user.click(screen.getByTestId('collection-filter-finish-shiny'))
+
+    const expectedShinyCount = cardPool.filter((card) => (profile.shinyCardCopiesById[card.id] ?? 0) > 0).length
+    expect(getVisibleCollectionCards()).toHaveLength(expectedShinyCount)
+    expect(screen.getByTestId('collection-filter-finish-shiny')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTestId('collection-filter-finish-all')).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.queryByTestId('collection-card-c01')).not.toBeInTheDocument()
+    expect(screen.getByTestId('collection-card-c11')).toBeInTheDocument()
+    expect(screen.getByTestId('collection-card-c84')).toBeInTheDocument()
   })
 
   test('auto-selects first visible card when current selection is filtered out', async () => {

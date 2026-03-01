@@ -40,6 +40,7 @@
   --setup-chip-idle: rgba(255, 255, 255, 0.03);
   --bg-overlay-start: rgba(4, 8, 13, 0.22);
   --bg-overlay-end: rgba(4, 8, 13, 0.3);
+  --app-background-image: url('/ui/backgrounds/app-dark.jpg');
 }
 
 * {
@@ -54,7 +55,15 @@ body {
   background-color: #04080d;
   background:
     linear-gradient(158deg, var(--bg-overlay-start), var(--bg-overlay-end)),
-    url('/background.png') center / cover no-repeat fixed;
+    var(--app-background-image) center / cover no-repeat fixed;
+}
+
+body[data-background-mode='dark'] {
+  --app-background-image: url('/ui/backgrounds/app-dark.jpg');
+}
+
+body[data-background-mode='light'] {
+  --app-background-image: url('/ui/backgrounds/app-light.jpg');
 }
 
 a {
@@ -81,16 +90,18 @@ h2 {
 }
 
 .app-shell {
-  max-width: 1220px;
+  max-width: 1540px;
   margin: 0 auto;
   padding: 1rem;
 }
 
 .topbar {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   gap: 0.8rem;
+  max-width: 1320px;
+  margin-inline: auto;
   padding: 0.75rem 0.95rem;
   border-radius: 20px;
   border: 1px solid rgba(229, 199, 143, 0.55);
@@ -161,17 +172,20 @@ h2 {
 .main-nav {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
+  justify-self: center;
   justify-content: center;
-  gap: 0.5rem;
+  width: max-content;
+  gap: 0.62rem;
 }
 
 .main-nav :is(a, button) {
-  padding: 0.42rem 0.9rem;
+  padding: 0.58rem 1.28rem;
   border-radius: 999px;
   border: 1px solid rgba(229, 199, 143, 0.36);
   color: var(--text-muted);
   font-family: 'Rajdhani', sans-serif;
-  font-size: 0.95rem;
+  font-size: 1.12rem;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -314,6 +328,46 @@ h2 {
   cursor: pointer;
 }
 
+.background-mode-toggle {
+  position: fixed;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.34rem;
+  right: 0.9rem;
+  bottom: 0.9rem;
+  z-index: 125;
+  border: 1px solid rgba(255, 212, 145, 0.72);
+  border-radius: 999px;
+  padding: 0.46rem 0.72rem;
+  color: #fff6e0;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.14), transparent 44%),
+    linear-gradient(145deg, rgba(14, 40, 72, 0.92), rgba(8, 24, 45, 0.94));
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 222, 168, 0.14),
+    0 10px 20px rgba(0, 0, 0, 0.32);
+  cursor: pointer;
+}
+
+.background-mode-toggle:hover {
+  border-color: rgba(255, 223, 152, 0.98);
+  color: #fffbe8;
+}
+
+.background-mode-toggle__icon {
+  font-size: 0.88rem;
+  line-height: 1;
+}
+
+.background-mode-toggle__label {
+  line-height: 1;
+}
+
 .panel {
   border-radius: 24px;
   border: 1px solid var(--panel-border);
@@ -332,6 +386,7 @@ h2 {
   --home-aside-gap: clamp(0.72rem, 1.1vw, 0.96rem);
   position: relative;
   max-width: 1080px;
+  margin-inline: auto;
   overflow: hidden;
   padding: clamp(1rem, 2vw, 1.5rem);
   border-radius: 28px;
@@ -2723,6 +2778,11 @@ h2 {
   overflow: visible;
   align-content: start;
   isolation: isolate;
+  background:
+    radial-gradient(circle at 12% 8%, rgba(103, 164, 247, 0.16), transparent 36%),
+    radial-gradient(circle at 88% 92%, rgba(94, 132, 210, 0.14), transparent 40%),
+    linear-gradient(164deg, rgba(7, 24, 47, 0.84), rgba(4, 15, 30, 0.9)),
+    url('/ui/setup/background-dark.jpg') center / cover no-repeat;
 }
 
 .match-panel::before {
@@ -2775,6 +2835,7 @@ h2 {
   z-index: 3;
   display: grid;
   grid-template-rows: auto auto;
+  align-content: start;
   gap: 0.24rem;
   padding: 0.46rem 0.72rem 0.54rem;
   border-radius: 24px;
@@ -2800,9 +2861,46 @@ h2 {
   pointer-events: none;
 }
 
-.match-lane > * {
+.match-lane::after {
+  content: '';
+  position: absolute;
+  inset: 0.4rem;
+  z-index: 0;
+  border-radius: 20px;
+  border: 1px solid rgba(228, 198, 141, 0.16);
+  background:
+    linear-gradient(180deg, rgba(2, 8, 20, 0.1), rgba(2, 8, 20, 0.28)),
+    radial-gradient(circle at 50% 6%, rgba(255, 255, 255, 0.14), transparent 42%);
+  pointer-events: none;
+}
+
+.match-lane > :not(.match-lane-hand-art) {
   position: relative;
   z-index: 1;
+}
+
+.match-lane-hand-art {
+  position: absolute;
+  top: 0.3rem;
+  left: 0.3rem;
+  width: calc(100% - 0.6rem);
+  height: calc(100% - 0.6rem);
+  border-radius: 18px;
+  object-fit: cover;
+  object-position: center;
+  opacity: 0.5;
+  pointer-events: none;
+  user-select: none;
+  z-index: 0;
+  filter: saturate(1.12) contrast(1.12) brightness(0.9);
+}
+
+.match-lane-hand-art--cpu {
+  opacity: 0.56;
+}
+
+.match-lane-hand-art--player {
+  opacity: 0.48;
 }
 
 .match-lane--cpu {
@@ -3199,14 +3297,79 @@ h2 {
   text-align: center;
 }
 
-.match-keyboard-help {
-  margin: 0;
-  color: rgba(217, 234, 255, 0.92);
+.match-opponent-badge--lane {
+  margin-top: 0.04rem;
+  color: rgba(225, 239, 255, 0.92);
   font-family: 'Rajdhani', sans-serif;
-  font-size: clamp(0.76rem, 1.35vh, 0.86rem);
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-size: clamp(0.78rem, 1.3vh, 0.86rem);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.match-keyboard-help {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.match-rules-row {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  justify-self: center;
+  gap: 0.34rem;
+  width: 100%;
+}
+
+.match-keyboard-help__trigger {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 216, 123, 0.84);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16), transparent 42%),
+    linear-gradient(145deg, rgba(31, 78, 138, 0.92), rgba(17, 50, 98, 0.94));
+  color: #fff4dc;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.88rem;
+  font-weight: 800;
+  line-height: 1;
+  cursor: help;
+}
+
+.match-keyboard-help__tooltip {
+  position: absolute;
+  top: calc(100% + 0.34rem);
+  left: 50%;
+  transform: translateX(-50%) translateY(-2px);
+  margin: 0;
+  padding: 0.42rem 0.56rem;
+  border-radius: 10px;
+  border: 1px solid rgba(141, 198, 255, 0.58);
+  background:
+    radial-gradient(circle at 50% 0, rgba(214, 239, 255, 0.16), transparent 62%),
+    linear-gradient(145deg, rgba(8, 24, 46, 0.94), rgba(6, 18, 35, 0.96));
+  box-shadow: 0 8px 16px rgba(2, 9, 22, 0.38);
+  color: rgba(225, 239, 255, 0.96);
+  font-family: 'Rajdhani', sans-serif;
+  font-size: clamp(0.74rem, 1.25vh, 0.82rem);
+  font-weight: 700;
+  letter-spacing: 0.03em;
   text-align: center;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  z-index: 20;
+  transition: opacity 120ms ease, transform 120ms ease, visibility 120ms ease;
+}
+
+.match-keyboard-help:hover .match-keyboard-help__tooltip,
+.match-keyboard-help:focus-within .match-keyboard-help__tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
 }
 
 .match-keyboard-help--bottom {
@@ -4111,6 +4274,37 @@ h2 {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--accent-strong);
+}
+
+.collection-pagination {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+}
+
+.collection-pagination-button {
+  border: 1px solid rgba(121, 162, 208, 0.52);
+  border-radius: 999px;
+  background: rgba(8, 28, 52, 0.75);
+  color: #d8ecff;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 0.14rem 0.52rem;
+}
+
+.collection-pagination-button:disabled {
+  opacity: 0.45;
+}
+
+.collection-pagination-status {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #c9e6ff;
+  letter-spacing: 0.03em;
 }
 
 .collection-filters {
@@ -6611,6 +6805,92 @@ button.triad-card {
   pointer-events: none;
 }
 
+.triad-card.triad-card--element-eau .triad-card__face,
+.triad-card.triad-card--element-feu .triad-card__face,
+.triad-card.triad-card--element-electrik .triad-card__face,
+.triad-card.triad-card--element-plante .triad-card__face,
+.triad-card.triad-card--element-glace .triad-card__face,
+.triad-card.triad-card--element-sol .triad-card__face,
+.triad-card.triad-card--element-vol .triad-card__face,
+.triad-card.triad-card--element-poison .triad-card__face,
+.triad-card.triad-card--element-dragon .triad-card__face {
+  border-color: transparent;
+}
+
+.triad-card.triad-card--element-eau .triad-card__face {
+  background: url('/cards/eau-background.png') center / 100% 100% no-repeat;
+}
+
+.triad-card.triad-card--element-feu .triad-card__face {
+  background: url('/cards/feu-background.png') center / 100% 100% no-repeat;
+}
+
+.triad-card.triad-card--element-electrik .triad-card__face {
+  background: url('/cards/electrik-background.png') center / 100% 100% no-repeat;
+}
+
+.triad-card.triad-card--element-plante .triad-card__face {
+  background: url('/cards/plante-background.png') center / 100% 100% no-repeat;
+}
+
+.triad-card.triad-card--element-glace .triad-card__face {
+  background: url('/cards/glace-background.png') center / 100% 100% no-repeat;
+}
+
+.triad-card.triad-card--element-sol .triad-card__face {
+  background: url('/cards/sol-background.png') center / 100% 100% no-repeat;
+}
+
+.triad-card.triad-card--element-vol .triad-card__face {
+  background: url('/cards/vent-background.png') center / 100% 100% no-repeat;
+}
+
+.triad-card.triad-card--element-poison .triad-card__face {
+  background: url('/cards/poison-background.png') center / 100% 100% no-repeat;
+}
+
+.triad-card.triad-card--element-dragon .triad-card__face {
+  background: url('/cards/dragon-background.png') center / 100% 100% no-repeat;
+}
+
+.triad-card.triad-card--element-eau .triad-card__face::before,
+.triad-card.triad-card--element-feu .triad-card__face::before,
+.triad-card.triad-card--element-electrik .triad-card__face::before,
+.triad-card.triad-card--element-plante .triad-card__face::before,
+.triad-card.triad-card--element-glace .triad-card__face::before,
+.triad-card.triad-card--element-sol .triad-card__face::before,
+.triad-card.triad-card--element-vol .triad-card__face::before,
+.triad-card.triad-card--element-poison .triad-card__face::before,
+.triad-card.triad-card--element-dragon .triad-card__face::before {
+  content: none;
+}
+
+.triad-card.triad-card--element-eau .triad-card__frame,
+.triad-card.triad-card--element-feu .triad-card__frame,
+.triad-card.triad-card--element-electrik .triad-card__frame,
+.triad-card.triad-card--element-plante .triad-card__frame,
+.triad-card.triad-card--element-glace .triad-card__frame,
+.triad-card.triad-card--element-sol .triad-card__frame,
+.triad-card.triad-card--element-vol .triad-card__frame,
+.triad-card.triad-card--element-poison .triad-card__frame,
+.triad-card.triad-card--element-dragon .triad-card__frame {
+  padding: 0;
+  border-radius: 14px;
+  background: transparent;
+}
+
+.triad-card.triad-card--element-eau .triad-card__type-badge,
+.triad-card.triad-card--element-feu .triad-card__type-badge,
+.triad-card.triad-card--element-electrik .triad-card__type-badge,
+.triad-card.triad-card--element-plante .triad-card__type-badge,
+.triad-card.triad-card--element-glace .triad-card__type-badge,
+.triad-card.triad-card--element-sol .triad-card__type-badge,
+.triad-card.triad-card--element-vol .triad-card__type-badge,
+.triad-card.triad-card--element-poison .triad-card__type-badge,
+.triad-card.triad-card--element-dragon .triad-card__type-badge {
+  display: none;
+}
+
 .triad-card__art {
   position: absolute;
   inset: var(--card-art-inset);
@@ -6622,6 +6902,471 @@ button.triad-card {
   display: grid;
   place-items: center;
   box-shadow: inset 0 0 0 1px rgba(18, 32, 39, 0.45);
+}
+
+.triad-card.triad-card--element-eau .triad-card__art,
+.triad-card.triad-card--element-feu .triad-card__art,
+.triad-card.triad-card--element-electrik .triad-card__art,
+.triad-card.triad-card--element-plante .triad-card__art,
+.triad-card.triad-card--element-glace .triad-card__art,
+.triad-card.triad-card--element-sol .triad-card__art,
+.triad-card.triad-card--element-vol .triad-card__art,
+.triad-card.triad-card--element-poison .triad-card__art,
+.triad-card.triad-card--element-dragon .triad-card__art {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.triad-card.triad-card--element-eau .triad-card__art-image,
+.triad-card.triad-card--element-feu .triad-card__art-image,
+.triad-card.triad-card--element-electrik .triad-card__art-image,
+.triad-card.triad-card--element-plante .triad-card__art-image,
+.triad-card.triad-card--element-glace .triad-card__art-image,
+.triad-card.triad-card--element-sol .triad-card__art-image,
+.triad-card.triad-card--element-vol .triad-card__art-image,
+.triad-card.triad-card--element-poison .triad-card__art-image,
+.triad-card.triad-card--element-dragon .triad-card__art-image {
+  transform: translateY(-7%);
+}
+
+:is(.collection-grid, .shop-pack-modal-grid, .shop-special-pack-target-picker)
+  .triad-card--collection-list.triad-card--element-eau
+  .triad-card__art-image,
+:is(.collection-grid, .shop-pack-modal-grid, .shop-special-pack-target-picker)
+  .triad-card--collection-list.triad-card--element-feu
+  .triad-card__art-image,
+:is(.collection-grid, .shop-pack-modal-grid, .shop-special-pack-target-picker)
+  .triad-card--collection-list.triad-card--element-electrik
+  .triad-card__art-image,
+:is(.collection-grid, .shop-pack-modal-grid, .shop-special-pack-target-picker)
+  .triad-card--collection-list.triad-card--element-plante
+  .triad-card__art-image,
+:is(.collection-grid, .shop-pack-modal-grid, .shop-special-pack-target-picker)
+  .triad-card--collection-list.triad-card--element-glace
+  .triad-card__art-image,
+:is(.collection-grid, .shop-pack-modal-grid, .shop-special-pack-target-picker)
+  .triad-card--collection-list.triad-card--element-sol
+  .triad-card__art-image,
+:is(.collection-grid, .shop-pack-modal-grid, .shop-special-pack-target-picker)
+  .triad-card--collection-list.triad-card--element-vol
+  .triad-card__art-image,
+:is(.collection-grid, .shop-pack-modal-grid, .shop-special-pack-target-picker)
+  .triad-card--collection-list.triad-card--element-poison
+  .triad-card__art-image,
+:is(.collection-grid, .shop-pack-modal-grid, .shop-special-pack-target-picker)
+  .triad-card--collection-list.triad-card--element-dragon
+  .triad-card__art-image {
+  transform: translateY(-1%);
+}
+
+.triad-card.triad-card--element-eau .triad-card__footer,
+.triad-card.triad-card--element-feu .triad-card__footer,
+.triad-card.triad-card--element-electrik .triad-card__footer,
+.triad-card.triad-card--element-plante .triad-card__footer,
+.triad-card.triad-card--element-glace .triad-card__footer,
+.triad-card.triad-card--element-sol .triad-card__footer,
+.triad-card.triad-card--element-vol .triad-card__footer,
+.triad-card.triad-card--element-poison .triad-card__footer,
+.triad-card.triad-card--element-dragon .triad-card__footer {
+  left: 0.28rem;
+  right: 0.28rem;
+  bottom: 0.28rem;
+  padding: 0.28rem 0.34rem 0.2rem;
+  border-radius: 0.6rem;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(4, 16, 33, 0) 0%,
+      rgba(4, 16, 33, 0.62) 36%,
+      rgba(4, 16, 33, 0.9) 100%
+    );
+}
+
+.triad-card.triad-card--element-eau .triad-card__name {
+  color: #eef9ff;
+  text-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.92),
+    0 0 8px rgba(56, 136, 219, 0.46);
+}
+
+.triad-card.triad-card--element-eau .triad-card__id,
+.triad-card.triad-card--element-eau .triad-card__rarity {
+  color: #d6ecff;
+  font-weight: 700;
+  text-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.9),
+    0 0 6px rgba(36, 101, 173, 0.42);
+}
+
+.triad-card.triad-card--element-feu .triad-card__name {
+  color: #fff2dc;
+  text-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.92),
+    0 0 8px rgba(221, 112, 42, 0.48);
+}
+
+.triad-card.triad-card--element-feu .triad-card__id,
+.triad-card.triad-card--element-feu .triad-card__rarity {
+  color: #ffe2c1;
+  font-weight: 700;
+  text-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.9),
+    0 0 6px rgba(184, 84, 22, 0.44);
+}
+
+.triad-card.triad-card--element-electrik .triad-card__name {
+  color: #fff9de;
+  text-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.92),
+    0 0 8px rgba(225, 183, 52, 0.52);
+}
+
+.triad-card.triad-card--element-electrik .triad-card__id,
+.triad-card.triad-card--element-electrik .triad-card__rarity {
+  color: #fff1bf;
+  font-weight: 700;
+  text-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.9),
+    0 0 6px rgba(188, 143, 24, 0.48);
+}
+
+.triad-card.triad-card--element-plante .triad-card__name {
+  color: #ecffe0;
+  text-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.92),
+    0 0 8px rgba(99, 182, 93, 0.5);
+}
+
+.triad-card.triad-card--element-plante .triad-card__id,
+.triad-card.triad-card--element-plante .triad-card__rarity {
+  color: #d8f7cd;
+  font-weight: 700;
+  text-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.9),
+    0 0 6px rgba(70, 144, 66, 0.44);
+}
+
+.triad-card.triad-card--element-glace .triad-card__name {
+  color: #ecf9ff;
+  text-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.92),
+    0 0 8px rgba(90, 180, 220, 0.5);
+}
+
+.triad-card.triad-card--element-glace .triad-card__id,
+.triad-card.triad-card--element-glace .triad-card__rarity {
+  color: #d7effa;
+  font-weight: 700;
+  text-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.9),
+    0 0 6px rgba(64, 135, 170, 0.44);
+}
+
+.triad-card.triad-card--element-sol .triad-card__name {
+  color: #fff1de;
+  text-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.92),
+    0 0 8px rgba(191, 145, 96, 0.5);
+}
+
+.triad-card.triad-card--element-sol .triad-card__id,
+.triad-card.triad-card--element-sol .triad-card__rarity {
+  color: #f5dfbf;
+  font-weight: 700;
+  text-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.9),
+    0 0 6px rgba(151, 109, 64, 0.46);
+}
+
+.triad-card.triad-card--element-vol .triad-card__name {
+  color: #eef7ff;
+  text-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.92),
+    0 0 8px rgba(99, 154, 214, 0.46);
+}
+
+.triad-card.triad-card--element-vol .triad-card__id,
+.triad-card.triad-card--element-vol .triad-card__rarity {
+  color: #d8ebff;
+  font-weight: 700;
+  text-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.9),
+    0 0 6px rgba(72, 126, 188, 0.42);
+}
+
+.triad-card.triad-card--element-poison .triad-card__name {
+  color: #f4e9ff;
+  text-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.92),
+    0 0 8px rgba(168, 111, 230, 0.5);
+}
+
+.triad-card.triad-card--element-poison .triad-card__id,
+.triad-card.triad-card--element-poison .triad-card__rarity {
+  color: #ead7ff;
+  font-weight: 700;
+  text-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.9),
+    0 0 6px rgba(126, 77, 191, 0.46);
+}
+
+.triad-card.triad-card--element-dragon .triad-card__name {
+  color: #ece9ff;
+  text-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.92),
+    0 0 8px rgba(122, 130, 230, 0.5);
+}
+
+.triad-card.triad-card--element-dragon .triad-card__id,
+.triad-card.triad-card--element-dragon .triad-card__rarity {
+  color: #dfdcff;
+  font-weight: 700;
+  text-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.9),
+    0 0 6px rgba(90, 98, 196, 0.46);
+}
+
+.triad-card.triad-card--element-eau .triad-card__meta,
+.triad-card.triad-card--element-feu .triad-card__meta,
+.triad-card.triad-card--element-electrik .triad-card__meta,
+.triad-card.triad-card--element-plante .triad-card__meta,
+.triad-card.triad-card--element-glace .triad-card__meta,
+.triad-card.triad-card--element-sol .triad-card__meta,
+.triad-card.triad-card--element-vol .triad-card__meta,
+.triad-card.triad-card--element-poison .triad-card__meta,
+.triad-card.triad-card--element-dragon .triad-card__meta {
+  justify-content: center;
+  gap: clamp(1rem, 2.5vw, 1.8rem);
+}
+
+.triad-card.triad-card--element-normal .triad-card__face,
+.triad-card.triad-card--element-combat .triad-card__face,
+.triad-card.triad-card--element-psy .triad-card__face,
+.triad-card.triad-card--element-insecte .triad-card__face,
+.triad-card.triad-card--element-roche .triad-card__face,
+.triad-card.triad-card--element-spectre .triad-card__face {
+  border-color: transparent;
+}
+
+.triad-card.triad-card--element-normal .triad-card__face {
+  background: url('/cards/normal-background.png') center / 100% 100% no-repeat;
+}
+
+.triad-card.triad-card--element-combat .triad-card__face {
+  background: url('/cards/combat-background.png') center / 100% 100% no-repeat;
+}
+
+.triad-card.triad-card--element-psy .triad-card__face {
+  background: url('/cards/psy-background.png') center / 100% 100% no-repeat;
+}
+
+.triad-card.triad-card--element-insecte .triad-card__face {
+  background: url('/cards/insecte-background.png') center / 100% 100% no-repeat;
+}
+
+.triad-card.triad-card--element-roche .triad-card__face {
+  background: url('/cards/roche-background.png') center / 100% 100% no-repeat;
+}
+
+.triad-card.triad-card--element-spectre .triad-card__face {
+  background: url('/cards/spectre-background.png') center / 100% 100% no-repeat;
+}
+
+.triad-card.triad-card--element-normal .triad-card__face::before,
+.triad-card.triad-card--element-combat .triad-card__face::before,
+.triad-card.triad-card--element-psy .triad-card__face::before,
+.triad-card.triad-card--element-insecte .triad-card__face::before,
+.triad-card.triad-card--element-roche .triad-card__face::before,
+.triad-card.triad-card--element-spectre .triad-card__face::before {
+  content: none;
+}
+
+.triad-card.triad-card--element-normal .triad-card__frame,
+.triad-card.triad-card--element-combat .triad-card__frame,
+.triad-card.triad-card--element-psy .triad-card__frame,
+.triad-card.triad-card--element-insecte .triad-card__frame,
+.triad-card.triad-card--element-roche .triad-card__frame,
+.triad-card.triad-card--element-spectre .triad-card__frame {
+  padding: 0;
+  border-radius: 14px;
+  background: transparent;
+}
+
+.triad-card.triad-card--element-normal .triad-card__type-badge,
+.triad-card.triad-card--element-combat .triad-card__type-badge,
+.triad-card.triad-card--element-psy .triad-card__type-badge,
+.triad-card.triad-card--element-insecte .triad-card__type-badge,
+.triad-card.triad-card--element-roche .triad-card__type-badge,
+.triad-card.triad-card--element-spectre .triad-card__type-badge {
+  display: none;
+}
+
+.triad-card.triad-card--element-normal .triad-card__art,
+.triad-card.triad-card--element-combat .triad-card__art,
+.triad-card.triad-card--element-psy .triad-card__art,
+.triad-card.triad-card--element-insecte .triad-card__art,
+.triad-card.triad-card--element-roche .triad-card__art,
+.triad-card.triad-card--element-spectre .triad-card__art {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.triad-card.triad-card--element-normal .triad-card__art-image,
+.triad-card.triad-card--element-combat .triad-card__art-image,
+.triad-card.triad-card--element-psy .triad-card__art-image,
+.triad-card.triad-card--element-insecte .triad-card__art-image,
+.triad-card.triad-card--element-roche .triad-card__art-image,
+.triad-card.triad-card--element-spectre .triad-card__art-image {
+  transform: translateY(-7%);
+}
+
+:is(.collection-grid, .shop-pack-modal-grid, .shop-special-pack-target-picker)
+  .triad-card--collection-list.triad-card--element-normal
+  .triad-card__art-image,
+:is(.collection-grid, .shop-pack-modal-grid, .shop-special-pack-target-picker)
+  .triad-card--collection-list.triad-card--element-combat
+  .triad-card__art-image,
+:is(.collection-grid, .shop-pack-modal-grid, .shop-special-pack-target-picker)
+  .triad-card--collection-list.triad-card--element-psy
+  .triad-card__art-image,
+:is(.collection-grid, .shop-pack-modal-grid, .shop-special-pack-target-picker)
+  .triad-card--collection-list.triad-card--element-insecte
+  .triad-card__art-image,
+:is(.collection-grid, .shop-pack-modal-grid, .shop-special-pack-target-picker)
+  .triad-card--collection-list.triad-card--element-roche
+  .triad-card__art-image,
+:is(.collection-grid, .shop-pack-modal-grid, .shop-special-pack-target-picker)
+  .triad-card--collection-list.triad-card--element-spectre
+  .triad-card__art-image {
+  transform: translateY(-1%);
+}
+
+.triad-card.triad-card--element-normal .triad-card__footer,
+.triad-card.triad-card--element-combat .triad-card__footer,
+.triad-card.triad-card--element-psy .triad-card__footer,
+.triad-card.triad-card--element-insecte .triad-card__footer,
+.triad-card.triad-card--element-roche .triad-card__footer,
+.triad-card.triad-card--element-spectre .triad-card__footer {
+  left: 0.28rem;
+  right: 0.28rem;
+  bottom: 0.28rem;
+  padding: 0.28rem 0.34rem 0.2rem;
+  border-radius: 0.6rem;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(4, 16, 33, 0) 0%,
+      rgba(4, 16, 33, 0.62) 36%,
+      rgba(4, 16, 33, 0.9) 100%
+    );
+}
+
+.triad-card.triad-card--element-normal .triad-card__name {
+  color: #f8f1e2;
+  text-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.92),
+    0 0 8px rgba(176, 157, 126, 0.5);
+}
+
+.triad-card.triad-card--element-normal .triad-card__id,
+.triad-card.triad-card--element-normal .triad-card__rarity {
+  color: #efe2ca;
+  font-weight: 700;
+  text-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.9),
+    0 0 6px rgba(136, 116, 84, 0.46);
+}
+
+.triad-card.triad-card--element-combat .triad-card__name {
+  color: #ffe4d9;
+  text-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.92),
+    0 0 8px rgba(203, 109, 96, 0.5);
+}
+
+.triad-card.triad-card--element-combat .triad-card__id,
+.triad-card.triad-card--element-combat .triad-card__rarity {
+  color: #ffd4c4;
+  font-weight: 700;
+  text-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.9),
+    0 0 6px rgba(165, 86, 75, 0.46);
+}
+
+.triad-card.triad-card--element-psy .triad-card__name {
+  color: #ffe4f7;
+  text-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.92),
+    0 0 8px rgba(211, 103, 186, 0.52);
+}
+
+.triad-card.triad-card--element-psy .triad-card__id,
+.triad-card.triad-card--element-psy .triad-card__rarity {
+  color: #ffd4f1;
+  font-weight: 700;
+  text-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.9),
+    0 0 6px rgba(168, 80, 146, 0.46);
+}
+
+.triad-card.triad-card--element-insecte .triad-card__name {
+  color: #f4f8da;
+  text-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.92),
+    0 0 8px rgba(156, 184, 86, 0.52);
+}
+
+.triad-card.triad-card--element-insecte .triad-card__id,
+.triad-card.triad-card--element-insecte .triad-card__rarity {
+  color: #e8efc6;
+  font-weight: 700;
+  text-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.9),
+    0 0 6px rgba(121, 144, 62, 0.46);
+}
+
+.triad-card.triad-card--element-roche .triad-card__name {
+  color: #f4ebe0;
+  text-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.92),
+    0 0 8px rgba(164, 138, 107, 0.5);
+}
+
+.triad-card.triad-card--element-roche .triad-card__id,
+.triad-card.triad-card--element-roche .triad-card__rarity {
+  color: #ead9c7;
+  font-weight: 700;
+  text-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.9),
+    0 0 6px rgba(126, 103, 74, 0.46);
+}
+
+.triad-card.triad-card--element-spectre .triad-card__name {
+  color: #ece5ff;
+  text-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.92),
+    0 0 8px rgba(127, 111, 207, 0.5);
+}
+
+.triad-card.triad-card--element-spectre .triad-card__id,
+.triad-card.triad-card--element-spectre .triad-card__rarity {
+  color: #ddd6ff;
+  font-weight: 700;
+  text-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.9),
+    0 0 6px rgba(97, 82, 172, 0.46);
+}
+
+.triad-card.triad-card--element-normal .triad-card__meta,
+.triad-card.triad-card--element-combat .triad-card__meta,
+.triad-card.triad-card--element-psy .triad-card__meta,
+.triad-card.triad-card--element-insecte .triad-card__meta,
+.triad-card.triad-card--element-roche .triad-card__meta,
+.triad-card.triad-card--element-spectre .triad-card__meta {
+  justify-content: center;
+  gap: clamp(1rem, 2.5vw, 1.8rem);
 }
 
 .triad-card.is-shiny .triad-card__art::after {
@@ -6673,28 +7418,547 @@ button.triad-card {
   animation: shiny-image-breathe 3.2s ease-in-out infinite;
 }
 
-/* Keep shiny visually distinct even on miniature card contexts. */
-:is(.collection-grid, .shop-pack-modal-grid, .shop-special-pack-target-picker) .triad-card--collection-list.is-shiny .triad-card__frame {
-  padding: 0.08rem;
-  background:
-    linear-gradient(148deg, #f7fcff 0%, #bdd6ee 34%, #f4e7bf 62%, #abc8e6 88%),
-    linear-gradient(168deg, rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0));
+/* Ultra-prismatic shiny treatment for full-art elemental cards. */
+.triad-card:is(
+    .triad-card--element-normal,
+    .triad-card--element-feu,
+    .triad-card--element-eau,
+    .triad-card--element-plante,
+    .triad-card--element-electrik,
+    .triad-card--element-glace,
+    .triad-card--element-combat,
+    .triad-card--element-poison,
+    .triad-card--element-sol,
+    .triad-card--element-vol,
+    .triad-card--element-psy,
+    .triad-card--element-insecte,
+    .triad-card--element-roche,
+    .triad-card--element-spectre,
+    .triad-card--element-dragon
+  )
+  .triad-card__frame {
+  border-radius: 20px;
+}
+
+.triad-card:is(
+    .triad-card--element-normal,
+    .triad-card--element-feu,
+    .triad-card--element-eau,
+    .triad-card--element-plante,
+    .triad-card--element-electrik,
+    .triad-card--element-glace,
+    .triad-card--element-combat,
+    .triad-card--element-poison,
+    .triad-card--element-sol,
+    .triad-card--element-vol,
+    .triad-card--element-psy,
+    .triad-card--element-insecte,
+    .triad-card--element-roche,
+    .triad-card--element-spectre,
+    .triad-card--element-dragon
+  )
+  .triad-card__face {
+  border-radius: 17px;
+}
+
+.triad-card.is-shiny:is(
+    .triad-card--element-normal,
+    .triad-card--element-feu,
+    .triad-card--element-eau,
+    .triad-card--element-plante,
+    .triad-card--element-electrik,
+    .triad-card--element-glace,
+    .triad-card--element-combat,
+    .triad-card--element-poison,
+    .triad-card--element-sol,
+    .triad-card--element-vol,
+    .triad-card--element-psy,
+    .triad-card--element-insecte,
+    .triad-card--element-roche,
+    .triad-card--element-spectre,
+    .triad-card--element-dragon
+  )
+  .triad-card__frame {
+  padding: 0;
+  background: transparent;
   box-shadow:
-    0 8px 14px rgba(0, 0, 0, 0.3),
-    0 0 0 1px rgba(198, 229, 255, 0.6),
-    0 0 14px rgba(147, 210, 255, 0.34);
+    0 18px 32px rgba(0, 0, 0, 0.4),
+    0 0 26px rgba(142, 232, 255, 0.5),
+    0 0 54px rgba(255, 162, 233, 0.35);
 }
 
-:is(.collection-grid, .shop-pack-modal-grid, .shop-special-pack-target-picker) .triad-card--collection-list.is-shiny .triad-card__face {
-  border: 1px solid rgba(205, 234, 255, 0.56);
+.triad-card.is-shiny:is(
+    .triad-card--element-normal,
+    .triad-card--element-feu,
+    .triad-card--element-eau,
+    .triad-card--element-plante,
+    .triad-card--element-electrik,
+    .triad-card--element-glace,
+    .triad-card--element-combat,
+    .triad-card--element-poison,
+    .triad-card--element-sol,
+    .triad-card--element-vol,
+    .triad-card--element-psy,
+    .triad-card--element-insecte,
+    .triad-card--element-roche,
+    .triad-card--element-spectre,
+    .triad-card--element-dragon
+  )
+  .triad-card__frame::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 2px;
+  background: conic-gradient(
+    from 0deg,
+    rgba(170, 245, 255, 0.96) 0deg,
+    rgba(255, 192, 232, 0.96) 74deg,
+    rgba(255, 248, 154, 0.94) 152deg,
+    rgba(165, 167, 255, 0.96) 232deg,
+    rgba(148, 255, 216, 0.94) 300deg,
+    rgba(170, 245, 255, 0.96) 360deg
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  mix-blend-mode: screen;
+  pointer-events: none;
+  z-index: 8;
+  animation: shiny-prismatic-border-shift 2.1s linear infinite;
 }
 
-:is(.collection-grid, .shop-pack-modal-grid, .shop-special-pack-target-picker) .triad-card--collection-list.is-shiny .triad-card__art-image {
+.triad-card.is-shiny:is(
+    .triad-card--element-normal,
+    .triad-card--element-feu,
+    .triad-card--element-eau,
+    .triad-card--element-plante,
+    .triad-card--element-electrik,
+    .triad-card--element-glace,
+    .triad-card--element-combat,
+    .triad-card--element-poison,
+    .triad-card--element-sol,
+    .triad-card--element-vol,
+    .triad-card--element-psy,
+    .triad-card--element-insecte,
+    .triad-card--element-roche,
+    .triad-card--element-spectre,
+    .triad-card--element-dragon
+  )
+  .triad-card__face::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    radial-gradient(circle at 16% 14%, rgba(255, 255, 255, 0.52), rgba(255, 255, 255, 0) 34%),
+    radial-gradient(circle at 84% 80%, rgba(177, 246, 255, 0.36), rgba(177, 246, 255, 0) 36%),
+    repeating-linear-gradient(
+      122deg,
+      rgba(255, 148, 219, 0.24),
+      rgba(255, 148, 219, 0.24) 2px,
+      rgba(124, 236, 255, 0.24) 2px,
+      rgba(124, 236, 255, 0.24) 4px,
+      rgba(255, 244, 139, 0.18) 4px,
+      rgba(255, 244, 139, 0.18) 6px,
+      rgba(173, 156, 255, 0.24) 6px,
+      rgba(173, 156, 255, 0.24) 8px
+    );
+  background-size:
+    100% 100%,
+    100% 100%,
+    220% 220%;
+  mix-blend-mode: screen;
+  opacity: 0.92;
+  pointer-events: none;
+  animation: shiny-prismatic-film 2.8s linear infinite;
+}
+
+.triad-card.is-shiny:is(
+    .triad-card--element-normal,
+    .triad-card--element-feu,
+    .triad-card--element-eau,
+    .triad-card--element-plante,
+    .triad-card--element-electrik,
+    .triad-card--element-glace,
+    .triad-card--element-combat,
+    .triad-card--element-poison,
+    .triad-card--element-sol,
+    .triad-card--element-vol,
+    .triad-card--element-psy,
+    .triad-card--element-insecte,
+    .triad-card--element-roche,
+    .triad-card--element-spectre,
+    .triad-card--element-dragon
+  )
+  .triad-card__art::before {
+  content: '';
+  position: absolute;
+  inset: -10%;
+  border-radius: inherit;
+  background: conic-gradient(
+    from 0deg,
+    rgba(255, 255, 255, 0) 0deg,
+    rgba(129, 236, 255, 0.48) 58deg,
+    rgba(255, 174, 224, 0.5) 132deg,
+    rgba(248, 235, 147, 0.42) 212deg,
+    rgba(170, 162, 255, 0.52) 292deg,
+    rgba(255, 255, 255, 0) 360deg
+  );
+  mix-blend-mode: color-dodge;
+  opacity: 0.72;
+  transform: rotate(0deg) scale(1.08);
+  pointer-events: none;
+  animation: shiny-prismatic-core 3.2s linear infinite;
+}
+
+.triad-card.is-shiny:is(
+    .triad-card--element-normal,
+    .triad-card--element-feu,
+    .triad-card--element-eau,
+    .triad-card--element-plante,
+    .triad-card--element-electrik,
+    .triad-card--element-glace,
+    .triad-card--element-combat,
+    .triad-card--element-poison,
+    .triad-card--element-sol,
+    .triad-card--element-vol,
+    .triad-card--element-psy,
+    .triad-card--element-insecte,
+    .triad-card--element-roche,
+    .triad-card--element-spectre,
+    .triad-card--element-dragon
+  )
+  .triad-card__art::after {
+  background:
+    linear-gradient(
+      112deg,
+      rgba(255, 255, 255, 0) 12%,
+      rgba(236, 251, 255, 0.88) 30%,
+      rgba(181, 248, 255, 0.8) 43%,
+      rgba(255, 176, 235, 0.76) 58%,
+      rgba(255, 255, 255, 0) 76%
+    ),
+    radial-gradient(circle at 18% 22%, rgba(255, 255, 255, 0.56), rgba(255, 255, 255, 0) 14%),
+    radial-gradient(circle at 78% 74%, rgba(196, 248, 255, 0.42), rgba(196, 248, 255, 0) 12%);
+  background-size:
+    270% 120%,
+    100% 100%,
+    100% 100%;
+  mix-blend-mode: screen;
+  opacity: 1;
+  animation:
+    shiny-foil-sweep 1.9s ease-in-out infinite,
+    shiny-sparkle-drift 3.2s linear infinite;
+}
+
+.triad-card.is-shiny:is(
+    .triad-card--element-normal,
+    .triad-card--element-feu,
+    .triad-card--element-eau,
+    .triad-card--element-plante,
+    .triad-card--element-electrik,
+    .triad-card--element-glace,
+    .triad-card--element-combat,
+    .triad-card--element-poison,
+    .triad-card--element-sol,
+    .triad-card--element-vol,
+    .triad-card--element-psy,
+    .triad-card--element-insecte,
+    .triad-card--element-roche,
+    .triad-card--element-spectre,
+    .triad-card--element-dragon
+  )
+  .triad-card__art-image {
+  position: relative;
+  z-index: 1;
   filter:
-    drop-shadow(0 0 8px rgba(200, 238, 255, 0.6))
-    drop-shadow(0 0 16px rgba(122, 197, 255, 0.44))
-    saturate(1.16)
-    contrast(1.06);
+    drop-shadow(0 0 22px var(--card-halo-near, rgba(210, 247, 255, 0.98)))
+    drop-shadow(0 0 40px var(--card-halo-mid, rgba(148, 215, 255, 0.86)))
+    drop-shadow(0 0 66px var(--card-halo-far, rgba(109, 147, 255, 0.66)))
+    drop-shadow(0 0 18px rgba(255, 188, 233, 0.52))
+    drop-shadow(0 10px 14px rgba(3, 10, 18, 0.66))
+    saturate(1.34)
+    contrast(1.14)
+    brightness(1.12);
+  animation: shiny-image-breathe 2.2s ease-in-out infinite;
+}
+
+.triad-card.is-shiny:is(
+    .triad-card--element-normal,
+    .triad-card--element-feu,
+    .triad-card--element-eau,
+    .triad-card--element-plante,
+    .triad-card--element-electrik,
+    .triad-card--element-glace,
+    .triad-card--element-combat,
+    .triad-card--element-poison,
+    .triad-card--element-sol,
+    .triad-card--element-vol,
+    .triad-card--element-psy,
+    .triad-card--element-insecte,
+    .triad-card--element-roche,
+    .triad-card--element-spectre,
+    .triad-card--element-dragon
+  )
+  .triad-card__footer {
+  background:
+    linear-gradient(
+      180deg,
+      rgba(2, 12, 26, 0.14) 0%,
+      rgba(2, 12, 26, 0.72) 32%,
+      rgba(2, 12, 26, 0.96) 100%
+    );
+}
+
+.triad-card.is-shiny:is(
+    .triad-card--element-normal,
+    .triad-card--element-feu,
+    .triad-card--element-eau,
+    .triad-card--element-plante,
+    .triad-card--element-electrik,
+    .triad-card--element-glace,
+    .triad-card--element-combat,
+    .triad-card--element-poison,
+    .triad-card--element-sol,
+    .triad-card--element-vol,
+    .triad-card--element-psy,
+    .triad-card--element-insecte,
+    .triad-card--element-roche,
+    .triad-card--element-spectre,
+    .triad-card--element-dragon
+  )
+  .triad-card__name {
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.96),
+    0 0 16px rgba(190, 232, 255, 0.7);
+}
+
+.triad-card.is-shiny:is(
+    .triad-card--element-normal,
+    .triad-card--element-feu,
+    .triad-card--element-eau,
+    .triad-card--element-plante,
+    .triad-card--element-electrik,
+    .triad-card--element-glace,
+    .triad-card--element-combat,
+    .triad-card--element-poison,
+    .triad-card--element-sol,
+    .triad-card--element-vol,
+    .triad-card--element-psy,
+    .triad-card--element-insecte,
+    .triad-card--element-roche,
+    .triad-card--element-spectre,
+    .triad-card--element-dragon
+  )
+  .triad-card__id,
+.triad-card.is-shiny:is(
+    .triad-card--element-normal,
+    .triad-card--element-feu,
+    .triad-card--element-eau,
+    .triad-card--element-plante,
+    .triad-card--element-electrik,
+    .triad-card--element-glace,
+    .triad-card--element-combat,
+    .triad-card--element-poison,
+    .triad-card--element-sol,
+    .triad-card--element-vol,
+    .triad-card--element-psy,
+    .triad-card--element-insecte,
+    .triad-card--element-roche,
+    .triad-card--element-spectre,
+    .triad-card--element-dragon
+  )
+  .triad-card__rarity {
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.96),
+    0 0 13px rgba(166, 224, 255, 0.62);
+}
+
+/* Shiny rendering tiers for Pokédex cards. */
+.triad-card.triad-card--collection-list.is-shiny,
+.triad-card.triad-card--collection-detail.is-shiny {
+  --shiny-pointer-x: 50%;
+  --shiny-pointer-y: 50%;
+}
+
+/* Tier 1: Pokédex grid = sober and static. */
+.triad-card.triad-card--collection-list.is-shiny .triad-card__frame {
+  padding: 0.03rem;
+  background:
+    linear-gradient(152deg, rgba(236, 247, 255, 0.94), rgba(194, 226, 248, 0.78)),
+    linear-gradient(168deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0));
+  box-shadow:
+    0 8px 14px rgba(0, 0, 0, 0.28),
+    0 0 0 1px rgba(191, 224, 249, 0.52),
+    0 0 12px rgba(166, 216, 248, 0.2);
+  animation: none;
+}
+
+.triad-card.triad-card--collection-list.is-shiny .triad-card__frame::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.5px;
+  background: conic-gradient(
+    from 12deg,
+    rgba(170, 235, 255, 0.82) 0deg,
+    rgba(255, 212, 240, 0.72) 76deg,
+    rgba(255, 243, 178, 0.68) 156deg,
+    rgba(176, 197, 255, 0.76) 236deg,
+    rgba(170, 250, 229, 0.7) 308deg,
+    rgba(170, 235, 255, 0.82) 360deg
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  mix-blend-mode: screen;
+  opacity: 0.68;
+  pointer-events: none;
+  z-index: 6;
+  animation: none;
+}
+
+.triad-card.triad-card--collection-list.is-shiny .triad-card__frame::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(118deg, rgba(255, 255, 255, 0) 24%, rgba(238, 251, 255, 0.4) 48%, rgba(255, 255, 255, 0) 72%);
+  background-size: 220% 100%;
+  transform: translateX(-68%);
+  mix-blend-mode: screen;
+  opacity: 0.22;
+  pointer-events: none;
+  z-index: 7;
+  animation: none;
+}
+
+/* Tier 2: Pokédex inspect = premium foil + subtle pointer response. */
+.triad-card.triad-card--collection-detail.is-shiny .triad-card__frame {
+  padding: 0.04rem;
+  background:
+    linear-gradient(152deg, rgba(244, 251, 255, 0.99), rgba(206, 235, 252, 0.9)),
+    linear-gradient(168deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0));
+  box-shadow:
+    0 12px 20px rgba(0, 0, 0, 0.32),
+    0 0 0 1px rgba(202, 233, 252, 0.72),
+    0 0 26px rgba(177, 226, 255, 0.44);
+  animation: none;
+}
+
+.triad-card.triad-card--collection-detail.is-shiny .triad-card__frame::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.5px;
+  background: conic-gradient(
+    from 10deg,
+    rgba(174, 240, 255, 0.96) 0deg,
+    rgba(255, 206, 240, 0.9) 78deg,
+    rgba(255, 244, 176, 0.86) 152deg,
+    rgba(178, 196, 255, 0.92) 236deg,
+    rgba(170, 255, 230, 0.9) 306deg,
+    rgba(174, 240, 255, 0.96) 360deg
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  mix-blend-mode: screen;
+  opacity: 0.86;
+  pointer-events: none;
+  z-index: 6;
+  animation: none;
+}
+
+.triad-card.triad-card--collection-detail.is-shiny .triad-card__frame::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    linear-gradient(118deg, rgba(255, 255, 255, 0) 21%, rgba(238, 251, 255, 0.72) 47%, rgba(255, 255, 255, 0) 74%),
+    radial-gradient(
+      circle at var(--shiny-pointer-x) var(--shiny-pointer-y),
+      rgba(255, 255, 255, 0.34) 0%,
+      rgba(211, 241, 255, 0.2) 16%,
+      rgba(255, 255, 255, 0) 44%
+    );
+  background-size:
+    238% 100%,
+    100% 100%;
+  transform: translateX(-70%);
+  mix-blend-mode: screen;
+  opacity: 0.58;
+  pointer-events: none;
+  z-index: 7;
+  animation: shiny-foil-sweep 4.8s ease-in-out infinite;
+}
+
+.triad-card.triad-card--collection-list.is-shiny .triad-card__face::before,
+.triad-card.triad-card--collection-detail.is-shiny .triad-card__face::before,
+.triad-card.triad-card--collection-list.is-shiny .triad-card__art::before,
+.triad-card.triad-card--collection-detail.is-shiny .triad-card__art::before {
+  content: none;
+  animation: none;
+}
+
+.triad-card.triad-card--collection-list.is-shiny .triad-card__art,
+.triad-card.triad-card--collection-detail.is-shiny .triad-card__art {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  animation: none;
+}
+
+.triad-card.triad-card--collection-list.is-shiny .triad-card__art::after,
+.triad-card.triad-card--collection-detail.is-shiny .triad-card__art::after {
+  content: none;
+  animation: none;
+}
+
+.triad-card.triad-card--collection-list.is-shiny .triad-card__art-image {
+  filter:
+    drop-shadow(0 0 10px rgba(185, 229, 255, 0.34))
+    drop-shadow(0 0 18px rgba(121, 202, 255, 0.22))
+    drop-shadow(0 7px 10px rgba(4, 11, 17, 0.54))
+    saturate(1.05)
+    contrast(1.02)
+    brightness(1.03);
+  animation: none;
+}
+
+.triad-card.triad-card--collection-detail.is-shiny .triad-card__art-image {
+  filter:
+    drop-shadow(0 0 16px rgba(196, 237, 255, 0.5))
+    drop-shadow(0 0 24px rgba(130, 210, 255, 0.34))
+    drop-shadow(0 8px 11px rgba(4, 11, 17, 0.56))
+    saturate(1.1)
+    contrast(1.03)
+    brightness(1.04);
+  animation: none;
+}
+
+.triad-card.triad-card--collection-list.is-shiny .triad-card__shiny-pill,
+.triad-card.triad-card--collection-list.is-shiny .triad-card__shiny-pill::after {
+  animation: none;
 }
 
 @keyframes shiny-foil-sweep {
@@ -6839,6 +8103,90 @@ button.triad-card {
       saturate(1.26)
       contrast(1.08)
       brightness(1.12);
+  }
+}
+
+@keyframes shiny-prismatic-border-shift {
+  0% {
+    transform: rotate(0deg);
+    filter: saturate(1.05) brightness(1);
+  }
+  50% {
+    filter: saturate(1.35) brightness(1.16);
+  }
+  100% {
+    transform: rotate(360deg);
+    filter: saturate(1.05) brightness(1);
+  }
+}
+
+@keyframes shiny-prismatic-foil {
+  0% {
+    background-position:
+      -70% 0,
+      0% 0%;
+    opacity: 0.25;
+  }
+  50% {
+    background-position:
+      154% 0,
+      90% 80%;
+    opacity: 0.95;
+  }
+  100% {
+    background-position:
+      -70% 0,
+      0% 0%;
+    opacity: 0.25;
+  }
+}
+
+@keyframes shiny-prismatic-film {
+  0% {
+    background-position:
+      0% 0%,
+      0% 0%,
+      0% 0%;
+    opacity: 0.72;
+  }
+  50% {
+    background-position:
+      1% -1%,
+      0% 0%,
+      100% 100%;
+    opacity: 1;
+  }
+  100% {
+    background-position:
+      0% 0%,
+      0% 0%,
+      0% 0%;
+    opacity: 0.72;
+  }
+}
+
+@keyframes shiny-prismatic-core {
+  0% {
+    transform: rotate(0deg) scale(1.04);
+    opacity: 0.42;
+  }
+  50% {
+    transform: rotate(180deg) scale(1.12);
+    opacity: 0.92;
+  }
+  100% {
+    transform: rotate(360deg) scale(1.04);
+    opacity: 0.42;
+  }
+}
+
+@keyframes shiny-prismatic-image-shift {
+  0%,
+  100% {
+    transform: translateY(-7%) scale(1);
+  }
+  50% {
+    transform: translateY(-7%) scale(1.05);
   }
 }
 
@@ -7023,6 +8371,12 @@ button.triad-card {
 .triad-card--collection-detail .triad-card__footer {
   bottom: 0.52rem;
   gap: 0.22rem;
+}
+
+.triad-card--collection-detail .triad-card__name {
+  font-size: clamp(1.24rem, 2.6vw, 1.66rem);
+  letter-spacing: 0.04em;
+  line-height: 1;
 }
 
 .setup-card-grid .triad-card--setup .triad-card__meta,
@@ -7639,6 +8993,14 @@ button.triad-card {
     0 12px 24px rgba(2, 9, 24, 0.28);
 }
 
+.pixi-board.has-neutral-board-art {
+  border: 0;
+  border-radius: 0;
+  overflow: visible;
+  background: transparent;
+  box-shadow: none;
+}
+
 .fallback-board {
   --turn-glow: transparent;
 
@@ -7669,6 +9031,21 @@ button.triad-card {
   pointer-events: none;
   background: url('/ui/match/arena-emblem-center.svg') center / 62% auto no-repeat;
   opacity: 0.18;
+}
+
+.fallback-board.has-neutral-board-art {
+  border-color: rgba(188, 153, 106, 0.72);
+  background:
+    radial-gradient(circle at 50% 50%, rgba(255, 246, 226, 0.12), transparent 64%),
+    url('/ui/match/boards/neutral-board.png') center / cover no-repeat,
+    linear-gradient(165deg, rgba(43, 33, 24, 0.74), rgba(29, 22, 17, 0.82));
+  box-shadow:
+    inset 0 0 0 1px rgba(247, 231, 200, 0.18),
+    0 16px 34px rgba(24, 17, 10, 0.36);
+}
+
+.fallback-board.has-neutral-board-art::after {
+  opacity: 0;
 }
 
 .fallback-board > * {
@@ -7731,11 +9108,11 @@ button.triad-card {
 }
 
 .fallback-cell--flooded {
-  border-color: rgba(132, 221, 255, 0.96);
+  border-color: rgba(146, 212, 232, 0.8);
+  background: url('/ui/match/board-effects/water.png') center / cover no-repeat;
   box-shadow:
-    inset 0 0 0 1px rgba(192, 241, 255, 0.2),
-    0 0 0 1px rgba(122, 216, 255, 0.44),
-    0 0 16px rgba(113, 205, 255, 0.24);
+    inset 0 0 0 1px rgba(212, 244, 255, 0.12),
+    0 0 0 1px rgba(122, 216, 255, 0.2);
 }
 
 .fallback-cell--frozen {
@@ -7769,6 +9146,7 @@ button.triad-card {
   border-color: rgba(171, 235, 255, 0.98);
   background:
     radial-gradient(circle at 30% 18%, rgba(220, 249, 255, 0.24), transparent 50%),
+    url('/ui/match/board-effects/water.png') center / cover no-repeat,
     linear-gradient(152deg, rgba(43, 111, 161, 0.92), rgba(24, 74, 119, 0.94));
   box-shadow:
     inset 0 0 0 1px rgba(225, 248, 255, 0.24),
@@ -7778,6 +9156,10 @@ button.triad-card {
 
 .fallback-cell--flood-cast {
   border-color: rgba(147, 229, 255, 0.94);
+  background:
+    radial-gradient(circle at 30% 18%, rgba(214, 247, 255, 0.24), transparent 52%),
+    url('/ui/match/board-effects/water.png') center / cover no-repeat,
+    linear-gradient(152deg, rgba(44, 109, 154, 0.92), rgba(25, 74, 113, 0.94));
   box-shadow:
     inset 0 0 0 1px rgba(214, 246, 255, 0.2),
     0 0 0 1px rgba(90, 182, 226, 0.44),
@@ -7786,6 +9168,10 @@ button.triad-card {
 
 .fallback-cell--water-penalty {
   border-color: rgba(168, 225, 255, 0.96);
+  background:
+    radial-gradient(circle at 30% 18%, rgba(218, 246, 255, 0.26), transparent 54%),
+    url('/ui/match/board-effects/water.png') center / cover no-repeat,
+    linear-gradient(152deg, rgba(33, 85, 125, 0.94), rgba(19, 59, 90, 0.96));
   box-shadow:
     inset 0 0 0 1px rgba(218, 246, 255, 0.2),
     0 0 0 1px rgba(74, 149, 196, 0.48),
@@ -8105,13 +9491,14 @@ button.triad-card {
 .fallback-cell__art {
   position: absolute;
   z-index: 1;
-  width: calc(100% - 1.2rem);
-  height: calc(100% - 1.2rem);
+  width: calc(100% - 1.45rem);
+  height: calc(100% - 1.45rem);
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
   border-radius: 0.55rem;
-  object-fit: cover;
+  object-fit: contain;
+  image-rendering: auto;
   pointer-events: none;
   box-shadow:
     inset 0 0 0 1px rgba(255, 233, 179, 0.16),
@@ -8190,6 +9577,40 @@ button.triad-card {
     inset 0 0 0 1px rgba(255, 244, 215, 0.26),
     0 0 0 2px rgba(146, 234, 255, 0.42),
     0 0 22px rgba(120, 216, 255, 0.32);
+}
+
+.fallback-board.has-neutral-board-art .fallback-cell {
+  border-color: rgba(167, 137, 95, 0.72);
+  background:
+    radial-gradient(circle at 30% 18%, rgba(255, 247, 229, 0.2), transparent 48%),
+    linear-gradient(152deg, rgba(115, 91, 64, 0.2), rgba(75, 58, 42, 0.18));
+  box-shadow:
+    inset 0 0 0 1px rgba(244, 226, 194, 0.18),
+    0 2px 5px rgba(42, 30, 18, 0.2);
+}
+
+.fallback-board.has-neutral-board-art .fallback-cell.player {
+  background:
+    radial-gradient(circle at 30% 20%, rgba(178, 232, 255, 0.28), transparent 44%),
+    linear-gradient(152deg, rgba(45, 126, 199, 0.34), rgba(28, 82, 136, 0.3));
+}
+
+.fallback-board.has-neutral-board-art .fallback-cell.cpu {
+  background:
+    radial-gradient(circle at 30% 20%, rgba(255, 189, 195, 0.28), transparent 44%),
+    linear-gradient(152deg, rgba(170, 73, 99, 0.34), rgba(120, 49, 73, 0.32));
+}
+
+.fallback-board.has-neutral-board-art .fallback-cell.highlighted {
+  border-color: rgba(245, 210, 134, 0.98);
+}
+
+.fallback-board.has-neutral-board-art .fallback-cell.is-keyboard-target {
+  border-color: rgba(255, 224, 151, 0.98);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 240, 209, 0.28),
+    0 0 0 2px rgba(255, 216, 137, 0.36),
+    0 0 18px rgba(255, 196, 92, 0.28);
 }
 
 .fallback-cell.is-highlighted {
@@ -8367,7 +9788,44 @@ button.triad-card {
   .triad-card.is-shiny .triad-card__shiny-pill::after,
   .triad-card.is-shiny .triad-card__frame,
   .triad-card.is-shiny .triad-card__frame::before,
+  .triad-card.is-shiny .triad-card__frame::after,
+  .triad-card.is-shiny:is(
+      .triad-card--element-normal,
+      .triad-card--element-feu,
+      .triad-card--element-eau,
+      .triad-card--element-plante,
+      .triad-card--element-electrik,
+      .triad-card--element-glace,
+      .triad-card--element-combat,
+      .triad-card--element-poison,
+      .triad-card--element-sol,
+      .triad-card--element-vol,
+      .triad-card--element-psy,
+      .triad-card--element-insecte,
+      .triad-card--element-roche,
+      .triad-card--element-spectre,
+      .triad-card--element-dragon
+    )
+    .triad-card__face::before,
   .triad-card.is-shiny .triad-card__art,
+  .triad-card.is-shiny:is(
+      .triad-card--element-normal,
+      .triad-card--element-feu,
+      .triad-card--element-eau,
+      .triad-card--element-plante,
+      .triad-card--element-electrik,
+      .triad-card--element-glace,
+      .triad-card--element-combat,
+      .triad-card--element-poison,
+      .triad-card--element-sol,
+      .triad-card--element-vol,
+      .triad-card--element-psy,
+      .triad-card--element-insecte,
+      .triad-card--element-roche,
+      .triad-card--element-spectre,
+      .triad-card--element-dragon
+    )
+    .triad-card__art::before,
   .triad-card.is-shiny .triad-card__art::after,
   .triad-card.is-shiny .triad-card__art-image,
   .packs-reveal-placeholder::after {
@@ -8415,7 +9873,7 @@ button.triad-card {
 
   .main-nav {
     grid-column: 1 / -1;
-    justify-content: flex-start;
+    justify-content: center;
   }
 
   .setup-layout {
@@ -8434,6 +9892,10 @@ button.triad-card {
 
   .setup-selected-top-bar {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .match-lane-hand-art {
+    display: none;
   }
 
   .setup-selected-left-stack .setup-slot-grid {
@@ -8565,15 +10027,15 @@ button.triad-card {
   }
 
   .match-panel {
-    --match-board-size: clamp(390px, calc(100dvh - 210px), 468px);
-    --match-card-size: clamp(88px, calc(var(--match-board-size) * 0.24), 114px);
-    --match-card-overlap: clamp(1.35rem, calc(var(--match-card-size) * 0.29), 2.05rem);
+    --match-board-size: clamp(460px, calc(100dvh - 170px), 620px);
+    --match-card-size: clamp(94px, calc(var(--match-board-size) * 0.24), 128px);
+    --match-card-overlap: clamp(1.4rem, calc(var(--match-card-size) * 0.3), 2.2rem);
   }
 
   .match-arena {
-    grid-template-columns: minmax(178px, 220px) minmax(0, 1fr) minmax(178px, 220px);
+    grid-template-columns: minmax(280px, 360px) minmax(0, 1fr) minmax(280px, 360px);
     grid-template-areas: 'cpu board player';
-    gap: 0.78rem;
+    gap: 0.9rem;
     align-items: stretch;
     margin-top: 0.42rem;
   }
@@ -8931,9 +10393,17 @@ button.triad-card {
     text-align: left;
   }
 
-  .match-keyboard-help {
-    font-size: 0.74rem;
-    letter-spacing: 0.03em;
+  .match-keyboard-help__trigger {
+    width: 1.36rem;
+    height: 1.36rem;
+    font-size: 0.8rem;
+  }
+
+  .match-keyboard-help__tooltip {
+    max-width: min(96vw, 22rem);
+    white-space: normal;
+    font-size: 0.72rem;
+    line-height: 1.32;
   }
 
   .match-board-hud-top {
@@ -9537,6 +11007,44 @@ button.triad-card {
   font-weight: 700;
 }
 
+.changelogs-panel {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.changelogs-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.65rem;
+}
+
+.changelog-list {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.changelog-card {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  padding: 0.72rem;
+  background: rgba(8, 12, 26, 0.5);
+  display: grid;
+  gap: 0.5rem;
+}
+
+.changelog-card__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.65rem;
+}
+
+.changelog-card h3 {
+  margin-bottom: 0.2rem;
+  font-size: 0.94rem;
+}
+
 .setup-synergy-summary {
   display: grid;
   gap: 0.28rem;
@@ -9576,6 +11084,12 @@ button.triad-card {
 
   .home-missions-list {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) and (pointer: coarse) {
+  .background-mode-toggle {
+    display: none;
   }
 }
 
@@ -9624,14 +11138,20 @@ body[data-theme='pokemon'] {
   --poke-red-deep: #b93040;
   --poke-yellow: #ffcb05;
   --poke-yellow-soft: #ffe27a;
+  --pokemon-bg-overlay-start: rgba(8, 23, 50, 0.5);
+  --pokemon-bg-overlay-end: rgba(4, 12, 29, 0.58);
   color: var(--text-main);
   font-family: 'Barlow Semi Condensed', sans-serif;
   background:
-    radial-gradient(circle at 86% 14%, rgba(239, 68, 87, 0.15), transparent 30%),
-    radial-gradient(circle at 12% 82%, rgba(66, 153, 225, 0.2), transparent 34%),
-    linear-gradient(160deg, rgba(8, 23, 50, 0.86), rgba(4, 12, 29, 0.92)),
-    url('/ui/match/arena-energy-grid.svg') center / 390px 390px repeat,
-    url('/background.png') center / cover no-repeat fixed;
+    radial-gradient(circle at 86% 14%, rgba(239, 68, 87, 0.08), transparent 30%),
+    radial-gradient(circle at 12% 82%, rgba(66, 153, 225, 0.1), transparent 34%),
+    linear-gradient(160deg, var(--pokemon-bg-overlay-start), var(--pokemon-bg-overlay-end)),
+    var(--app-background-image) center / cover no-repeat fixed;
+}
+
+body[data-theme='pokemon'][data-background-mode='light'] {
+  --pokemon-bg-overlay-start: rgba(8, 23, 50, 0.18);
+  --pokemon-bg-overlay-end: rgba(4, 12, 29, 0.24);
 }
 
 body[data-theme='pokemon'] h1,
@@ -9812,7 +11332,8 @@ body[data-theme='pokemon'] .match-panel {
   background:
     radial-gradient(circle at 92% 8%, rgba(239, 68, 87, 0.11), transparent 34%),
     radial-gradient(circle at 8% 92%, rgba(111, 193, 255, 0.11), transparent 36%),
-    linear-gradient(164deg, rgba(9, 30, 60, 0.92), rgba(6, 19, 38, 0.95));
+    linear-gradient(164deg, rgba(9, 30, 60, 0.84), rgba(6, 19, 38, 0.9)),
+    url('/ui/setup/background-dark.jpg') center / cover no-repeat;
 }
 
 body[data-theme='pokemon'] .match-board-stage {

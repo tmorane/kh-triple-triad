@@ -835,6 +835,14 @@ describe('MatchPage cpu pacing', () => {
 })
 
 describe('MatchPage hand layout classes by mode', () => {
+  test('renders cpu and player side hand art in match lanes', () => {
+    const state = makeActiveCpuTurnState()
+    renderMatchPageWithContext(buildContextValue(state, 'normal'))
+
+    expect(screen.getByTestId('match-lane-art-cpu')).toBeInTheDocument()
+    expect(screen.getByTestId('match-lane-art-player')).toBeInTheDocument()
+  })
+
   test('adds 4x4 layout classes to match panel and both hands', () => {
     const state = makeActivePlayerTurnState4x4()
     const { container } = renderMatchPageWithContext(buildContextValue(state, 'normal'))
@@ -860,45 +868,15 @@ describe('MatchPage hand layout classes by mode', () => {
   })
 })
 
-describe('MatchPage abandon action', () => {
-  test('shows abandon button during active matches and calls abandonCurrentMatch on click', async () => {
-    const user = userEvent.setup()
-    const abandonCurrentMatch = vi.fn()
-    const contextValue = buildContextValue(makeActivePlayerTurnState(), 'normal')
-    contextValue.abandonCurrentMatch = abandonCurrentMatch as unknown as GameContextValue['abandonCurrentMatch']
+describe('MatchPage board abandon action', () => {
+  test('does not render board abandon button during active matches', () => {
+    const state = makeActivePlayerTurnState()
+    renderMatchPageWithContext(buildContextValue(state, 'normal'))
 
-    renderMatchPageWithContext(contextValue)
-
-    const abandonButton = screen.getByTestId('abandon-match-button')
-    expect(abandonButton).toHaveTextContent('Abandonner')
-
-    await user.click(abandonButton)
-    expect(abandonCurrentMatch).toHaveBeenCalledTimes(1)
+    expect(screen.queryByTestId('abandon-match-button')).not.toBeInTheDocument()
   })
 
-  test('calls abandonTowerRun in tower queue', async () => {
-    const user = userEvent.setup()
-    const abandonTowerRun = vi.fn()
-    const contextValue = buildContextValue(makeActivePlayerTurnState4x4(), 'tower', 8, {
-      abandonTowerRun: abandonTowerRun as unknown as GameContextValue['abandonTowerRun'],
-    })
-    if (!contextValue.currentMatch) {
-      throw new Error('Expected current match in context fixture.')
-    }
-    contextValue.currentMatch.tower = {
-      floor: 3,
-      checkpointFloor: 0,
-      boss: false,
-      relics: createEmptyRelics(),
-    }
-
-    renderMatchPageWithContext(contextValue)
-
-    await user.click(screen.getByTestId('abandon-match-button'))
-    expect(abandonTowerRun).toHaveBeenCalledTimes(1)
-  })
-
-  test('hides abandon button when match is already finished', async () => {
+  test('does not render board abandon button when match is already finished', async () => {
     const state = makeFinishedState(['player', 'player', 'player', 'player', 'player', 'player', 'player', 'player', 'cpu'])
 
     renderMatchPageWithContext(buildContextValue(state, 'normal'))
@@ -1058,6 +1036,7 @@ describe('MatchPage keyboard gameplay', () => {
     const state = makeActivePlayerTurnState()
     renderMatchPageWithContext(buildContextValue(state, 'normal'))
 
+    expect(screen.getByTestId('match-keyboard-help-trigger')).toHaveTextContent('?')
     expect(screen.getByText(/Clavier: 1-8 carte/i)).toBeInTheDocument()
   })
 
@@ -1216,6 +1195,47 @@ describe('MatchPage effects visualization', () => {
       })
 
       expect(updateCurrentMatch).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('keeps flooded cell visual after eau cast resolves until next card enters it', async () => {
+    vi.useFakeTimers()
+    try {
+      const updateCurrentMatch = vi.fn()
+      const state = makeActivePlayerTurnStateWithWaterCastAnimation()
+      const view = renderMatchPageWithContext(
+        buildContextValue(state, 'normal', 1, {
+          updateCurrentMatch: updateCurrentMatch as unknown as GameContextValue['updateCurrentMatch'],
+        }),
+      )
+
+      fireEvent.click(screen.getByTestId('player-card-c03'))
+      fireEvent.click(screen.getByTestId('board-cell-8'))
+      fireEvent.click(screen.getByTestId('board-cell-4'))
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(900)
+      })
+
+      expect(updateCurrentMatch).toHaveBeenCalledTimes(1)
+      const resolvedState = updateCurrentMatch.mock.calls[0]?.[0] as MatchState
+      expect(resolvedState.elementState?.floodedCell).toBe(4)
+
+      view.rerender(
+        <MemoryRouter initialEntries={['/match']}>
+          <GameContext.Provider
+            value={buildContextValue(resolvedState, 'normal', 1, {
+              updateCurrentMatch: updateCurrentMatch as unknown as GameContextValue['updateCurrentMatch'],
+            })}
+          >
+            <MatchPage />
+          </GameContext.Provider>
+        </MemoryRouter>,
+      )
+
+      expect(screen.getByTestId('board-cell-4')).toHaveClass('fallback-cell--flooded')
     } finally {
       vi.useRealTimers()
     }

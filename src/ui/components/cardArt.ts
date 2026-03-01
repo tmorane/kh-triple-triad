@@ -1,4 +1,5 @@
 const SPLASHART_BASE_PATH = '/splashart'
+const SHINY_SPLASHART_BASE_PATH = '/splashart-shiny'
 const ART_EXTENSIONS = ['png', 'webp', 'jpg'] as const
 const CARD_ART_NAME_ALIASES: Record<string, string[]> = {
   'Minute Bombe': ['Bombe Minute'],
@@ -29,7 +30,23 @@ function unique(values: string[]): string[] {
   return result
 }
 
-export function getCardArtCandidates(cardName: string): string[] {
+interface CardArtOptions {
+  shiny?: boolean
+}
+
+function buildCandidates(basePath: string, filenameVariants: string[], fileSuffix: string = ''): string[] {
+  const candidates: string[] = []
+  for (const filename of filenameVariants) {
+    const encodedFilename = encodeURIComponent(`${filename}${fileSuffix}`)
+    for (const extension of ART_EXTENSIONS) {
+      candidates.push(`${basePath}/${encodedFilename}.${extension}`)
+    }
+  }
+
+  return candidates
+}
+
+export function getCardArtCandidates(cardName: string, options: CardArtOptions = {}): string[] {
   const trimmedName = cardName.trim()
   if (!trimmedName) {
     return []
@@ -52,13 +69,11 @@ export function getCardArtCandidates(cardName: string): string[] {
     ...aliasNameVariants,
   ])
 
-  const candidates: string[] = []
-  for (const filename of filenameVariants) {
-    const encodedFilename = encodeURIComponent(filename)
-    for (const extension of ART_EXTENSIONS) {
-      candidates.push(`${SPLASHART_BASE_PATH}/${encodedFilename}.${extension}`)
-    }
+  const normalCandidates = buildCandidates(SPLASHART_BASE_PATH, filenameVariants)
+  if (!options.shiny) {
+    return normalCandidates
   }
 
-  return candidates
+  const shinyCandidates = buildCandidates(SHINY_SPLASHART_BASE_PATH, filenameVariants, '_Shiny')
+  return unique([...shinyCandidates, ...normalCandidates])
 }

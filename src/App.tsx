@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import { type BackgroundMode, persistBackgroundMode, resolveBackgroundMode, toggleBackgroundMode } from './app/backgroundMode'
 import { CloudProfileAutoSync } from './app/cloud/CloudProfileAutoSync'
 import { useGame } from './app/useGame'
 import { AchievementsPage } from './ui/pages/AchievementsPage'
 import { AccountPage } from './ui/pages/AccountPage'
 import { CollectionPage } from './ui/pages/CollectionPage'
+import { ChangelogsPage } from './ui/pages/ChangelogsPage'
 import { DecksPage } from './ui/pages/DecksPage'
 import { HomePage } from './ui/pages/HomePage'
 import { MatchPage } from './ui/pages/MatchPage'
@@ -25,6 +27,7 @@ function App() {
   const location = useLocation()
   const navigate = useNavigate()
   const [isMoreOpen, setIsMoreOpen] = useState(false)
+  const [backgroundMode, setBackgroundMode] = useState<BackgroundMode>(() => resolveBackgroundMode())
   const ctaLabel = currentMatch ? 'Continue' : 'Play'
   const ctaTarget = currentMatch ? '/match' : '/setup'
 
@@ -63,6 +66,15 @@ function App() {
       delete document.body.dataset.theme
     }
   }, [])
+
+  useEffect(() => {
+    document.body.dataset.backgroundMode = backgroundMode
+    persistBackgroundMode(backgroundMode)
+
+    return () => {
+      delete document.body.dataset.backgroundMode
+    }
+  }, [backgroundMode])
 
   useEffect(() => {
     if (!isMoreOpen) {
@@ -168,6 +180,9 @@ function App() {
               <NavLink to="/rules" data-testid="topbar-more-link-rules" onClick={() => setIsMoreOpen(false)}>
                 Rules
               </NavLink>
+              <NavLink to="/changelogs" data-testid="topbar-more-link-changelogs" onClick={() => setIsMoreOpen(false)}>
+                Changelogs
+              </NavLink>
               <NavLink to="/account" data-testid="topbar-more-link-account" onClick={() => setIsMoreOpen(false)}>
                 Account
               </NavLink>
@@ -191,6 +206,7 @@ function App() {
           <Route path="/achievements" element={<AchievementsPage />} />
           <Route path="/missions" element={<MissionsPage />} />
           <Route path="/ranks" element={<RanksPage />} />
+          <Route path="/changelogs" element={<ChangelogsPage />} />
           <Route path="/account" element={<AccountPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
@@ -224,6 +240,19 @@ function App() {
           More
         </button>
       </nav>
+
+      <button
+        type="button"
+        className="background-mode-toggle"
+        data-testid="background-mode-toggle"
+        aria-label="Toggle background mode"
+        onClick={() => setBackgroundMode((mode) => toggleBackgroundMode(mode))}
+      >
+        <span className="background-mode-toggle__icon" aria-hidden="true">
+          {backgroundMode === 'dark' ? '☀' : '☾'}
+        </span>
+        <span className="background-mode-toggle__label">{backgroundMode === 'dark' ? 'Light' : 'Dark'}</span>
+      </button>
     </div>
   )
 }

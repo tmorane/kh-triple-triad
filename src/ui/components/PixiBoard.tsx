@@ -32,8 +32,56 @@ interface PixiBoardProps {
 }
 
 const boardSize = 468
-const boardInset = 30
-const gap = 10
+const defaultBoardInset = 30
+const defaultBoardGap = 10
+const neutralBoardInset = 78
+const neutralBoardGap = 4
+const WATER_BOARD_EFFECT_TEXTURE_SRC = '/ui/match/board-effects/water.png'
+
+type BoardLayout = {
+  inset: number
+  gap: number
+}
+
+type PlacedCardVisualLayout = {
+  plateInset: number
+  artInset: number
+  artScaleInset: number
+  crestInsetFactor: number
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function resolvePixiBoardClassName(useNeutralBoardArt: boolean): string {
+  return useNeutralBoardArt ? 'pixi-board has-neutral-board-art' : 'pixi-board'
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function resolveBoardLayout(boardDimension: number, useNeutralBoardArt: boolean): BoardLayout {
+  if (useNeutralBoardArt && boardDimension === 3) {
+    return { inset: neutralBoardInset, gap: neutralBoardGap }
+  }
+
+  return { inset: defaultBoardInset, gap: defaultBoardGap }
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function resolvePlacedCardVisualLayout(useNeutralBoardArt: boolean): PlacedCardVisualLayout {
+  if (useNeutralBoardArt) {
+    return {
+      plateInset: 8,
+      artInset: 9,
+      artScaleInset: 11,
+      crestInsetFactor: 0.22,
+    }
+  }
+
+  return {
+    plateInset: 12,
+    artInset: 16,
+    artScaleInset: 16,
+    crestInsetFactor: 0.26,
+  }
+}
 
 interface ArenaPalette {
   frameOuterFill: number
@@ -219,6 +267,8 @@ function getCardSigil(name: string): string {
 }
 
 const cardArtTextureCache = new Map<string, Promise<Texture | null>>()
+const neutralBoardTextureUrl = `${import.meta.env.BASE_URL}ui/match/boards/neutral-board.png`
+let neutralBoardTexturePromise: Promise<Texture | null> | null = null
 
 async function loadCardArtTexture(cardName: string, loadTexture: (url: string) => Promise<Texture>): Promise<Texture | null> {
   const cachedTexturePromise = cardArtTextureCache.get(cardName)
@@ -242,6 +292,21 @@ async function loadCardArtTexture(cardName: string, loadTexture: (url: string) =
 
   cardArtTextureCache.set(cardName, texturePromise)
   return texturePromise
+}
+
+const boardCardTextureLoadOptions = {
+  scaleMode: 'linear',
+  autoGenerateMipmaps: true,
+  maxAnisotropy: 4,
+} as const
+
+async function loadNeutralBoardTexture(loadTexture: (url: string) => Promise<Texture>): Promise<Texture | null> {
+  if (neutralBoardTexturePromise) {
+    return neutralBoardTexturePromise
+  }
+
+  neutralBoardTexturePromise = loadTexture(neutralBoardTextureUrl).catch(() => null)
+  return neutralBoardTexturePromise
 }
 
 function handleFallbackCardArtError(event: SyntheticEvent<HTMLImageElement>) {
@@ -307,9 +372,18 @@ export function PixiBoard({
     return window.matchMedia('(prefers-reduced-motion: reduce)').matches
   }, [])
   const boardDimension = useMemo(() => getBoardDimension(board.length), [board.length])
+  const neutralBoardArtEnabled = boardDimension === 3
+  const boardLayout = useMemo(
+    () => resolveBoardLayout(boardDimension, neutralBoardArtEnabled),
+    [boardDimension, neutralBoardArtEnabled],
+  )
+  const placedCardVisualLayout = useMemo(
+    () => resolvePlacedCardVisualLayout(neutralBoardArtEnabled),
+    [neutralBoardArtEnabled],
+  )
   const cellSize = useMemo(
-    () => (boardSize - boardInset * 2 - gap * Math.max(0, boardDimension - 1)) / boardDimension,
-    [boardDimension],
+    () => (boardSize - boardLayout.inset * 2 - boardLayout.gap * Math.max(0, boardDimension - 1)) / boardDimension,
+    [boardDimension, boardLayout.gap, boardLayout.inset],
   )
 
   const highlightedSet = useMemo(() => new Set(highlightedCells), [highlightedCells])
@@ -430,12 +504,18 @@ export function PixiBoard({
       if (cancelled) {
         return
       }
+      const shouldUseNeutralBoardArt = neutralBoardArtEnabled
       const waterTexture = waterLogo
         ? await Assets.load<Texture>(waterLogo.imageSrc).catch(() => null)
+        : null
+      const waterBoardEffectTexture = await Assets.load<Texture>(WATER_BOARD_EFFECT_TEXTURE_SRC).catch(() => null)
+      const neutralBoardTexture = shouldUseNeutralBoardArt
+        ? await loadNeutralBoardTexture((url) => Assets.load<Texture>(url))
         : null
       if (cancelled) {
         return
       }
+      const usingNeutralBoardArt = shouldUseNeutralBoardArt && neutralBoardTexture !== null
 
       if (tickerCleanupRef.current) {
         tickerCleanupRef.current()
@@ -445,79 +525,90 @@ export function PixiBoard({
       const staleChildren = app.stage.removeChildren()
       staleChildren.forEach((child) => child.destroy())
 
-      const frameOuter = new Graphics()
-      frameOuter.roundRect(1, 1, boardSize - 2, boardSize - 2, 28)
-      frameOuter.fill({ color: arenaPalette.frameOuterFill, alpha: 0.97 })
-      frameOuter.stroke({ width: 2, color: arenaPalette.frameOuterEdge, alpha: 0.46 })
-      app.stage.addChild(frameOuter)
-
-      const frameInner = new Graphics()
-      frameInner.roundRect(14, 14, boardSize - 28, boardSize - 28, 22)
-      frameInner.fill({ color: arenaPalette.frameInnerFill, alpha: 0.95 })
-      frameInner.stroke({ width: 2, color: arenaPalette.frameInnerEdge, alpha: 0.42 })
-      app.stage.addChild(frameInner)
-
-      const turnAura = new Graphics()
+      let turnAura: InstanceType<typeof Graphics> | null = null
       const auraColor =
         status === 'finished'
           ? arenaPalette.turnAuraFinished
           : turnActor === 'player'
             ? arenaPalette.turnAuraPlayer
             : arenaPalette.turnAuraCpu
-      turnAura.roundRect(5, 5, boardSize - 10, boardSize - 10, 25)
-      turnAura.stroke({ width: 3, color: auraColor, alpha: status === 'active' ? 0.22 : 0.12 })
-      app.stage.addChild(turnAura)
+      if (usingNeutralBoardArt) {
+        const boardSprite = new Sprite(neutralBoardTexture!)
+        boardSprite.anchor.set(0.5)
+        boardSprite.x = boardSize / 2
+        boardSprite.y = boardSize / 2
+        boardSprite.width = boardSize - 6
+        boardSprite.height = boardSize - 6
+        app.stage.addChild(boardSprite)
+      } else {
+        const frameOuter = new Graphics()
+        frameOuter.roundRect(1, 1, boardSize - 2, boardSize - 2, 28)
+        frameOuter.fill({ color: arenaPalette.frameOuterFill, alpha: 0.97 })
+        frameOuter.stroke({ width: 2, color: arenaPalette.frameOuterEdge, alpha: 0.46 })
+        app.stage.addChild(frameOuter)
 
-      const fieldX = boardInset - 14
-      const fieldY = boardInset - 14
-      const fieldSize = boardSize - fieldX * 2
-      const field = new Graphics()
-      field.roundRect(fieldX, fieldY, fieldSize, fieldSize, 18)
-      field.fill({ color: arenaPalette.fieldFill, alpha: 0.98 })
-      field.stroke({ width: 2, color: arenaPalette.fieldEdge, alpha: 0.3 })
-      app.stage.addChild(field)
+        const frameInner = new Graphics()
+        frameInner.roundRect(14, 14, boardSize - 28, boardSize - 28, 22)
+        frameInner.fill({ color: arenaPalette.frameInnerFill, alpha: 0.95 })
+        frameInner.stroke({ width: 2, color: arenaPalette.frameInnerEdge, alpha: 0.42 })
+        app.stage.addChild(frameInner)
 
-      const fieldBands = new Graphics()
-      for (let offset = -fieldSize; offset < fieldSize; offset += 26) {
-        fieldBands.moveTo(fieldX + offset, fieldY)
-        fieldBands.lineTo(fieldX + fieldSize + offset, fieldY + fieldSize)
+        turnAura = new Graphics()
+        turnAura.roundRect(5, 5, boardSize - 10, boardSize - 10, 25)
+        turnAura.stroke({ width: 3, color: auraColor, alpha: status === 'active' ? 0.22 : 0.12 })
+        app.stage.addChild(turnAura)
+
+        const fieldX = boardLayout.inset - 14
+        const fieldY = boardLayout.inset - 14
+        const fieldSize = boardSize - fieldX * 2
+        const field = new Graphics()
+        field.roundRect(fieldX, fieldY, fieldSize, fieldSize, 18)
+        field.fill({ color: arenaPalette.fieldFill, alpha: 0.98 })
+        field.stroke({ width: 2, color: arenaPalette.fieldEdge, alpha: 0.3 })
+        app.stage.addChild(field)
+
+        const fieldBands = new Graphics()
+        for (let offset = -fieldSize; offset < fieldSize; offset += 26) {
+          fieldBands.moveTo(fieldX + offset, fieldY)
+          fieldBands.lineTo(fieldX + fieldSize + offset, fieldY + fieldSize)
+        }
+        fieldBands.stroke({ width: 1, color: arenaPalette.fieldBand, alpha: 0.02 })
+        app.stage.addChild(fieldBands)
+
+        const emblemRadius = Math.max(72, fieldSize * 0.3)
+        const emblemHalo = new Graphics()
+        emblemHalo.circle(boardSize / 2, boardSize / 2, emblemRadius * 1.16)
+        emblemHalo.stroke({ width: 2, color: arenaPalette.emblemRing, alpha: 0.06 })
+        app.stage.addChild(emblemHalo)
+
+        const emblemRing = new Graphics()
+        emblemRing.circle(boardSize / 2, boardSize / 2, emblemRadius)
+        emblemRing.stroke({ width: 5, color: arenaPalette.emblemRing, alpha: 0.14 })
+        app.stage.addChild(emblemRing)
+
+        const emblemInnerRing = new Graphics()
+        emblemInnerRing.circle(boardSize / 2, boardSize / 2, emblemRadius * 0.68)
+        emblemInnerRing.stroke({ width: 3, color: arenaPalette.emblemInnerRing, alpha: 0.12 })
+        app.stage.addChild(emblemInnerRing)
+
+        const emblemDivider = new Graphics()
+        emblemDivider.moveTo(boardSize / 2 - emblemRadius, boardSize / 2)
+        emblemDivider.lineTo(boardSize / 2 + emblemRadius, boardSize / 2)
+        emblemDivider.stroke({ width: 5, color: arenaPalette.emblemDivider, alpha: 0.1 })
+        app.stage.addChild(emblemDivider)
+
+        const emblemCore = new Graphics()
+        emblemCore.circle(boardSize / 2, boardSize / 2, emblemRadius * 0.2)
+        emblemCore.fill({ color: arenaPalette.emblemCoreFill, alpha: 0.12 })
+        emblemCore.stroke({ width: 3, color: arenaPalette.emblemCoreEdge, alpha: 0.14 })
+        app.stage.addChild(emblemCore)
+
+        const emblemCoreButton = new Graphics()
+        emblemCoreButton.circle(boardSize / 2, boardSize / 2, emblemRadius * 0.1)
+        emblemCoreButton.fill({ color: arenaPalette.emblemRing, alpha: 0.08 })
+        emblemCoreButton.stroke({ width: 2, color: arenaPalette.emblemCoreEdge, alpha: 0.12 })
+        app.stage.addChild(emblemCoreButton)
       }
-      fieldBands.stroke({ width: 1, color: arenaPalette.fieldBand, alpha: 0.02 })
-      app.stage.addChild(fieldBands)
-
-      const emblemRadius = Math.max(72, fieldSize * 0.3)
-      const emblemHalo = new Graphics()
-      emblemHalo.circle(boardSize / 2, boardSize / 2, emblemRadius * 1.16)
-      emblemHalo.stroke({ width: 2, color: arenaPalette.emblemRing, alpha: 0.06 })
-      app.stage.addChild(emblemHalo)
-
-      const emblemRing = new Graphics()
-      emblemRing.circle(boardSize / 2, boardSize / 2, emblemRadius)
-      emblemRing.stroke({ width: 5, color: arenaPalette.emblemRing, alpha: 0.14 })
-      app.stage.addChild(emblemRing)
-
-      const emblemInnerRing = new Graphics()
-      emblemInnerRing.circle(boardSize / 2, boardSize / 2, emblemRadius * 0.68)
-      emblemInnerRing.stroke({ width: 3, color: arenaPalette.emblemInnerRing, alpha: 0.12 })
-      app.stage.addChild(emblemInnerRing)
-
-      const emblemDivider = new Graphics()
-      emblemDivider.moveTo(boardSize / 2 - emblemRadius, boardSize / 2)
-      emblemDivider.lineTo(boardSize / 2 + emblemRadius, boardSize / 2)
-      emblemDivider.stroke({ width: 5, color: arenaPalette.emblemDivider, alpha: 0.1 })
-      app.stage.addChild(emblemDivider)
-
-      const emblemCore = new Graphics()
-      emblemCore.circle(boardSize / 2, boardSize / 2, emblemRadius * 0.2)
-      emblemCore.fill({ color: arenaPalette.emblemCoreFill, alpha: 0.12 })
-      emblemCore.stroke({ width: 3, color: arenaPalette.emblemCoreEdge, alpha: 0.14 })
-      app.stage.addChild(emblemCore)
-
-      const emblemCoreButton = new Graphics()
-      emblemCoreButton.circle(boardSize / 2, boardSize / 2, emblemRadius * 0.1)
-      emblemCoreButton.fill({ color: arenaPalette.emblemRing, alpha: 0.08 })
-      emblemCoreButton.stroke({ width: 2, color: arenaPalette.emblemCoreEdge, alpha: 0.12 })
-      app.stage.addChild(emblemCoreButton)
 
       type PixiGraphics = InstanceType<typeof Graphics>
       type PixiContainer = InstanceType<typeof Container>
@@ -535,8 +626,8 @@ export function PixiBoard({
       board.forEach((slot, index) => {
         const row = Math.floor(index / boardDimension)
         const col = index % boardDimension
-        const x = boardInset + col * (cellSize + gap)
-        const y = boardInset + row * (cellSize + gap)
+        const x = boardLayout.inset + col * (cellSize + boardLayout.gap)
+        const y = boardLayout.inset + row * (cellSize + boardLayout.gap)
 
         const cellEffectIndicators = effectsView?.cellIndicators[index] ?? []
         const boardEffectIndicators = effectsView?.boardCardIndicators[index] ?? []
@@ -565,9 +656,11 @@ export function PixiBoard({
             : slot?.owner === 'cpu'
               ? arenaPalette.cpuCellEdge
               : arenaPalette.emptyCellEdge
+        const cellFillAlpha = usingNeutralBoardArt ? (slot ? 0.24 : 0.1) : 0.8
+        const cellEdgeAlpha = usingNeutralBoardArt ? (isHighlightedEmpty ? 0.54 : 0.28) : 0.42
         cell.roundRect(x, y, cellSize, cellSize, 12)
-        cell.fill({ color: fillColor, alpha: 0.8 })
-        cell.stroke({ width: 2, color: edgeColor, alpha: 0.42 })
+        cell.fill({ color: fillColor, alpha: cellFillAlpha })
+        cell.stroke({ width: 2, color: edgeColor, alpha: cellEdgeAlpha })
 
         const isClickable = interactive && slot === null
         const isKeyboardTarget = focusedCell === index && slot === null
@@ -597,25 +690,38 @@ export function PixiBoard({
 
         if (slot === null) {
           const cellInner = new Graphics()
+          const emptyInnerAlpha = usingNeutralBoardArt
+            ? Math.min(arenaPalette.emptyCellInnerAlpha, 0.08)
+            : arenaPalette.emptyCellInnerAlpha
           cellInner.roundRect(x + 6, y + 6, cellSize - 12, cellSize - 12, 9)
-          cellInner.fill({ color: arenaPalette.emptyCellInnerFill, alpha: arenaPalette.emptyCellInnerAlpha })
+          cellInner.fill({ color: arenaPalette.emptyCellInnerFill, alpha: emptyInnerAlpha })
           app.stage.addChild(cellInner)
 
           if (isFloodedCell || isFrozenCell) {
-            const hazardOverlay = new Graphics()
-            hazardOverlay.roundRect(x + 4, y + 4, cellSize - 8, cellSize - 8, 10)
-            hazardOverlay.fill({
-              color: isFloodedCell ? 0x7fd9ff : 0xc3ecff,
-              alpha: isFloodedCell ? 0.09 : 0.07,
-            })
-            hazardOverlay.stroke({
-              width: 2,
-              color: isFloodedCell ? 0x4ac9ff : 0x8ce6ff,
-              alpha: 0.46,
-            })
-            app.stage.addChild(hazardOverlay)
+            if (isFloodedCell && waterBoardEffectTexture) {
+              const floodedTextureMask = new Graphics()
+              floodedTextureMask.roundRect(x + 4, y + 4, cellSize - 8, cellSize - 8, 10)
+              floodedTextureMask.fill({ color: 0xffffff })
+
+              const floodedTexture = new Sprite(waterBoardEffectTexture)
+              floodedTexture.x = x + 4
+              floodedTexture.y = y + 4
+              floodedTexture.width = cellSize - 8
+              floodedTexture.height = cellSize - 8
+              floodedTexture.alpha = 0.56
+              floodedTexture.mask = floodedTextureMask
+
+              app.stage.addChild(floodedTexture)
+              app.stage.addChild(floodedTextureMask)
+            }
 
             if (isFrozenCell) {
+              const hazardOverlay = new Graphics()
+              hazardOverlay.roundRect(x + 4, y + 4, cellSize - 8, cellSize - 8, 10)
+              hazardOverlay.fill({ color: 0xc3ecff, alpha: 0.07 })
+              hazardOverlay.stroke({ width: 2, color: 0x8ce6ff, alpha: 0.46 })
+              app.stage.addChild(hazardOverlay)
+
               const hazardText = new Text({
                 text: '❄️',
                 style: {
@@ -630,18 +736,13 @@ export function PixiBoard({
               hazardText.y = y + cellSize / 2
               app.stage.addChild(hazardText)
             } else if (waterTexture) {
-              const hazardWaterBadge = new Graphics()
-              hazardWaterBadge.circle(x + cellSize / 2, y + cellSize / 2, Math.max(13, cellSize * 0.16))
-              hazardWaterBadge.fill({ color: 0x2b7ead, alpha: 0.7 })
-              hazardWaterBadge.stroke({ width: 1.5, color: 0xcaf2ff, alpha: 0.7 })
-              app.stage.addChild(hazardWaterBadge)
-
               const hazardWaterLogo = new Sprite(waterTexture)
               hazardWaterLogo.anchor.set(0.5)
               hazardWaterLogo.width = Math.max(16, cellSize * 0.18)
               hazardWaterLogo.height = Math.max(16, cellSize * 0.18)
               hazardWaterLogo.x = x + cellSize / 2
               hazardWaterLogo.y = y + cellSize / 2
+              hazardWaterLogo.alpha = 0.96
               app.stage.addChild(hazardWaterLogo)
             } else {
               const hazardText = new Text({
@@ -665,8 +766,8 @@ export function PixiBoard({
         if (isKeyboardTarget) {
           const keyboardTargetGlow = new Graphics()
           keyboardTargetGlow.roundRect(x + 2, y + 2, cellSize - 4, cellSize - 4, 10)
-          keyboardTargetGlow.fill({ color: arenaPalette.keyboardTargetFill, alpha: 0.08 })
-          keyboardTargetGlow.stroke({ width: 2, color: arenaPalette.keyboardTargetEdge, alpha: 0.45 })
+          keyboardTargetGlow.fill({ color: arenaPalette.keyboardTargetFill, alpha: usingNeutralBoardArt ? 0.06 : 0.08 })
+          keyboardTargetGlow.stroke({ width: 2, color: arenaPalette.keyboardTargetEdge, alpha: usingNeutralBoardArt ? 0.38 : 0.45 })
           app.stage.addChild(keyboardTargetGlow)
         }
 
@@ -675,9 +776,9 @@ export function PixiBoard({
           overlay.roundRect(x + 2, y + 2, cellSize - 4, cellSize - 4, 10)
           overlay.fill({
             color: prefersReducedMotion ? arenaPalette.highlightOverlayFillReduced : arenaPalette.highlightOverlayFill,
-            alpha: prefersReducedMotion ? 0.08 : 0.06,
+            alpha: prefersReducedMotion ? (usingNeutralBoardArt ? 0.06 : 0.08) : usingNeutralBoardArt ? 0.04 : 0.06,
           })
-          overlay.stroke({ width: 2, color: arenaPalette.highlightOverlayStroke, alpha: 0.42 })
+          overlay.stroke({ width: 2, color: arenaPalette.highlightOverlayStroke, alpha: usingNeutralBoardArt ? 0.34 : 0.42 })
           app.stage.addChild(overlay)
           pulseOverlays.push(overlay)
 
@@ -733,7 +834,9 @@ export function PixiBoard({
           const sigil = getCardSigil(card.name)
           const ownerPlate = slot.owner === 'player' ? arenaPalette.ownerPlatePlayer : arenaPalette.ownerPlateCpu
           const ownerEdge = slot.owner === 'player' ? arenaPalette.ownerEdgePlayer : arenaPalette.ownerEdgeCpu
-          const artInset = 16
+          const plateInset = placedCardVisualLayout.plateInset
+          const artInset = placedCardVisualLayout.artInset
+          const artScaleInset = placedCardVisualLayout.artScaleInset
           const artWidth = cellSize - artInset * 2
           const artHeight = cellSize - artInset * 2
 
@@ -742,7 +845,7 @@ export function PixiBoard({
           cardContainer.position.set(x + cellSize / 2, y + cellSize / 2)
 
           const plate = new Graphics()
-          plate.roundRect(12, 12, cellSize - 24, cellSize - 24, 14)
+          plate.roundRect(plateInset, plateInset, cellSize - plateInset * 2, cellSize - plateInset * 2, 14)
           plate.fill({ color: ownerPlate, alpha: 0.72 })
           plate.stroke({ width: 1, color: ownerEdge, alpha: 0.4 })
           cardContainer.addChild(plate)
@@ -757,7 +860,9 @@ export function PixiBoard({
           cardContainer.addChild(centerLayer)
 
           const fallbackCrest = new Graphics()
-          fallbackCrest.roundRect(cellSize * 0.26, cellSize * 0.26, cellSize * 0.48, cellSize * 0.48, 12)
+          const crestInset = cellSize * placedCardVisualLayout.crestInsetFactor
+          const crestSize = cellSize - crestInset * 2
+          fallbackCrest.roundRect(crestInset, crestInset, crestSize, crestSize, 12)
           fallbackCrest.fill({ color: arenaPalette.fallbackCrestFill, alpha: 0.42 })
           fallbackCrest.stroke({ width: 1, color: arenaPalette.fallbackCrestStroke, alpha: 0.34 })
           centerLayer.addChild(fallbackCrest)
@@ -777,7 +882,12 @@ export function PixiBoard({
           fallbackSigilLabel.y = cellSize / 2
           centerLayer.addChild(fallbackSigilLabel)
 
-          void loadCardArtTexture(card.name, (url) => Assets.load<Texture>(url))
+          void loadCardArtTexture(card.name, (url) =>
+            Assets.load<Texture>({
+              src: url,
+              data: boardCardTextureLoadOptions,
+            }),
+          )
             .then((cardArtTexture) => {
               if (cancelled || centerLayer.destroyed || !cardArtTexture) {
                 return
@@ -797,8 +907,13 @@ export function PixiBoard({
               artSprite.y = cellSize / 2
               const sourceWidth = Math.max(1, cardArtTexture.width)
               const sourceHeight = Math.max(1, cardArtTexture.height)
-              const coverScale = Math.max(artWidth / sourceWidth, artHeight / sourceHeight)
-              artSprite.scale.set(coverScale)
+              const artScaleWidth = cellSize - artScaleInset * 2
+              const artScaleHeight = cellSize - artScaleInset * 2
+              const containScale = Math.min(artScaleWidth / sourceWidth, artScaleHeight / sourceHeight)
+              const artScaleFactor = usingNeutralBoardArt ? 0.9 : 0.94
+              artSprite.scale.set(containScale * artScaleFactor)
+              cardArtTexture.source.scaleMode = 'linear'
+              cardArtTexture.source.maxAnisotropy = 4
               artSprite.mask = artMask
               centerLayer.addChildAt(artSprite, 0)
 
@@ -1236,7 +1351,9 @@ export function PixiBoard({
         animate = () => {
           elapsedMs += app.ticker.deltaMS
           const auraPulse = status === 'active' ? 0.16 + (Math.sin((elapsedMs / 1600) * Math.PI * 2) + 1) * 0.04 : 0.1
-          turnAura.alpha = auraPulse
+          if (turnAura) {
+            turnAura.alpha = auraPulse
+          }
 
           pulseOverlays.forEach((overlay, index) => {
             const wave = (Math.sin((elapsedMs / 1200) * Math.PI * 2 + index * 0.55) + 1) * 0.5
@@ -1294,6 +1411,8 @@ export function PixiBoard({
     arenaVariant,
     board,
     boardDimension,
+    boardLayout.gap,
+    boardLayout.inset,
     cellSize,
     effectsView,
     focusedCell,
@@ -1302,6 +1421,10 @@ export function PixiBoard({
     poisonLogo,
     waterLogo,
     prefersReducedMotion,
+    placedCardVisualLayout.artInset,
+    placedCardVisualLayout.artScaleInset,
+    placedCardVisualLayout.crestInsetFactor,
+    placedCardVisualLayout.plateInset,
     recentPlacedSet,
     shouldUseFallback,
     status,
@@ -1311,11 +1434,14 @@ export function PixiBoard({
     transientGroundSet,
     transientWaterPenaltySet,
     turnActor,
+    neutralBoardArtEnabled,
   ])
 
   if (shouldUseFallback) {
+    const hasNeutralBoardArt = boardDimension === 3
     const boardClasses = [
       'fallback-board',
+      hasNeutralBoardArt ? 'has-neutral-board-art' : '',
       `is-arena-${arenaVariant}`,
       turnActor === 'player' ? 'is-turn-player' : 'is-turn-cpu',
       status === 'finished' ? 'is-finished' : '',
@@ -1544,5 +1670,5 @@ export function PixiBoard({
     )
   }
 
-  return <div ref={hostRef} className="pixi-board" />
+  return <div ref={hostRef} className={resolvePixiBoardClassName(neutralBoardArtEnabled)} />
 }

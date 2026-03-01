@@ -3,7 +3,15 @@ import { describe, expect, test, vi } from 'vitest'
 import type { MatchEffectsViewModel } from '../../domain/match/effectsViewModel'
 import { getCard } from '../../domain/cards/cardPool'
 import type { Actor } from '../../domain/types'
-import { PixiBoard, getPixiRenderResolution, type BoardArenaVariant, type BoardSlot } from './PixiBoard'
+import {
+  PixiBoard,
+  getPixiRenderResolution,
+  resolveBoardLayout,
+  resolvePixiBoardClassName,
+  resolvePlacedCardVisualLayout,
+  type BoardArenaVariant,
+  type BoardSlot,
+} from './PixiBoard'
 
 function makeEmptyBoard(): Array<BoardSlot | null> {
   return Array.from({ length: 9 }, () => null)
@@ -50,6 +58,32 @@ describe('PixiBoard', () => {
     expect(getPixiRenderResolution(0.6)).toBe(1)
     expect(getPixiRenderResolution(1.5)).toBe(1.5)
     expect(getPixiRenderResolution(3)).toBe(2)
+  })
+
+  test('uses tighter 3x3 layout when neutral board art is enabled', () => {
+    expect(resolveBoardLayout(3, true)).toEqual({ inset: 78, gap: 4 })
+    expect(resolveBoardLayout(3, false)).toEqual({ inset: 30, gap: 10 })
+    expect(resolveBoardLayout(4, true)).toEqual({ inset: 30, gap: 10 })
+  })
+
+  test('uses larger placed-card visual layout on neutral board art', () => {
+    expect(resolvePlacedCardVisualLayout(true)).toEqual({
+      plateInset: 8,
+      artInset: 9,
+      artScaleInset: 11,
+      crestInsetFactor: 0.22,
+    })
+    expect(resolvePlacedCardVisualLayout(false)).toEqual({
+      plateInset: 12,
+      artInset: 16,
+      artScaleInset: 16,
+      crestInsetFactor: 0.26,
+    })
+  })
+
+  test('uses transparent pixi host class when neutral board art is enabled', () => {
+    expect(resolvePixiBoardClassName(true)).toBe('pixi-board has-neutral-board-art')
+    expect(resolvePixiBoardClassName(false)).toBe('pixi-board')
   })
 
   test('applies turn and status classes in fallback mode', () => {
@@ -200,6 +234,26 @@ describe('PixiBoard', () => {
     renderFallbackBoard({ board, interactive: false })
 
     expect(screen.getAllByRole('gridcell')).toHaveLength(16)
+  })
+
+  test('uses neutral board art class for 3x3 fallback only', () => {
+    const { rerender } = renderFallbackBoard({ interactive: false })
+
+    const grid = screen.getByRole('grid', { name: 'Match board' })
+    expect(grid).toHaveClass('has-neutral-board-art')
+
+    rerender(
+      <PixiBoard
+        board={Array.from({ length: 16 }, () => null)}
+        highlightedCells={[]}
+        interactive={false}
+        onCellClick={vi.fn()}
+        turnActor="player"
+        status="active"
+      />,
+    )
+
+    expect(grid).not.toHaveClass('has-neutral-board-art')
   })
 
   test('does not render index numbers in empty fallback cells', () => {
