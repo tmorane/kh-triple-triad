@@ -106,15 +106,31 @@ function collectConsumedElementTypes(state: MatchState, actor: Actor, mode: Matc
     }
   }
 
-  const handCardIds = new Set(state.hands[actor])
-  const initialDeck = actor === 'player' ? state.config.playerDeck : state.config.cpuDeck
-  for (const cardId of initialDeck) {
-    if (!handCardIds.has(cardId)) {
-      consumed.add(getCard(cardId).elementId)
-    }
-  }
-
   return consumed
+}
+
+function isPlantePassiveActiveForOwner(state: MatchState, cell: number, owner: Actor): boolean {
+  const sourceOwner = state.elementState?.boardEffectsByCell[cell]?.planteSourceOwner
+  if (!sourceOwner) {
+    return true
+  }
+  return sourceOwner === owner
+}
+
+function countAdjacentAlliedPlante(state: MatchState, cell: number, owner: Actor, boardSize: number): number {
+  return [cell - boardSize, cell + boardSize, cell - 1, cell + 1].filter((neighborCell) => {
+    if (neighborCell < 0 || neighborCell >= state.board.length) {
+      return false
+    }
+    if ((neighborCell === cell - 1 || neighborCell === cell + 1) && Math.floor(neighborCell / boardSize) !== Math.floor(cell / boardSize)) {
+      return false
+    }
+    const neighbor = state.board[neighborCell]
+    if (!neighbor || neighbor.owner !== owner || getCard(neighbor.cardId).elementId !== 'plante') {
+      return false
+    }
+    return isPlantePassiveActiveForOwner(state, neighborCell, owner)
+  }).length
 }
 
 function buildLaneTypeSlots(state: MatchState, actor: Actor, mode: MatchEffectsViewModel['mode']): MatchLaneTypeSlot[] {
@@ -145,7 +161,7 @@ function buildLaneTypeSlots(state: MatchState, actor: Actor, mode: MatchEffectsV
 
 export function buildMatchEffectsViewModel(state: MatchState): MatchEffectsViewModel {
   const elementState = state.elementState
-  const mode: 'normal' | 'effects' = elementState?.mode === 'normal' ? 'normal' : 'effects'
+  const mode: 'normal' | 'effects' = elementState?.enabled && elementState.mode !== 'normal' ? 'effects' : 'normal'
   const globalIndicators: EffectIndicator[] = []
   const cellIndicators: Partial<Record<number, EffectIndicator[]>> = {}
   const boardCardIndicators: Partial<Record<number, EffectIndicator[]>> = {}
@@ -215,8 +231,8 @@ export function buildMatchEffectsViewModel(state: MatchState): MatchEffectsViewM
       pushIndicator(indicators, {
         key: 'card-combat-attack',
         icon: '⚔',
-        label: 'ATK +2',
-        tooltip: '⚔️ +2 uniquement quand cette carte attaque.',
+        label: 'ATK +1',
+        tooltip: '⚔️ +1 uniquement quand cette carte attaque.',
         tone: 'buff',
       })
     }
@@ -226,28 +242,13 @@ export function buildMatchEffectsViewModel(state: MatchState): MatchEffectsViewM
         key: 'card-spectre-passive',
         icon: '👻',
         label: 'Ignore cases',
-        tooltip: '👻 Ignore les malus et restrictions de case.',
+        tooltip: '👻 Ignore les malus, ignore les restrictions de case et gagne +1 sur toutes les stats.',
         tone: 'info',
       })
     }
 
-    if (card.elementId === 'plante') {
-      const adjacentBonus = Math.min(
-        2,
-        [cell - boardSize, cell + boardSize, cell - 1, cell + 1].filter((neighborCell) => {
-          if (neighborCell < 0 || neighborCell >= state.board.length) {
-            return false
-          }
-          if (
-            (neighborCell === cell - 1 || neighborCell === cell + 1) &&
-            Math.floor(neighborCell / boardSize) !== Math.floor(cell / boardSize)
-          ) {
-            return false
-          }
-          const neighbor = state.board[neighborCell]
-          return neighbor?.owner === slot.owner
-        }).length,
-      )
+    if (card.elementId === 'plante' && isPlantePassiveActiveForOwner(state, cell, slot.owner)) {
+      const adjacentBonus = Math.min(2, countAdjacentAlliedPlante(state, cell, slot.owner, boardSize))
       if (adjacentBonus > 0) {
         pushIndicator(indicators, {
           key: 'card-plante-pack',
@@ -275,13 +276,26 @@ export function buildMatchEffectsViewModel(state: MatchState): MatchEffectsViewM
       })
     }
 
-    const volatile = effects.volatileAllStatsMinusOneUntilEndOfOwnerNextTurn
-    if (volatile && isTimerActive(elementState?.actorTurnCount[volatile.actor] ?? 0, volatile.untilTurn)) {
+    const activeAllStatsMinusOneStacks = effects.allStatsMinusOneStacks.filter((stack) =>
+      isTimerActive(elementState?.actorTurnCount[stack.actor] ?? 0, stack.untilTurn),
+    )
+    const activeVolatileStacks = activeAllStatsMinusOneStacks.filter((stack) => stack.source === 'vol')
+    if (activeVolatileStacks.length > 0) {
       pushIndicator(indicators, {
         key: 'card-volatile',
         icon: '🕊️',
-        label: 'All -1',
+        label: activeVolatileStacks.length > 1 ? `All -1 x${activeVolatileStacks.length}` : 'All -1',
         tooltip: 'Vol: -1 temporaire sur toutes les stats.',
+        tone: 'debuff',
+      })
+    }
+    const activeGroundStacks = activeAllStatsMinusOneStacks.filter((stack) => stack.source === 'sol')
+    if (activeGroundStacks.length > 0) {
+      pushIndicator(indicators, {
+        key: 'card-ground-volatile',
+        icon: '🪨',
+        label: activeGroundStacks.length > 1 ? `Sol -1 x${activeGroundStacks.length}` : 'Sol -1',
+        tooltip: 'Sol: -1 temporaire sur toutes les stats.',
         tone: 'debuff',
       })
     }
@@ -362,17 +376,20 @@ export function buildMatchEffectsViewModel(state: MatchState): MatchEffectsViewM
       })
     }
 
-    for (const [targetActor, blockedCell] of Object.entries(elementState.frozenCellByActor) as Array<[Actor, number]>) {
-      if (!Number.isInteger(blockedCell)) {
+    for (const [targetActor, frozenEffect] of Object.entries(elementState.frozenCellByActor) as Array<
+      [Actor, { cell: number; turnsRemaining: number } | undefined]
+    >) {
+      if (!frozenEffect || !Number.isInteger(frozenEffect.cell) || frozenEffect.turnsRemaining <= 0) {
         continue
       }
-      const blockedIndicators = ensureIndicatorCollection(cellIndicators, blockedCell)
+      const blockedIndicators = ensureIndicatorCollection(cellIndicators, frozenEffect.cell)
       pushIndicator(blockedIndicators, {
         key: 'cell-frozen',
         icon: '❄️',
-        label: 'Gelée',
-        tooltip: `❄️ ${targetActor === 'player' ? 'Joueur' : 'CPU'}: prochaine pose bloquée ici.`,
+        label: `Gelée ${frozenEffect.turnsRemaining}`,
+        tooltip: `❄️ ${targetActor === 'player' ? 'Joueur' : 'CPU'}: case bloquée (${frozenEffect.turnsRemaining} tour(s) restant(s)).`,
         tone: 'debuff',
+        valueText: `${frozenEffect.turnsRemaining}`,
       })
     }
 

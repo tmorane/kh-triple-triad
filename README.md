@@ -79,8 +79,8 @@ This app is a Vite SPA with `BrowserRouter`, so route fallbacks are required in 
 ### Option 1 (recommended): Vercel
 
 ```bash
-npm run build
-npx vercel --prod
+bun run build
+bunx vercel --prod
 ```
 
 `vercel.json` is included to rewrite all routes to `index.html` (no 404 on refresh).
@@ -88,8 +88,8 @@ npx vercel --prod
 ### Option 2: Netlify
 
 ```bash
-npm run build
-npx netlify deploy --prod --dir dist
+bun run build
+bunx netlify deploy --prod --dir dist
 ```
 
 `netlify.toml` is included with the same SPA redirect behavior.
@@ -110,7 +110,7 @@ cp .env.example .env
 
 2. Fill `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in `.env`.
 3. Run SQL script `docs/supabase-player-profiles.sql` in Supabase SQL editor (creates `player_profiles` + `player_ladder`).
-4. Start app (`npm run dev`) and open `/account`.
+4. Start app (`bun run dev`) and open `/account`.
 5. Use `/ranks` to see:
    - leaderboard by owned cards
    - leaderboard by highest peak rank
@@ -123,3 +123,47 @@ Set `VITE_ENABLE_MOCK_LADDER=true` (or `1`) in `.env` to inject 10 fixed mock us
 - Works even if Supabase is not configured.
 - If Supabase is configured, real rows are merged with mock rows and sorted globally.
 - If cloud ladder fetch fails, the UI falls back to mock rows.
+
+## Admin Image Generation
+
+This project includes an admin page at `/admin/images` for AI image generation.
+Default model: `google/imagen-4.0-generate-001`.
+Generated images are written to `public/admin-images/`.
+The admin gallery now lists every image file found under `public/` via `GET /api/admin/images/gallery`.
+
+### Required environment variables
+
+```bash
+AI_GATEWAY_API_KEY=your_ai_gateway_api_key
+ADMIN_ALLOWED_EMAILS=admin@example.com,another-admin@example.com
+VITE_ADMIN_ALLOWED_EMAILS=admin@example.com,another-admin@example.com
+ADMIN_BYPASS_LOCAL_AUTH=true
+VITE_ADMIN_BYPASS_LOCAL_AUTH=true
+```
+
+- `AI_GATEWAY_API_KEY`: server-side key used by the AI SDK gateway provider.
+- `ADMIN_ALLOWED_EMAILS`: server-side CSV allowlist checked by `/api/admin/images/generate`.
+- `VITE_ADMIN_ALLOWED_EMAILS`: client-side CSV allowlist used only to show/hide the nav link.
+  - If omitted, signed-in users can still open the page; server-side allowlist remains authoritative.
+- `ADMIN_BYPASS_LOCAL_AUTH`: bypasses API auth in local/dev (default `true` outside production).
+- `VITE_ADMIN_BYPASS_LOCAL_AUTH`: bypasses client auth guard in local/dev.
+
+### Auth and access model
+
+- Frontend obtains the active Supabase session access token.
+- The API route validates that token with Supabase Auth.
+- The API route authorizes by checking token email against `ADMIN_ALLOWED_EMAILS`.
+- If unauthorized:
+  - `401`: not authenticated.
+  - `403`: authenticated but not in admin allowlist.
+- In local/dev, auth bypass can be enabled to skip these checks for faster iteration.
+
+### Local runtime note
+
+- `bun run dev` includes the local `/api/admin/images/generate` route via Vite middleware.
+- The local runtime also serves `GET /api/admin/images/gallery` by recursively scanning `public/`.
+- You can still run the Vercel runtime if needed:
+
+```bash
+bunx vercel dev
+```

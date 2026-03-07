@@ -2,7 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ComponentProps } from 'react'
 import { MemoryRouter } from 'react-router-dom'
-import { beforeEach, describe, expect, test, vi } from 'vitest'
+import { afterAll, beforeEach, describe, expect, mock, test, vi } from 'bun:test'
 import { GameContext } from '../../app/GameContext'
 import * as cloudAuth from '../../app/cloud/cloudAuth'
 import * as cloudStore from '../../app/cloud/cloudProfileStore'
@@ -294,4 +294,8 @@ describe('AccountPage', () => {
 
     expect(resetProfile).toHaveBeenCalledTimes(1)
   })
+})
+
+afterAll(() => {
+  mock.restore()
 })

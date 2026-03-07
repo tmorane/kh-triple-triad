@@ -142,7 +142,7 @@ export function PacksPage() {
   }, [openResult])
 
   useEffect(() => {
-    if (!openResult || revealedCount <= 0) {
+    if (!openResult || revealedCount <= 0 || !profile.settings.audioEnabled) {
       return
     }
 
@@ -160,7 +160,7 @@ export function PacksPage() {
       playedSoundByRevealKeyRef.current.add(revealKey)
       playNewCardSound()
     }
-  }, [openResult, revealedCount])
+  }, [openResult, profile.settings.audioEnabled, revealedCount])
 
   const handleOpenPack = (packId: ShopPackId, quantity = 1) => {
     const normalizedQuantity = sanitizeOpenQuantity(quantity)

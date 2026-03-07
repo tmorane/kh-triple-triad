@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test } from 'bun:test'
 import { formatCardPokedexNumber, getCardPokedexNumber } from './pokedex'
 
 describe('pokedex helpers', () => {
@@ -17,5 +17,7 @@ describe('pokedex helpers', () => {
   test('falls back to card id number when card name is not in pokedex mapping', () => {
     expect(getCardPokedexNumber({ id: 'c106', name: 'Ombre' })).toBe(106)
     expect(formatCardPokedexNumber({ id: 'c106', name: 'Ombre' })).toBe('#106')
+    expect(getCardPokedexNumber({ id: 'c251', name: 'X-MissingNo-X' })).toBe(251)
+    expect(formatCardPokedexNumber({ id: 'c251', name: 'X-MissingNo-X' })).toBe('#251')
   })
 })

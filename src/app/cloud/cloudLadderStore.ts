@@ -53,6 +53,36 @@ interface MockLadderSeed {
   updatedAt: string
 }
 
+interface CloudLadderDependencies {
+  listStoredProfilesForLadder: typeof listStoredProfilesForLadder
+  getSupabaseClient: typeof getSupabaseClient
+  isCloudAuthEnabled: typeof isCloudAuthEnabled
+}
+
+const defaultDependencies: CloudLadderDependencies = {
+  listStoredProfilesForLadder,
+  getSupabaseClient,
+  isCloudAuthEnabled,
+}
+
+let dependencyOverridesForTests: Partial<CloudLadderDependencies> | null = null
+let mockLadderEnabledOverrideForTests: boolean | null = null
+
+function dependencies(): CloudLadderDependencies {
+  return {
+    ...defaultDependencies,
+    ...(dependencyOverridesForTests ?? {}),
+  }
+}
+
+export function __setCloudLadderDependenciesForTests(overrides: Partial<CloudLadderDependencies> | null): void {
+  dependencyOverridesForTests = overrides
+}
+
+export function __setMockLadderEnabledForTests(value: boolean | null): void {
+  mockLadderEnabledOverrideForTests = value
+}
+
 const mockEnabledValues = new Set(['true', '1'])
 const mockLadderSeeds: MockLadderSeed[] = [
   { userId: 'mock-u01', playerName: 'Naminé', ownedCardsCount: 34, tier: 'iron', division: 'III', lp: 47, updatedAt: '2026-02-10T08:00:00.000Z' },
@@ -60,10 +90,10 @@ const mockLadderSeeds: MockLadderSeed[] = [
   { userId: 'mock-u03', playerName: 'Xion', ownedCardsCount: 61, tier: 'silver', division: 'II', lp: 50, updatedAt: '2026-02-12T08:00:00.000Z' },
   { userId: 'mock-u04', playerName: 'Ventus', ownedCardsCount: 76, tier: 'gold', division: 'I', lp: 18, updatedAt: '2026-02-13T08:00:00.000Z' },
   { userId: 'mock-u05', playerName: 'Terra', ownedCardsCount: 88, tier: 'platinum', division: 'II', lp: 40, updatedAt: '2026-02-14T08:00:00.000Z' },
-  { userId: 'mock-u06', playerName: 'Roxas', ownedCardsCount: 101, tier: 'emerald', division: 'I', lp: 24, updatedAt: '2026-02-15T08:00:00.000Z' },
-  { userId: 'mock-u07', playerName: 'Kairi', ownedCardsCount: 116, tier: 'diamond', division: 'I', lp: 53, updatedAt: '2026-02-16T08:00:00.000Z' },
-  { userId: 'mock-u08', playerName: 'Aqua', ownedCardsCount: 127, tier: 'master', division: null, lp: 37, updatedAt: '2026-02-17T08:00:00.000Z' },
-  { userId: 'mock-u09', playerName: 'Riku', ownedCardsCount: 139, tier: 'grandmaster', division: null, lp: 71, updatedAt: '2026-02-18T08:00:00.000Z' },
+  { userId: 'mock-u06', playerName: 'Roxas', ownedCardsCount: 101, tier: 'diamond', division: 'I', lp: 24, updatedAt: '2026-02-15T08:00:00.000Z' },
+  { userId: 'mock-u07', playerName: 'Kairi', ownedCardsCount: 116, tier: 'challenger', division: null, lp: 53, updatedAt: '2026-02-16T08:00:00.000Z' },
+  { userId: 'mock-u08', playerName: 'Aqua', ownedCardsCount: 127, tier: 'challenger', division: null, lp: 37, updatedAt: '2026-02-17T08:00:00.000Z' },
+  { userId: 'mock-u09', playerName: 'Riku', ownedCardsCount: 139, tier: 'challenger', division: null, lp: 71, updatedAt: '2026-02-18T08:00:00.000Z' },
   { userId: 'mock-u10', playerName: 'Sora', ownedCardsCount: 152, tier: 'challenger', division: null, lp: 85, updatedAt: '2026-02-19T08:00:00.000Z' },
 ]
 
@@ -87,7 +117,12 @@ const mockLadderEntriesByMode: Record<MatchMode, LadderEntry[]> = {
 }
 
 export function isMockLadderEnabled(): boolean {
-  const value = import.meta.env.VITE_ENABLE_MOCK_LADDER
+  if (mockLadderEnabledOverrideForTests !== null) {
+    return mockLadderEnabledOverrideForTests
+  }
+
+  const runtimeValue = typeof process !== 'undefined' ? process.env.VITE_ENABLE_MOCK_LADDER : undefined
+  const value = typeof runtimeValue === 'string' ? runtimeValue : import.meta.env.VITE_ENABLE_MOCK_LADDER
   if (typeof value !== 'string') {
     return false
   }
@@ -96,11 +131,12 @@ export function isMockLadderEnabled(): boolean {
 }
 
 export function isGlobalLadderEnabled(): boolean {
-  return isCloudAuthEnabled() || isMockLadderEnabled() || listStoredProfilesForLadder().length > 0
+  const deps = dependencies()
+  return deps.isCloudAuthEnabled() || isMockLadderEnabled() || deps.listStoredProfilesForLadder().length > 0
 }
 
 function ensureClient() {
-  const client = getSupabaseClient()
+  const client = dependencies().getSupabaseClient()
   if (!client) {
     throw new Error('Cloud auth is disabled. Configure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.')
   }
@@ -285,7 +321,7 @@ function sortPeakRankLadder(entries: LadderEntry[]): LadderEntry[] {
 }
 
 function mapLocalProfileEntriesToOwnedLadderEntries(): LadderEntry[] {
-  return listStoredProfilesForLadder().map((entry) => {
+  return dependencies().listStoredProfilesForLadder().map((entry) => {
     const peak3x3 = {
       score: getRankScore(entry.rankedByMode['3x3'].tier, entry.rankedByMode['3x3'].division, entry.rankedByMode['3x3'].lp),
       label: formatRankLabel(entry.rankedByMode['3x3'].tier, entry.rankedByMode['3x3'].division),
@@ -308,7 +344,7 @@ function mapLocalProfileEntriesToOwnedLadderEntries(): LadderEntry[] {
 }
 
 function mapLocalProfileEntriesToPeakLadderEntries(mode: MatchMode): LadderEntry[] {
-  return listStoredProfilesForLadder().map((entry) => ({
+  return dependencies().listStoredProfilesForLadder().map((entry) => ({
     userId: `local-${entry.id}`,
     playerName: entry.playerName,
     ownedCardsCount: entry.ownedCardsCount,
@@ -335,7 +371,7 @@ export async function fetchOwnedCardsLadder(limit = 50): Promise<LadderEntry[]> 
   const mockEntries = isMockLadderEnabled() ? mockLadderEntriesByMode['4x4'] : []
   const baseEntries = mergeLadderEntries(localEntries, mockEntries)
 
-  if (!isCloudAuthEnabled()) {
+  if (!dependencies().isCloudAuthEnabled()) {
     return sortOwnedCardsLadder(baseEntries).slice(0, limit)
   }
 
@@ -356,7 +392,7 @@ export async function fetchPeakRankLadder(mode: MatchMode, limit = 50): Promise<
   const mockEntries = isMockLadderEnabled() ? mockLadderEntriesByMode[mode] : []
   const baseEntries = mergeLadderEntries(localEntries, mockEntries)
 
-  if (!isCloudAuthEnabled()) {
+  if (!dependencies().isCloudAuthEnabled()) {
     return sortPeakRankLadder(baseEntries).slice(0, limit)
   }
 

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { useGame } from '../../app/useGame'
+import { getCardFragmentCost } from '../../domain/progression/fragments'
 import type { CardId } from '../../domain/types'
 import { RankedLpRecap } from '../components/RankedLpRecap'
 
@@ -50,7 +51,7 @@ function getOutcomeLabel(winner: 'player' | 'cpu' | 'draw'): 'WIN' | 'LOSE' | 'D
 
 export function ResultsPage() {
   const navigate = useNavigate()
-  const { lastMatchSummary, towerRun, selectTowerReward, continueTowerRun } = useGame()
+  const { profile, lastMatchSummary, towerRun, selectTowerReward, continueTowerRun } = useGame()
   const [towerError, setTowerError] = useState<string | null>(null)
   const [swapOutCardId, setSwapOutCardId] = useState<CardId | null>(towerRun?.deck[0] ?? null)
 
@@ -115,7 +116,7 @@ export function ResultsPage() {
         </h1>
       </header>
       {rewards.criticalVictory ? <p className="small">Critical Victory</p> : null}
-      <p className="small">Queue: {queue === 'ranked' ? 'Ranked' : queue === 'tower' ? 'Tower' : 'Normal'}</p>
+      <p className="small">Queue: {queue === 'ranked' ? 'Ranked' : queue === 'tower' ? 'Tower' : queue === 'tutorial' ? 'Tutorial' : 'Normal'}</p>
       <div className="stat-row">
         <span>Gold Earned</span>
         <strong>
@@ -131,14 +132,21 @@ export function ResultsPage() {
       </div>
 
       <div className="result-block">
-        <h2>Claimed Card</h2>
+        <h2>Card Fragment</h2>
         <p>
           {queue === 'tower'
-            ? 'Tower mode does not grant claimed cards.'
+            ? 'Tower mode does not grant card fragments.'
+            : queue === 'tutorial'
+              ? 'Tutorial mode does not grant card fragments.'
             : rewards.droppedCardId
-              ? `Claimed card: ${rewards.droppedCardId.toUpperCase()}`
-              : 'No card claimed this match.'}
+              ? `You recovered 1 card fragment: ${rewards.droppedCardId.toUpperCase()}.`
+              : 'No fragment gained this match.'}
         </p>
+        {queue !== 'tower' && queue !== 'tutorial' && rewards.droppedCardId ? (
+          <p className="small" data-testid="results-fragment-total">
+            Fragment progress: {profile.cardFragmentsById[rewards.droppedCardId] ?? 0}/{getCardFragmentCost(rewards.droppedCardId)}
+          </p>
+        ) : null}
       </div>
 
       {isTowerQueue ? (

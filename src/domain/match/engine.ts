@@ -12,7 +12,7 @@ import type {
   MovePowerTarget,
 } from '../types'
 import { getModeSpec } from './modeSpec'
-import type { CardBoardEffects, MatchElementState, MatchState, SideDelta, VolatileDebuff } from './types'
+import type { AllStatsMinusOneStack, CardBoardEffects, FrozenCellEffect, MatchElementState, MatchState, MoveFlipEvent, SideDelta } from './types'
 
 type Direction = 'up' | 'right' | 'down' | 'left'
 type DirectionalBonus = Record<Direction, number>
@@ -21,6 +21,14 @@ interface AdjacentEnemy {
   directionFromSource: Direction
   cell: number
   enemyCardId: CardId
+}
+
+type ImmediateFlipKind = Exclude<MoveFlipEvent['kind'], 'combo'>
+
+interface ImmediateFlipCandidate {
+  cell: number
+  directionFromSource: Direction
+  kind: ImmediateFlipKind
 }
 
 interface PowerTargetSpec {
@@ -38,6 +46,7 @@ export interface MoveResolutionDetails {
   flippedCells: number[]
   immediateFlips: number
   wasSpecialRuleTrigger: boolean
+  flipEvents: MoveFlipEvent[]
   groundDebuffedCells: number[]
   combatCells: number[]
 }
@@ -64,6 +73,7 @@ const neighborDelta: Record<Direction, [number, number]> = {
 }
 
 const sideOrder: Direction[] = ['up', 'right', 'down', 'left']
+const freezeDurationTurns = 1
 
 function createEmptyTypeSynergyState(): MatchTypeSynergyState {
   return {
@@ -108,13 +118,14 @@ function createEmptyCardBoardEffects(): CardBoardEffects {
   return {
     permanentDelta: createZeroSideDelta(),
     burnTicksRemaining: 0,
-    volatileAllStatsMinusOneUntilEndOfOwnerNextTurn: null,
+    allStatsMinusOneStacks: [],
     unflippableUntilEndOfOpponentNextTurn: null,
     swappedHighLowUntilMatchEnd: false,
     rockShieldCharges: 0,
     poisonFirstCombatPending: false,
     insectEntryStacks: 0,
     dragonApplied: false,
+    planteSourceOwner: undefined,
   }
 }
 
@@ -122,9 +133,7 @@ function cloneCardBoardEffects(source: CardBoardEffects): CardBoardEffects {
   return {
     permanentDelta: cloneSideDelta(source.permanentDelta),
     burnTicksRemaining: source.burnTicksRemaining,
-    volatileAllStatsMinusOneUntilEndOfOwnerNextTurn: source.volatileAllStatsMinusOneUntilEndOfOwnerNextTurn
-      ? { ...source.volatileAllStatsMinusOneUntilEndOfOwnerNextTurn }
-      : null,
+    allStatsMinusOneStacks: source.allStatsMinusOneStacks.map((stack) => ({ ...stack })),
     unflippableUntilEndOfOpponentNextTurn: source.unflippableUntilEndOfOpponentNextTurn
       ? { ...source.unflippableUntilEndOfOpponentNextTurn }
       : null,
@@ -133,6 +142,14 @@ function cloneCardBoardEffects(source: CardBoardEffects): CardBoardEffects {
     poisonFirstCombatPending: source.poisonFirstCombatPending,
     insectEntryStacks: source.insectEntryStacks,
     dragonApplied: source.dragonApplied,
+    planteSourceOwner: source.planteSourceOwner,
+  }
+}
+
+function cloneFrozenCellEffect(source: FrozenCellEffect): FrozenCellEffect {
+  return {
+    cell: source.cell,
+    turnsRemaining: source.turnsRemaining,
   }
 }
 
@@ -183,7 +200,10 @@ function cloneElementState(source: MatchElementState | undefined): MatchElementS
       cpu: { ...source.usedOnPoseByActor.cpu },
     },
     actorTurnCount: { ...source.actorTurnCount },
-    frozenCellByActor: { ...source.frozenCellByActor },
+    frozenCellByActor: {
+      player: source.frozenCellByActor.player ? cloneFrozenCellEffect(source.frozenCellByActor.player) : undefined,
+      cpu: source.frozenCellByActor.cpu ? cloneFrozenCellEffect(source.frozenCellByActor.cpu) : undefined,
+    },
     floodedCell: source.floodedCell,
     poisonedHandByActor: {
       player: [...source.poisonedHandByActor.player],
@@ -207,16 +227,22 @@ function isElementEffectsActive(state: MatchState): boolean {
   return elementState.enabled && elementState.mode === 'effects'
 }
 
+function isNormalModeActive(state: MatchState): boolean {
+  const elementState = resolveElementState(state)
+  return elementState.enabled && elementState.mode === 'normal'
+}
+
 export function createMatch(config: MatchConfig): MatchState {
   validateMatchConfig(config)
   const modeSpec = getModeSpec(config.mode)
   const elementState = createElementState(config)
   const typeSynergy =
     elementState.enabled && elementState.mode === 'normal' ? createEmptyTypeSynergyState() : cloneTypeSynergyState(config.typeSynergy)
-  const rules =
-    elementState.enabled && elementState.mode === 'normal'
-      ? { open: true as const, same: false, plus: false }
-      : { ...config.rules }
+  const rules = {
+    open: config.rules.open,
+    same: false,
+    plus: false,
+  }
 
   return {
     config: {
@@ -257,9 +283,14 @@ export function listLegalMoves(state: MatchState): Move[] {
     .map((entry) => entry.index)
 
   const actor = state.turn
+  const blockedCell = getFrozenCellForActor(state, actor)
   const legalMoves: Move[] = []
   for (const cardId of state.hands[actor]) {
+    const canIgnoreFrozenCell = blockedCell !== undefined && getCard(cardId).elementId === 'spectre'
     for (const cell of emptyCells) {
+      if (blockedCell === cell && !canIgnoreFrozenCell) {
+        continue
+      }
       legalMoves.push({ actor, cardId, cell })
     }
   }
@@ -278,7 +309,7 @@ export function listMovePowerTargetOptions(state: MatchState, move: Move): MoveP
   }
 
   const elementState = resolveElementState(state)
-  if (elementState.usedOnPoseByActor[move.actor][card.elementId]) {
+  if (!isReusableOnPoseElement(card.elementId) && elementState.usedOnPoseByActor[move.actor][card.elementId]) {
     return null
   }
 
@@ -295,7 +326,6 @@ export function applyMove(state: MatchState, move: Move): MatchState {
 
 export function applyMoveDetailed(state: MatchState, move: Move): MoveResolutionDetails {
   const nextState = cloneState(state)
-  const elementState = resolveElementState(nextState)
   const effectsActive = isElementEffectsActive(nextState)
 
   if (effectsActive) {
@@ -309,6 +339,7 @@ export function applyMoveDetailed(state: MatchState, move: Move): MoveResolution
 
   nextState.board[move.cell] = { cardId: move.cardId, owner: actor }
   nextState.hands[actor] = nextState.hands[actor].filter((cardId) => cardId !== move.cardId)
+  clearFrozenCellAssignmentsIfOccupied(nextState, move.cell)
 
   ensureCardBoardEffects(nextState, move.cell)
   initializePlacedCardEffects(nextState, move)
@@ -318,41 +349,40 @@ export function applyMoveDetailed(state: MatchState, move: Move): MoveResolution
   }
 
   const transientDebuffsByCell: Partial<Record<number, SideDelta>> = {}
+  const groundDebuffedCells: number[] = []
   if (effectsActive) {
-    applyOnPosePowerIfNeeded(nextState, move, transientDebuffsByCell)
+    applyOnPosePowerIfNeeded(nextState, move, transientDebuffsByCell, groundDebuffedCells)
   }
-  const groundDebuffedCells =
-    effectsActive && getCard(move.cardId).elementId === 'sol'
-      ? Object.keys(transientDebuffsByCell)
-          .map((cellText) => Number(cellText))
-          .filter((cell) => Number.isInteger(cell))
-      : []
 
   const adjacentEnemies = getAdjacentEnemies(nextState, move.cell, actor)
   const sourceSideBonuses = getSourceSideBonuses(nextState, move)
   const participatingCells = new Set<number>()
-  const normalFlipSet = collectNormalFlipSet(nextState, move, adjacentEnemies, sourceSideBonuses, transientDebuffsByCell, participatingCells)
-  const sameFlipSet = nextState.rules.same
-    ? collectSameFlipSet(nextState, move, adjacentEnemies, sourceSideBonuses, transientDebuffsByCell, participatingCells)
-    : new Set<number>()
-  const plusFlipSet = nextState.rules.plus
-    ? collectPlusFlipSet(nextState, move, adjacentEnemies, sourceSideBonuses, transientDebuffsByCell, participatingCells)
-    : new Set<number>()
-
-  const specialFlipSet = unionSets(sameFlipSet, plusFlipSet)
-  const wasSpecialRuleTrigger = specialFlipSet.size > 0
-  const immediateFlipSet = unionSets(normalFlipSet, specialFlipSet)
-  const appliedFlipSet = new Set<number>()
-
-  for (const cell of immediateFlipSet) {
-    if (attemptFlip(nextState, cell, actor)) {
-      appliedFlipSet.add(cell)
-    }
+  const normalFlipCandidates = collectNormalFlipCandidates(
+    nextState,
+    move,
+    adjacentEnemies,
+    sourceSideBonuses,
+    transientDebuffsByCell,
+    participatingCells,
+  )
+  const wasSpecialRuleTrigger = false
+  const immediateFlipCandidatesByCell = new Map<number, ImmediateFlipCandidate>()
+  for (const candidate of normalFlipCandidates) {
+    immediateFlipCandidatesByCell.set(candidate.cell, candidate)
   }
+  const appliedFlipSet = new Set<number>()
+  const primaryFlipEvents: MoveFlipEvent[] = []
 
-  const appliedSpecialFlipSet = new Set<number>([...specialFlipSet].filter((cell) => appliedFlipSet.has(cell)))
-  if (wasSpecialRuleTrigger && appliedSpecialFlipSet.size > 0) {
-    runComboChain(nextState, actor, appliedSpecialFlipSet, transientDebuffsByCell, participatingCells)
+  for (const candidate of immediateFlipCandidatesByCell.values()) {
+    if (attemptFlip(nextState, candidate.cell, actor)) {
+      appliedFlipSet.add(candidate.cell)
+      primaryFlipEvents.push({
+        cell: candidate.cell,
+        kind: candidate.kind,
+        axis: resolveFlipAxis(candidate.directionFromSource),
+        phase: 'primary',
+      })
+    }
   }
 
   const boardSize = getModeSpec(nextState.config.mode).boardSize
@@ -360,15 +390,10 @@ export function applyMoveDetailed(state: MatchState, move: Move): MoveResolution
   if (isCornerCell(move.cell, boardSize)) {
     nextState.metrics.cornerPlaysByActor[actor] += 1
   }
-  if (wasSpecialRuleTrigger) {
-    nextState.metrics.samePlusTriggersByActor[actor] += 1
-  }
 
   if (effectsActive) {
     finishActorTurnEffects(nextState, actor)
-    if (elementState.frozenCellByActor[actor] !== undefined) {
-      delete elementState.frozenCellByActor[actor]
-    }
+    decrementFrozenCellDurationForActor(nextState, actor)
   }
 
   nextState.turns += 1
@@ -383,7 +408,8 @@ export function applyMoveDetailed(state: MatchState, move: Move): MoveResolution
     flippedCells: [...appliedFlipSet],
     immediateFlips: appliedFlipSet.size,
     wasSpecialRuleTrigger,
-    groundDebuffedCells,
+    flipEvents: [...primaryFlipEvents],
+    groundDebuffedCells: [...groundDebuffedCells].sort((left, right) => left - right),
     combatCells: [...participatingCells].sort((left, right) => left - right),
   }
 }
@@ -412,21 +438,26 @@ export function resolveDisplaySides(state: MatchState, cell: number): DisplaySid
   const card = getCard(slot.cardId)
   let sides = resolveBaseSides(slot.cardId)
   const effects = getCardBoardEffects(state, cell)
+  const ignoresStatMalus = isElementEffectsActive(state) && card.elementId === 'spectre'
 
   if (effects?.swappedHighLowUntilMatchEnd) {
     sides = swapHighestAndLowestSides(sides)
   }
 
   if (effects) {
-    applySideDelta(sides, effects.permanentDelta)
-    const volatile = effects.volatileAllStatsMinusOneUntilEndOfOwnerNextTurn
-    if (isVolatileDebuffActive(state, volatile)) {
-      sides.top -= 1
-      sides.right -= 1
-      sides.bottom -= 1
-      sides.left -= 1
+    if (ignoresStatMalus) {
+      applyPositiveSideDelta(sides, effects.permanentDelta)
+    } else {
+      applySideDelta(sides, effects.permanentDelta)
     }
-    if (effects.poisonFirstCombatPending) {
+    const activeAllStatsMinusOneStacks = countActiveAllStatsMinusOneStacks(state, effects.allStatsMinusOneStacks)
+    if (!ignoresStatMalus && activeAllStatsMinusOneStacks > 0) {
+      sides.top -= activeAllStatsMinusOneStacks
+      sides.right -= activeAllStatsMinusOneStacks
+      sides.bottom -= activeAllStatsMinusOneStacks
+      sides.left -= activeAllStatsMinusOneStacks
+    }
+    if (!ignoresStatMalus && effects.poisonFirstCombatPending) {
       sides.top -= 1
       sides.right -= 1
       sides.bottom -= 1
@@ -434,13 +465,27 @@ export function resolveDisplaySides(state: MatchState, cell: number): DisplaySid
     }
   }
 
-  if (isElementEffectsActive(state) && card.elementId === 'plante') {
-    const adjacentAllies = countAdjacentAllies(state, cell, slot.owner)
-    const bonus = Math.min(2, adjacentAllies)
+  if (isElementEffectsActive(state) && card.elementId === 'plante' && isPlantePassiveActiveForOwner(state, cell, slot.owner)) {
+    const adjacentAlliedPlante = countAdjacentAlliedPlante(state, cell, slot.owner)
+    const bonus = Math.min(2, adjacentAlliedPlante)
     sides.top += bonus
     sides.right += bonus
     sides.bottom += bonus
     sides.left += bonus
+  }
+
+  if (isElementEffectsActive(state) && card.elementId === 'spectre') {
+    sides.top += 1
+    sides.right += 1
+    sides.bottom += 1
+    sides.left += 1
+  }
+
+  if (isNormalModeActive(state) && card.elementId === 'normal') {
+    sides.top += 1
+    sides.right += 1
+    sides.bottom += 1
+    sides.left += 1
   }
 
   return {
@@ -481,7 +526,7 @@ function assertMoveIsValid(state: MatchState, move: Move) {
   }
 
   if (isElementEffectsActive(state)) {
-    const blockedCell = resolveElementState(state).frozenCellByActor[move.actor]
+    const blockedCell = getFrozenCellForActor(state, move.actor)
     if (blockedCell === move.cell) {
       const card = getCard(move.cardId)
       if (card.elementId !== 'spectre') {
@@ -538,6 +583,45 @@ function countBoardOwners(state: MatchState) {
   return { playerCount, cpuCount }
 }
 
+function clearFrozenCellAssignmentsIfOccupied(state: MatchState, occupiedCell: number) {
+  if (!isElementEffectsActive(state)) {
+    return
+  }
+
+  const elementState = resolveElementState(state)
+  for (const actor of ['player', 'cpu'] as const) {
+    if (elementState.frozenCellByActor[actor]?.cell === occupiedCell) {
+      delete elementState.frozenCellByActor[actor]
+    }
+  }
+}
+
+function getFrozenCellForActor(state: MatchState, actor: Actor): number | undefined {
+  if (!isElementEffectsActive(state)) {
+    return undefined
+  }
+  const frozenEffect = resolveElementState(state).frozenCellByActor[actor]
+  if (!frozenEffect || frozenEffect.turnsRemaining <= 0) {
+    return undefined
+  }
+  return frozenEffect.cell
+}
+
+function decrementFrozenCellDurationForActor(state: MatchState, actor: Actor) {
+  if (!isElementEffectsActive(state)) {
+    return
+  }
+  const elementState = resolveElementState(state)
+  const frozenEffect = elementState.frozenCellByActor[actor]
+  if (!frozenEffect) {
+    return
+  }
+  frozenEffect.turnsRemaining -= 1
+  if (frozenEffect.turnsRemaining <= 0) {
+    delete elementState.frozenCellByActor[actor]
+  }
+}
+
 function isFinished(state: MatchState): boolean {
   if (state.turns >= getModeSpec(state.config.mode).cellCount) {
     return true
@@ -570,12 +654,19 @@ function initializePlacedCardEffects(state: MatchState, move: Move) {
   const effects = ensureCardBoardEffects(state, move.cell)
 
   if (card.elementId === 'roche') {
-    effects.rockShieldCharges = 1
+    if (!elementState.usedOnPoseByActor[move.actor].roche) {
+      effects.rockShieldCharges = 1
+      elementState.usedOnPoseByActor[move.actor].roche = true
+    }
+  }
+
+  if (card.elementId === 'plante') {
+    effects.planteSourceOwner = move.actor
   }
 
   if (card.elementId === 'insecte') {
     const alliedInsecteCount = countAdjacentAlliedInsecteAlreadyPlaced(state, move.cell, move.actor)
-    const stacks = Math.min(2, alliedInsecteCount) as 0 | 1 | 2
+    const stacks = Math.min(3, alliedInsecteCount) as 0 | 1 | 2 | 3
     effects.insectEntryStacks = stacks
     effects.permanentDelta.top += stacks
     effects.permanentDelta.right += stacks
@@ -606,11 +697,17 @@ function applyFloodedCellPenaltyIfNeeded(state: MatchState, move: Move) {
   const highestSides = resolveHighestDirections(sides)
   const rng = createSeededRng(state.config.seed + state.turns + move.cell + 17)
   const pickedDirection = highestSides[rng.nextInt(highestSides.length)]
-  applySideDeltaToDirection(effects.permanentDelta, pickedDirection, -2)
+  applySideDeltaToDirection(effects.permanentDelta, pickedDirection, -3)
   elementState.floodedCell = null
 }
 
-function applyOnPosePowerIfNeeded(state: MatchState, move: Move, transientDebuffsByCell: Partial<Record<number, SideDelta>>) {
+function applyOnPosePowerIfNeeded(
+  state: MatchState,
+  move: Move,
+  transientDebuffsByCell: Partial<Record<number, SideDelta>>,
+  groundDebuffedCells: number[],
+) {
+  void transientDebuffsByCell
   if (!isElementEffectsActive(state)) {
     return
   }
@@ -622,7 +719,7 @@ function applyOnPosePowerIfNeeded(state: MatchState, move: Move, transientDebuff
   }
 
   const elementState = resolveElementState(state)
-  if (elementState.usedOnPoseByActor[move.actor][element]) {
+  if (!isReusableOnPoseElement(element) && elementState.usedOnPoseByActor[move.actor][element]) {
     return
   }
 
@@ -659,47 +756,53 @@ function applyOnPosePowerIfNeeded(state: MatchState, move: Move, transientDebuff
 
   if (element === 'sol') {
     const boardSize = getModeSpec(state.config.mode).boardSize
-    const occupiedNeighborCells = getNeighbors(move.cell, boardSize)
+    const enemyNeighborCells = getNeighbors(move.cell, boardSize)
       .map(([, neighborCell]) => neighborCell)
-      .filter((neighborCell) => state.board[neighborCell] !== null)
-    if (occupiedNeighborCells.length === 0) {
+      .filter((neighborCell) => {
+        const slot = state.board[neighborCell]
+        return slot !== null && slot.owner !== move.actor
+      })
+    if (enemyNeighborCells.length === 0) {
       return
     }
-    elementState.usedOnPoseByActor[move.actor][element] = true
-    for (const neighborCell of occupiedNeighborCells) {
+    for (const neighborCell of enemyNeighborCells) {
       const slot = state.board[neighborCell]
       if (!slot) {
         continue
       }
-      const highestDirections = resolveHighestDirections(resolveBaseSides(slot.cardId))
-      const pickedDirection = highestDirections[0]
-      if (!transientDebuffsByCell[neighborCell]) {
-        transientDebuffsByCell[neighborCell] = createZeroSideDelta()
-      }
-      applySideDeltaToDirection(transientDebuffsByCell[neighborCell]!, pickedDirection, -1)
+      applyAllStatsMinusOneStack(state, neighborCell, 'sol', slot.owner)
+      groundDebuffedCells.push(neighborCell)
     }
+    elementState.usedOnPoseByActor[move.actor][element] = true
     return
   }
 
   const spec = resolvePowerTargetSpec(state, move, element)
+  const consumesOnPose = !isReusableOnPoseElement(element)
   if (!spec) {
-    elementState.usedOnPoseByActor[move.actor][element] = true
+    if (consumesOnPose) {
+      elementState.usedOnPoseByActor[move.actor][element] = true
+    }
     return
   }
   if (spec.cells.length === 0) {
-    elementState.usedOnPoseByActor[move.actor][element] = true
+    if (consumesOnPose) {
+      elementState.usedOnPoseByActor[move.actor][element] = true
+    }
     return
   }
 
   const targetCell = resolveSelectedTargetCell(state, move, element, spec)
-  elementState.usedOnPoseByActor[move.actor][element] = true
+  if (consumesOnPose) {
+    elementState.usedOnPoseByActor[move.actor][element] = true
+  }
   if (targetCell === null) {
     return
   }
 
   if (element === 'feu') {
     const targetEffects = ensureCardBoardEffects(state, targetCell)
-    targetEffects.burnTicksRemaining += 2
+    targetEffects.burnTicksRemaining += 1
     return
   }
 
@@ -710,7 +813,7 @@ function applyOnPosePowerIfNeeded(state: MatchState, move: Move, transientDebuff
 
   if (element === 'glace') {
     const opponent: Actor = move.actor === 'player' ? 'cpu' : 'player'
-    elementState.frozenCellByActor[opponent] = targetCell
+    elementState.frozenCellByActor[opponent] = { cell: targetCell, turnsRemaining: freezeDurationTurns }
     return
   }
 
@@ -719,9 +822,8 @@ function applyOnPosePowerIfNeeded(state: MatchState, move: Move, transientDebuff
     if (!targetSlot) {
       return
     }
-    const targetEffects = ensureCardBoardEffects(state, targetCell)
-    const untilTurn = elementState.actorTurnCount[targetSlot.owner] + 1
-    targetEffects.volatileAllStatsMinusOneUntilEndOfOwnerNextTurn = { actor: targetSlot.owner, untilTurn }
+    applyAllStatsMinusOneStack(state, targetCell, 'vol', targetSlot.owner)
+    applyAllStatsMinusOneStack(state, targetCell, 'vol', targetSlot.owner)
     return
   }
 
@@ -839,10 +941,9 @@ function finishActorTurnEffects(state: MatchState, actor: Actor) {
     if (!effects) {
       continue
     }
-    const volatile = effects.volatileAllStatsMinusOneUntilEndOfOwnerNextTurn
-    if (volatile && volatile.actor === actor && actorTurnCount >= volatile.untilTurn) {
-      effects.volatileAllStatsMinusOneUntilEndOfOwnerNextTurn = null
-    }
+    effects.allStatsMinusOneStacks = effects.allStatsMinusOneStacks.filter(
+      (stack) => stack.actor !== actor || actorTurnCount < stack.untilTurn,
+    )
     const shield = effects.unflippableUntilEndOfOpponentNextTurn
     if (shield && shield.actor === actor && actorTurnCount >= shield.untilTurn) {
       effects.unflippableUntilEndOfOpponentNextTurn = null
@@ -870,15 +971,15 @@ function getAdjacentEnemies(state: MatchState, sourceCell: number, sourceOwner: 
   return result
 }
 
-function collectNormalFlipSet(
+function collectNormalFlipCandidates(
   state: MatchState,
   move: Move,
   adjacentEnemies: AdjacentEnemy[],
   sourceSideBonuses: DirectionalBonus,
   transientDebuffsByCell: Partial<Record<number, SideDelta>>,
   participatingCells: Set<number>,
-): Set<number> {
-  const result = new Set<number>()
+): ImmediateFlipCandidate[] {
+  const result: ImmediateFlipCandidate[] = []
 
   for (const adjacent of adjacentEnemies) {
     participatingCells.add(move.cell)
@@ -895,121 +996,17 @@ function collectNormalFlipSet(
     )
 
     if (attackerValue > defenderValue) {
-      result.add(adjacent.cell)
+      result.push({
+        cell: adjacent.cell,
+        directionFromSource: adjacent.directionFromSource,
+        kind: 'flipped',
+      })
     }
   }
 
   return result
 }
 
-function collectSameFlipSet(
-  state: MatchState,
-  move: Move,
-  adjacentEnemies: AdjacentEnemy[],
-  sourceSideBonuses: DirectionalBonus,
-  transientDebuffsByCell: Partial<Record<number, SideDelta>>,
-  participatingCells: Set<number>,
-): Set<number> {
-  const matchingCells: number[] = []
-
-  for (const adjacent of adjacentEnemies) {
-    participatingCells.add(move.cell)
-    participatingCells.add(adjacent.cell)
-    const sourceValue =
-      getEffectiveSideValue(state, move.cell, adjacent.directionFromSource, true, transientDebuffsByCell) +
-      sourceSideBonuses[adjacent.directionFromSource]
-    const enemyValue = getEffectiveSideValue(
-      state,
-      adjacent.cell,
-      oppositeDirection[adjacent.directionFromSource],
-      false,
-      transientDebuffsByCell,
-    )
-
-    if (sourceValue === enemyValue) {
-      matchingCells.push(adjacent.cell)
-    }
-  }
-
-  return matchingCells.length >= 2 ? new Set(matchingCells) : new Set<number>()
-}
-
-function collectPlusFlipSet(
-  state: MatchState,
-  move: Move,
-  adjacentEnemies: AdjacentEnemy[],
-  sourceSideBonuses: DirectionalBonus,
-  transientDebuffsByCell: Partial<Record<number, SideDelta>>,
-  participatingCells: Set<number>,
-): Set<number> {
-  const bySum = new Map<number, number[]>()
-
-  for (const adjacent of adjacentEnemies) {
-    participatingCells.add(move.cell)
-    participatingCells.add(adjacent.cell)
-    const sourceValue =
-      getEffectiveSideValue(state, move.cell, adjacent.directionFromSource, true, transientDebuffsByCell) +
-      sourceSideBonuses[adjacent.directionFromSource]
-    const enemyValue = getEffectiveSideValue(
-      state,
-      adjacent.cell,
-      oppositeDirection[adjacent.directionFromSource],
-      false,
-      transientDebuffsByCell,
-    )
-    const sum = sourceValue + enemyValue
-    const cells = bySum.get(sum) ?? []
-    cells.push(adjacent.cell)
-    bySum.set(sum, cells)
-  }
-
-  const result = new Set<number>()
-  for (const cells of bySum.values()) {
-    if (cells.length >= 2) {
-      cells.forEach((cell) => result.add(cell))
-    }
-  }
-
-  return result
-}
-
-function runComboChain(
-  state: MatchState,
-  actor: Actor,
-  seedCells: Set<number>,
-  transientDebuffsByCell: Partial<Record<number, SideDelta>>,
-  participatingCells: Set<number>,
-) {
-  const queue = [...seedCells]
-  const boardSize = getModeSpec(state.config.mode).boardSize
-
-  while (queue.length > 0) {
-    const sourceCell = queue.shift()!
-    const sourceSlot = state.board[sourceCell]
-    if (!sourceSlot || sourceSlot.owner !== actor) {
-      continue
-    }
-
-    for (const [direction, neighborCell] of getNeighbors(sourceCell, boardSize)) {
-      const neighborSlot = state.board[neighborCell]
-      if (!neighborSlot || neighborSlot.owner === actor) {
-        continue
-      }
-
-      participatingCells.add(sourceCell)
-      participatingCells.add(neighborCell)
-      const attackerValue = getEffectiveSideValue(state, sourceCell, direction, true, transientDebuffsByCell)
-      const defenderValue = getEffectiveSideValue(state, neighborCell, oppositeDirection[direction], false, transientDebuffsByCell)
-      if (attackerValue <= defenderValue) {
-        continue
-      }
-
-      if (attemptFlip(state, neighborCell, actor)) {
-        queue.push(neighborCell)
-      }
-    }
-  }
-}
 
 function getSourceSideBonuses(state: MatchState, move: Move): DirectionalBonus {
   const bonuses: DirectionalBonus = { up: 0, right: 0, down: 0, left: 0 }
@@ -1064,8 +1061,8 @@ function isCornerCell(cell: number, boardSize: number): boolean {
   return cell === 0 || cell === topRight || cell === bottomLeft || cell === bottomRight
 }
 
-function unionSets<T>(a: Set<T>, b: Set<T>): Set<T> {
-  return new Set([...a, ...b])
+function resolveFlipAxis(direction: Direction): MoveFlipEvent['axis'] {
+  return direction === 'up' || direction === 'down' ? 'vertical' : 'horizontal'
 }
 
 function getNeighbors(cell: number, boardSize: number): Array<[Direction, number]> {
@@ -1100,21 +1097,26 @@ function getEffectiveSideValue(
   const card = getCard(slot.cardId)
   let sides = resolveBaseSides(slot.cardId)
   const effects = getCardBoardEffects(state, cell)
+  const ignoresStatMalus = isElementEffectsActive(state) && card.elementId === 'spectre'
 
   if (effects?.swappedHighLowUntilMatchEnd) {
     sides = swapHighestAndLowestSides(sides)
   }
 
   if (effects) {
-    applySideDelta(sides, effects.permanentDelta)
-    const volatile = effects.volatileAllStatsMinusOneUntilEndOfOwnerNextTurn
-    if (isVolatileDebuffActive(state, volatile)) {
-      sides.top -= 1
-      sides.right -= 1
-      sides.bottom -= 1
-      sides.left -= 1
+    if (ignoresStatMalus) {
+      applyPositiveSideDelta(sides, effects.permanentDelta)
+    } else {
+      applySideDelta(sides, effects.permanentDelta)
     }
-    if (effects.poisonFirstCombatPending) {
+    const activeAllStatsMinusOneStacks = countActiveAllStatsMinusOneStacks(state, effects.allStatsMinusOneStacks)
+    if (!ignoresStatMalus && activeAllStatsMinusOneStacks > 0) {
+      sides.top -= activeAllStatsMinusOneStacks
+      sides.right -= activeAllStatsMinusOneStacks
+      sides.bottom -= activeAllStatsMinusOneStacks
+      sides.left -= activeAllStatsMinusOneStacks
+    }
+    if (!ignoresStatMalus && effects.poisonFirstCombatPending) {
       sides.top -= 1
       sides.right -= 1
       sides.bottom -= 1
@@ -1124,39 +1126,61 @@ function getEffectiveSideValue(
 
   const transient = transientDebuffsByCell[cell]
   if (transient) {
-    applySideDelta(sides, transient)
+    if (ignoresStatMalus) {
+      applyPositiveSideDelta(sides, transient)
+    } else {
+      applySideDelta(sides, transient)
+    }
   }
 
-  if (isElementEffectsActive(state) && card.elementId === 'plante') {
-    const adjacentAllies = countAdjacentAllies(state, cell, slot.owner)
-    const bonus = Math.min(2, adjacentAllies)
+  if (isElementEffectsActive(state) && card.elementId === 'plante' && isPlantePassiveActiveForOwner(state, cell, slot.owner)) {
+    const adjacentAlliedPlante = countAdjacentAlliedPlante(state, cell, slot.owner)
+    const bonus = Math.min(2, adjacentAlliedPlante)
     sides.top += bonus
     sides.right += bonus
     sides.bottom += bonus
     sides.left += bonus
   }
 
-  if (isElementEffectsActive(state) && card.elementId === 'combat' && isAttacker) {
-    sides.top += 2
-    sides.right += 2
-    sides.bottom += 2
-    sides.left += 2
+  if (isElementEffectsActive(state) && card.elementId === 'spectre') {
+    sides.top += 1
+    sides.right += 1
+    sides.bottom += 1
+    sides.left += 1
   }
 
-  const value = readDirectionValue(sides, direction)
+  if (isNormalModeActive(state) && card.elementId === 'normal') {
+    sides.top += 1
+    sides.right += 1
+    sides.bottom += 1
+    sides.left += 1
+  }
+
+  let value = readDirectionValue(sides, direction)
+  if (isElementEffectsActive(state) && card.elementId === 'combat' && isAttacker) {
+    value += 1
+  }
   return Math.max(1, value)
 }
 
-function countAdjacentAllies(state: MatchState, sourceCell: number, owner: Actor): number {
+function countAdjacentAlliedPlante(state: MatchState, sourceCell: number, owner: Actor): number {
   const boardSize = getModeSpec(state.config.mode).boardSize
   let count = 0
   for (const [, cell] of getNeighbors(sourceCell, boardSize)) {
     const slot = state.board[cell]
-    if (slot && slot.owner === owner) {
+    if (slot && slot.owner === owner && getCard(slot.cardId).elementId === 'plante' && isPlantePassiveActiveForOwner(state, cell, owner)) {
       count += 1
     }
   }
   return count
+}
+
+function isPlantePassiveActiveForOwner(state: MatchState, cell: number, owner: Actor): boolean {
+  const effects = getCardBoardEffects(state, cell)
+  if (!effects?.planteSourceOwner) {
+    return true
+  }
+  return effects.planteSourceOwner === owner
 }
 
 function countAdjacentAlliedInsecteAlreadyPlaced(state: MatchState, sourceCell: number, owner: Actor): number {
@@ -1174,12 +1198,43 @@ function countAdjacentAlliedInsecteAlreadyPlaced(state: MatchState, sourceCell: 
   return count
 }
 
-function isVolatileDebuffActive(state: MatchState, effect: VolatileDebuff | null): boolean {
-  if (!effect) {
-    return false
+function isAllStatsMinusOneStackActive(state: MatchState, stack: AllStatsMinusOneStack): boolean {
+  const turns = resolveElementState(state).actorTurnCount[stack.actor]
+  return turns <= stack.untilTurn
+}
+
+function countActiveAllStatsMinusOneStacks(state: MatchState, stacks: AllStatsMinusOneStack[]): number {
+  return stacks.filter((stack) => isAllStatsMinusOneStackActive(state, stack)).length
+}
+
+function applyAllStatsMinusOneStack(state: MatchState, cell: number, source: AllStatsMinusOneStack['source'], actor: Actor) {
+  const elementState = resolveElementState(state)
+  const effects = ensureCardBoardEffects(state, cell)
+  effects.allStatsMinusOneStacks = effects.allStatsMinusOneStacks.filter((stack) => isAllStatsMinusOneStackActive(state, stack))
+
+  const nextStack: AllStatsMinusOneStack = {
+    source,
+    actor,
+    untilTurn: elementState.actorTurnCount[actor] + 1,
   }
-  const turns = resolveElementState(state).actorTurnCount[effect.actor]
-  return turns <= effect.untilTurn
+
+  if (effects.allStatsMinusOneStacks.length < 2) {
+    effects.allStatsMinusOneStacks.push(nextStack)
+    return
+  }
+
+  let shortestIndex = 0
+  let shortestRemaining = Infinity
+  for (let index = 0; index < effects.allStatsMinusOneStacks.length; index += 1) {
+    const existing = effects.allStatsMinusOneStacks[index]!
+    const remainingTurns = existing.untilTurn - elementState.actorTurnCount[existing.actor]
+    if (remainingTurns < shortestRemaining) {
+      shortestRemaining = remainingTurns
+      shortestIndex = index
+    }
+  }
+
+  effects.allStatsMinusOneStacks[shortestIndex] = nextStack
 }
 
 function resolveBaseSides(cardId: CardId): SideDelta {
@@ -1197,6 +1252,13 @@ function applySideDelta(target: SideDelta, delta: SideDelta) {
   target.right += delta.right
   target.bottom += delta.bottom
   target.left += delta.left
+}
+
+function applyPositiveSideDelta(target: SideDelta, delta: SideDelta) {
+  target.top += Math.max(0, delta.top)
+  target.right += Math.max(0, delta.right)
+  target.bottom += Math.max(0, delta.bottom)
+  target.left += Math.max(0, delta.left)
 }
 
 function applySideDeltaToDirection(delta: SideDelta, direction: Direction, amount: number) {
@@ -1294,4 +1356,8 @@ function isOnPoseElement(element: CardElementId): boolean {
     element === 'psy' ||
     element === 'dragon'
   )
+}
+
+function isReusableOnPoseElement(element: CardElementId): boolean {
+  return element === 'vol'
 }

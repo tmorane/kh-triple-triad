@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test } from 'bun:test'
 import { applyRankedMatchResult, createInitialRankedState, type RankedMatchResultSummary } from './ranked'
 
 function applySequence(outcomes: Array<'player' | 'cpu' | 'draw'>): RankedMatchResultSummary {
@@ -176,11 +176,11 @@ describe('ranked ladder progression', () => {
     expect(result.demoted).toBe(false)
   })
 
-  test('master+ tiers have no divisions and can promote with carry', () => {
+  test('challenger tier has no division and promotes from Diamond I with carry', () => {
     const state = {
       ...createInitialRankedState(),
-      tier: 'master' as const,
-      division: null,
+      tier: 'diamond' as const,
+      division: 'I' as const,
       lp: 90,
       resultStreak: { type: 'win' as const, count: 2 },
       demotionShieldLosses: 0,
@@ -188,18 +188,18 @@ describe('ranked ladder progression', () => {
 
     const result = applyRankedMatchResult(state, 'player')
 
-    expect(result.deltaLp).toBe(70)
+    expect(result.deltaLp).toBe(73)
     expect(result.promoted).toBe(true)
-    expect(result.next.tier).toBe('grandmaster')
+    expect(result.next.tier).toBe('challenger')
     expect(result.next.division).toBe(null)
-    expect(result.next.lp).toBe(60)
+    expect(result.next.lp).toBe(63)
     expect(result.next.demotionShieldLosses).toBe(3)
   })
 
-  test('can demote from master to Diamond I when shield is depleted', () => {
+  test('can demote from challenger to Diamond I when shield is depleted', () => {
     const state = {
       ...createInitialRankedState(),
-      tier: 'master' as const,
+      tier: 'challenger' as const,
       division: null,
       lp: 5,
       resultStreak: { type: 'loss' as const, count: 2 },

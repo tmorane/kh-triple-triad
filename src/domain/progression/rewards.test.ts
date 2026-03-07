@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test } from 'bun:test'
 import type { OpponentLevel } from '../match/opponents'
 import type { MatchResult } from '../types'
 import { createDefaultProfile } from './profile'
@@ -75,6 +75,11 @@ describe('match rewards difficulty bonus', () => {
     expect(result.rewards.criticalVictory).toBe(false)
     expect(result.rewards.bonusGoldFromAutoDeck).toBe(0)
     expect(result.profile.gold).toBe(100 + 60 + 28)
+    expect(result.profile.achievementProgress.matchesPlayed).toBe(1)
+    expect(result.profile.achievementProgress.matchesWon).toBe(1)
+    expect(result.profile.achievementProgress.currentStreak).toBe(1)
+    expect(result.profile.achievementProgress.bestStreak).toBe(1)
+    expect(result.profile.achievementProgress.goldEarned).toBe(88)
   })
 
   test('applies +50% rewards multiplier and tracks extra auto-deck gold', () => {
@@ -138,7 +143,7 @@ describe('match rewards difficulty bonus', () => {
     expect(critical.profile.gold).toBe(100 + multipliedTotal)
   })
 
-  test('victory captures the explicitly selected cpu card and adds it to collection', () => {
+  test('victory grants 1 fragment for the explicitly selected cpu card without adding it directly to collection', () => {
     const profile = createDefaultProfile()
     const cpuDeckForClaim = ['c71', 'c72', 'c73', 'c74', 'c75']
 
@@ -147,16 +152,18 @@ describe('match rewards difficulty bonus', () => {
     expect(result.rewards.droppedCardId).toBe('c73')
     expect(result.rewards.duplicateConverted).toBe(false)
     expect(result.rewards.bonusGoldFromDuplicate).toBe(0)
-    expect(result.newlyOwnedCards).toEqual(['c73'])
-    expect(result.profile.ownedCardIds).toContain('c73')
-    expect(result.profile.cardCopiesById.c73).toBe(1)
+    expect(result.newlyOwnedCards).toEqual([])
+    expect(result.profile.ownedCardIds).not.toContain('c73')
+    expect(result.profile.cardCopiesById.c73).toBeUndefined()
+    expect(result.profile.cardFragmentsById.c73).toBe(1)
   })
 
-  test('victory with an already-owned selected card adds one copy without duplicate gold bonus', () => {
+  test('victory with an already-owned selected card grants fragment progress and does not add an immediate copy', () => {
     const profile = createDefaultProfile()
     const ownedCardId = profile.ownedCardIds[0]!
     const cpuDeckForClaim = [ownedCardId, 'c71', 'c72', 'c73', 'c74']
     const previousCopies = profile.cardCopiesById[ownedCardId] ?? 0
+    const previousFragments = profile.cardFragmentsById[ownedCardId] ?? 0
 
     const result = applyMatchRewards(profile, makeResult('player'), cpuDeckForClaim, 103, 8, 1, ownedCardId)
 
@@ -164,21 +171,23 @@ describe('match rewards difficulty bonus', () => {
     expect(result.rewards.duplicateConverted).toBe(false)
     expect(result.rewards.bonusGoldFromDuplicate).toBe(0)
     expect(result.newlyOwnedCards).toEqual([])
-    expect(result.profile.cardCopiesById[ownedCardId]).toBe(previousCopies + 1)
+    expect(result.profile.cardCopiesById[ownedCardId]).toBe(previousCopies)
+    expect(result.profile.cardFragmentsById[ownedCardId]).toBe(previousFragments + 1)
   })
 
-  test('captured cards are always granted as normal copies even when shiny exists', () => {
+  test('captured cards grant fragments even when shiny copies exist', () => {
     const profile = createDefaultProfile()
     profile.ownedCardIds.push('c73')
     const shinyProfile = profile as typeof profile & { shinyCardCopiesById?: Record<string, number> }
     shinyProfile.shinyCardCopiesById = { c73: 2 }
-    delete profile.cardCopiesById.c73
+    profile.cardCopiesById.c73 = 1
 
     const result = applyMatchRewards(profile, makeResult('player'), ['c71', 'c72', 'c73', 'c74', 'c75'], 149, 8, 1, 'c73')
 
     expect(result.rewards.droppedCardId).toBe('c73')
     expect(result.profile.cardCopiesById.c73).toBe(1)
     expect((result.profile as typeof profile & { shinyCardCopiesById: Record<string, number> }).shinyCardCopiesById.c73).toBe(2)
+    expect(result.profile.cardFragmentsById.c73).toBe(1)
   })
 
   test('draw and loss do not grant a claimed card', () => {
@@ -190,9 +199,12 @@ describe('match rewards difficulty bonus', () => {
     expect(draw.rewards.droppedCardId).toBeNull()
     expect(draw.rewards.duplicateConverted).toBe(false)
     expect(draw.rewards.bonusGoldFromDuplicate).toBe(0)
+    expect(draw.profile.cardFragmentsById).toEqual(profile.cardFragmentsById)
     expect(loss.rewards.droppedCardId).toBeNull()
     expect(loss.rewards.duplicateConverted).toBe(false)
     expect(loss.rewards.bonusGoldFromDuplicate).toBe(0)
+    expect(loss.profile.cardFragmentsById).toEqual(profile.cardFragmentsById)
+    expect(loss.profile.achievementProgress.currentStreak).toBe(0)
   })
 
   test('tower mode can disable card capture while keeping victory gold', () => {

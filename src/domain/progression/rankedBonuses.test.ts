@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test } from 'bun:test'
 import { getRankedDeckScoreBonus, getRankedWinLpBonus } from './rankedBonuses'
 
 describe('ranked bonuses', () => {
@@ -8,14 +8,11 @@ describe('ranked bonuses', () => {
     expect(getRankedDeckScoreBonus('silver', 'II')).toBe(4)
     expect(getRankedDeckScoreBonus('gold', 'I')).toBe(6)
     expect(getRankedDeckScoreBonus('platinum', 'IV')).toBe(0)
-    expect(getRankedDeckScoreBonus('emerald', 'III')).toBe(2)
     expect(getRankedDeckScoreBonus('diamond', 'II')).toBe(4)
     expect(getRankedDeckScoreBonus('diamond', 'I')).toBe(6)
   })
 
-  test('returns expected deck score bonus for apex tiers', () => {
-    expect(getRankedDeckScoreBonus('master', null)).toBe(0)
-    expect(getRankedDeckScoreBonus('grandmaster', null)).toBe(3)
+  test('returns expected deck score bonus for apex tier', () => {
     expect(getRankedDeckScoreBonus('challenger', null)).toBe(6)
   })
 
@@ -25,14 +22,11 @@ describe('ranked bonuses', () => {
     expect(getRankedWinLpBonus('silver', 'II')).toBe(2)
     expect(getRankedWinLpBonus('gold', 'I')).toBe(3)
     expect(getRankedWinLpBonus('platinum', 'IV')).toBe(0)
-    expect(getRankedWinLpBonus('emerald', 'III')).toBe(1)
     expect(getRankedWinLpBonus('diamond', 'II')).toBe(2)
     expect(getRankedWinLpBonus('diamond', 'I')).toBe(3)
   })
 
-  test('returns expected LP win bonus for apex tiers', () => {
-    expect(getRankedWinLpBonus('master', null)).toBe(0)
-    expect(getRankedWinLpBonus('grandmaster', null)).toBe(1)
+  test('returns expected LP win bonus for apex tier', () => {
     expect(getRankedWinLpBonus('challenger', null)).toBe(2)
   })
 })

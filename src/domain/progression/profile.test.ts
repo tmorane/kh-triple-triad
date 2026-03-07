@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'vitest'
+import { beforeEach, describe, expect, test } from 'bun:test'
 import { starterDeck, starterOwnedCardIds } from '../cards/decks'
 import { cardPool } from '../cards/cardPool'
 import {
@@ -48,7 +48,7 @@ describe('profile persistence', () => {
   test('creates a default profile on first launch', () => {
     const profile = loadProfile()
 
-    expect(profile.version).toBe(10)
+    expect(profile.version).toBe(12)
     expect(profile.playerName).toBe('Joueur')
     expect(profile.gold).toBe(100)
     expect(profile.ownedCardIds).toEqual(starterOwnedCardIds)
@@ -87,6 +87,27 @@ describe('profile persistence', () => {
       'm2_combo_practitioner',
       'm3_corner_tactician',
     ])
+    expect(profile.achievementProgress).toEqual({
+      matchesPlayed: 0,
+      matchesWon: 0,
+      currentStreak: 0,
+      bestStreak: 0,
+      cardsAcquired: 0,
+      goldEarned: 0,
+      packsPurchased: 0,
+      packsOpened: 0,
+      specialPacksOpened: 0,
+      missionsCompleted: 0,
+      baseTutorialsCompleted: 0,
+      elementTutorialsCompleted: 0,
+      rankedMatchesPlayed: 0,
+      rankedWins: 0,
+      deckEdits: 0,
+      shinyPulled: 0,
+      shinyCrafted: 0,
+    })
+    expect(profile.missionRewardsGrantedById).toEqual({})
+    expect(profile.achievementRewardsClaimedById).toEqual({})
     expect(profile.rankedByMode['4x4']).toEqual({
       tier: 'iron',
       division: 'IV',
@@ -195,14 +216,16 @@ describe('profile persistence', () => {
     expect(loadProfile()).toEqual(updated)
   })
 
-  test('retroactively unlocks achievements on load when snapshot conditions are already met', () => {
+  test('does not retroactively unlock achievements on load when post-reset counters are empty', () => {
     const profile = createDefaultProfile()
     profile.gold = 220
     profile.stats.played = 10
     profile.stats.won = 5
     profile.stats.streak = 3
     profile.stats.bestStreak = 3
-    profile.deckSlots[0].rules = { same: true, plus: true }
+    profile.missions.m2_combo_practitioner.progress = 6
+    profile.missions.m2_combo_practitioner.completed = true
+    profile.missions.m2_combo_practitioner.claimed = true
     profile.ownedCardIds = cardPool.slice(0, 30).map((card) => card.id)
     profile.cardCopiesById = copiesFor(profile.ownedCardIds)
     profile.achievements = []
@@ -211,27 +234,29 @@ describe('profile persistence', () => {
     const loaded = loadProfile()
 
     const unlockedIds = loaded.achievements.map((entry) => entry.id)
-    expect(unlockedIds).toEqual(
-      expect.arrayContaining([
-        'play_1',
-        'play_3',
-        'play_5',
-        'play_10',
-        'first_win',
-        'tactician_margin_3',
-        'wins_5',
-        'streak_2',
-        'win_streak_3',
-        'owned_15',
-        'owned_30',
-        'gold_150',
-        'gold_200',
-        'rule_scholar',
-      ]),
-    )
+    expect(unlockedIds).toEqual([])
+    expect(loaded.achievementProgress).toEqual({
+      matchesPlayed: 0,
+      matchesWon: 0,
+      currentStreak: 0,
+      bestStreak: 0,
+      cardsAcquired: 0,
+      goldEarned: 0,
+      packsPurchased: 0,
+      packsOpened: 0,
+      specialPacksOpened: 0,
+      missionsCompleted: 0,
+      baseTutorialsCompleted: 0,
+      elementTutorialsCompleted: 0,
+      rankedMatchesPlayed: 0,
+      rankedWins: 0,
+      deckEdits: 0,
+      shinyPulled: 0,
+      shinyCrafted: 0,
+    })
   })
 
-  test('migrates a v5 profile to v10, initializes missions, and resets ranked state', () => {
+  test('migrates a v5 profile to v12, initializes missions, and resets ranked state', () => {
     const v5 = {
       version: 5,
       gold: 420,
@@ -260,7 +285,7 @@ describe('profile persistence', () => {
       ],
       selectedDeckSlotId: 'slot-1' as const,
       stats: { played: 12, won: 8, streak: 2, bestStreak: 3 },
-      achievements: [{ id: 'first_win', unlockedAt: '2026-02-22T00:00:00.000Z' }],
+      achievements: [{ id: 'match_1', unlockedAt: '2026-02-22T00:00:00.000Z' }],
       rankRewardsClaimed: ['R1', 'R2'],
       settings: { audioEnabled: false as const },
     }
@@ -269,7 +294,7 @@ describe('profile persistence', () => {
 
     const migrated = loadProfile()
 
-    expect(migrated.version).toBe(10)
+    expect(migrated.version).toBe(12)
     expect(migrated.gold).toBe(420)
     expect(migrated.stats).toEqual(v5.stats)
     expect(migrated.deckSlots[0].cards4x4).toEqual(fillToEight(v5.deckSlots[0].cards, starterOwnedCardIds))
@@ -293,12 +318,33 @@ describe('profile persistence', () => {
     expect(migrated.rankedByMode['3x3']).toEqual(migrated.rankedByMode['4x4'])
 
     const persisted = JSON.parse(localStorage.getItem(PROFILE_STORAGE_KEY) ?? '{}') as { version?: number }
-    expect(persisted.version).toBe(10)
+    expect(persisted.version).toBe(12)
     expect(migrated.settings.audioEnabled).toBe(true)
     expect(migrated.shinyCardCopiesById).toEqual({})
+    expect(migrated.achievementProgress).toEqual({
+      matchesPlayed: 0,
+      matchesWon: 0,
+      currentStreak: 0,
+      bestStreak: 0,
+      cardsAcquired: 0,
+      goldEarned: 0,
+      packsPurchased: 0,
+      packsOpened: 0,
+      specialPacksOpened: 0,
+      missionsCompleted: 0,
+      baseTutorialsCompleted: 0,
+      elementTutorialsCompleted: 0,
+      rankedMatchesPlayed: 0,
+      rankedWins: 0,
+      deckEdits: 0,
+      shinyPulled: 0,
+      shinyCrafted: 0,
+    })
+    expect(migrated.missionRewardsGrantedById).toEqual({})
+    expect(migrated.achievementRewardsClaimedById).toEqual({})
   })
 
-  test('migrates a v2 profile to v10 and preserves deck/stat data', () => {
+  test('migrates a v2 profile to v12 and preserves deck/stat data', () => {
     const v2Owned = starterOwnedCardIds
     const v2 = {
       version: 2,
@@ -326,7 +372,7 @@ describe('profile persistence', () => {
       ],
       selectedDeckSlotId: 'slot-1' as const,
       stats: { played: 12, won: 8, streak: 2, bestStreak: 3 },
-      achievements: [{ id: 'first_win', unlockedAt: '2026-02-22T00:00:00.000Z' }],
+      achievements: [{ id: 'match_1', unlockedAt: '2026-02-22T00:00:00.000Z' }],
       settings: { audioEnabled: false as const },
     }
 
@@ -334,7 +380,7 @@ describe('profile persistence', () => {
 
     const migrated = loadProfile()
 
-    expect(migrated.version).toBe(10)
+    expect(migrated.version).toBe(12)
     expect(migrated.gold).toBe(175)
     expect(migrated.ownedCardIds).toEqual(v2.ownedCardIds)
     expect(migrated.stats).toEqual(v2.stats)
@@ -377,7 +423,7 @@ describe('profile persistence', () => {
 
     const migrated = loadProfile()
 
-    expect(migrated.version).toBe(10)
+    expect(migrated.version).toBe(12)
     expect(migrated.playerName).toBe('Joueur')
     expect(migrated.gold).toBe(333)
     expect(migrated.stats.played).toBe(4)
@@ -502,7 +548,7 @@ describe('profile persistence', () => {
 
   test('default profile initializes independent ranked ladders for 3x3 and 4x4', () => {
     const profile = loadProfile()
-    expect(profile.version).toBe(10)
+    expect(profile.version).toBe(12)
     expect(profile.rankedByMode['3x3']).toEqual({
       tier: 'iron',
       division: 'IV',
@@ -517,7 +563,7 @@ describe('profile persistence', () => {
     expect(profile.rankedByMode['4x4']).toEqual(profile.rankedByMode['3x3'])
   })
 
-  test('migrates v8 profile to v10 and forces audio on', () => {
+  test('migrates v8 profile to v12 and forces audio on', () => {
     const v8Profile = {
       ...createDefaultProfile(),
       version: 8 as const,
@@ -527,12 +573,12 @@ describe('profile persistence', () => {
     localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(v8Profile))
     const loaded = loadProfile()
 
-    expect(loaded.version).toBe(10)
+    expect(loaded.version).toBe(12)
     expect(loaded.settings.audioEnabled).toBe(true)
     expect(loaded.shinyCardCopiesById).toEqual({})
   })
 
-  test('migrates v9 profile to v10 by adding shiny inventory', () => {
+  test('migrates v9 profile to v12 by adding shiny inventory', () => {
     const v9Profile = {
       ...createDefaultProfile(),
       version: 9 as const,
@@ -542,11 +588,47 @@ describe('profile persistence', () => {
     localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(v9Profile))
     const loaded = loadProfile()
 
-    expect(loaded.version).toBe(10)
+    expect(loaded.version).toBe(12)
     expect(loaded.shinyCardCopiesById).toEqual({})
   })
 
-  test('migrates v7 profile ranked into both v10 ladders', () => {
+  test('migrates v10 profile to v12 with strict reset and preserved mission reward history', () => {
+    const v10Profile = {
+      ...createDefaultProfile(),
+      version: 10 as const,
+      achievements: [{ id: 'match_1' as const, unlockedAt: '2026-02-22T00:00:00.000Z' }],
+      missions: {
+        ...createDefaultProfile().missions,
+        m1_type_specialist: {
+          id: 'm1_type_specialist' as const,
+          progress: 5,
+          target: 5,
+          completed: true,
+          claimed: true,
+        },
+      },
+      tutorialProgress: {
+        baseCompleted: true,
+        completedElementById: { feu: true },
+      },
+    }
+    delete (v10Profile as { achievementProgress?: unknown }).achievementProgress
+    delete (v10Profile as { missionRewardsGrantedById?: unknown }).missionRewardsGrantedById
+
+    localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(v10Profile))
+    const loaded = loadProfile()
+
+    expect(loaded.version).toBe(12)
+    expect(loaded.achievements).toEqual([])
+    expect(loaded.missions).toEqual(createDefaultProfile().missions)
+    expect(loaded.tutorialProgress).toEqual({ baseCompleted: false, completedElementById: {} })
+    expect(loaded.missionRewardsGrantedById).toEqual({ m1_type_specialist: true })
+    expect(loaded.achievementProgress.matchesPlayed).toBe(0)
+    expect(loaded.achievementProgress.shinyCrafted).toBe(0)
+    expect(loaded.achievementRewardsClaimedById).toEqual({})
+  })
+
+  test('migrates v7 profile ranked into both v12 ladders', () => {
     const legacyV7 = {
       ...createDefaultProfile(),
       version: 7 as const,
@@ -568,9 +650,101 @@ describe('profile persistence', () => {
     localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(legacyV7))
     const loaded = loadProfile()
 
-    expect(loaded.version).toBe(10)
+    expect(loaded.version).toBe(12)
     expect(loaded.rankedByMode['3x3']).toEqual(legacyV7.ranked)
     expect(loaded.rankedByMode['4x4']).toEqual(legacyV7.ranked)
     expect(loaded.settings.audioEnabled).toBe(true)
+  })
+
+  test('migrates v11 profile to v12 and keeps unlocked achievements claimable', () => {
+    const v11 = {
+      ...createDefaultProfile(),
+      version: 11 as const,
+      achievements: [
+        { id: 'match_1' as const, unlockedAt: '2026-03-02T00:00:00.000Z' },
+        { id: 'win_1' as const, unlockedAt: '2026-03-02T00:00:01.000Z' },
+      ],
+    }
+    delete (v11 as { achievementRewardsClaimedById?: unknown }).achievementRewardsClaimedById
+
+    localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(v11))
+    const loaded = loadProfile()
+
+    expect(loaded.version).toBe(12)
+    expect(loaded.achievements).toEqual(v11.achievements)
+    expect(loaded.achievementRewardsClaimedById).toEqual({})
+  })
+
+  test('sanitizes invalid achievement reward claim ids on load', () => {
+    const corrupted = createDefaultProfile()
+    ;(corrupted as unknown as { achievementRewardsClaimedById: Record<string, unknown> }).achievementRewardsClaimedById = {
+      match_1: true,
+      invalid_achievement: true,
+      win_1: 'yes',
+    }
+    localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(corrupted))
+
+    const loaded = loadProfile()
+
+    expect(loaded.achievementRewardsClaimedById).toEqual({ match_1: true })
+  })
+
+  test('converts legacy emerald tier to diamond on load without resetting progression', () => {
+    const legacy = createDefaultProfile()
+    legacy.rankedByMode['3x3'] = {
+      ...legacy.rankedByMode['3x3'],
+      tier: 'diamond',
+      division: 'II',
+      lp: 33,
+      wins: 10,
+      losses: 4,
+      draws: 1,
+      matchesPlayed: 15,
+      resultStreak: { type: 'win', count: 2 },
+      demotionShieldLosses: 1,
+    }
+    legacy.rankedByMode['4x4'] = {
+      ...legacy.rankedByMode['4x4'],
+      tier: 'diamond',
+      division: 'I',
+      lp: 12,
+      wins: 8,
+      losses: 6,
+      draws: 0,
+      matchesPlayed: 14,
+      resultStreak: { type: 'loss', count: 1 },
+      demotionShieldLosses: 0,
+    }
+
+    const rawLegacy = JSON.parse(JSON.stringify(legacy)) as Record<string, unknown>
+    ;((rawLegacy.rankedByMode as Record<string, unknown>)['3x3'] as Record<string, unknown>).tier = 'emerald'
+    ;((rawLegacy.rankedByMode as Record<string, unknown>)['4x4'] as Record<string, unknown>).tier = 'emerald'
+
+    localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(rawLegacy))
+    const loaded = loadProfile()
+
+    expect(loaded.rankedByMode['3x3'].tier).toBe('diamond')
+    expect(loaded.rankedByMode['3x3'].division).toBe('II')
+    expect(loaded.rankedByMode['3x3'].lp).toBe(33)
+    expect(loaded.rankedByMode['4x4'].tier).toBe('diamond')
+    expect(loaded.rankedByMode['4x4'].division).toBe('I')
+    expect(loaded.rankedByMode['4x4'].lp).toBe(12)
+  })
+
+  test('converts legacy master and grandmaster tiers to challenger on load', () => {
+    const legacy = createDefaultProfile()
+    const rawLegacy = JSON.parse(JSON.stringify(legacy)) as Record<string, unknown>
+    ;((rawLegacy.rankedByMode as Record<string, unknown>)['3x3'] as Record<string, unknown>).tier = 'master'
+    ;((rawLegacy.rankedByMode as Record<string, unknown>)['3x3'] as Record<string, unknown>).division = null
+    ;((rawLegacy.rankedByMode as Record<string, unknown>)['4x4'] as Record<string, unknown>).tier = 'grandmaster'
+    ;((rawLegacy.rankedByMode as Record<string, unknown>)['4x4'] as Record<string, unknown>).division = null
+
+    localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(rawLegacy))
+    const loaded = loadProfile()
+
+    expect(loaded.rankedByMode['3x3'].tier).toBe('challenger')
+    expect(loaded.rankedByMode['3x3'].division).toBe(null)
+    expect(loaded.rankedByMode['4x4'].tier).toBe('challenger')
+    expect(loaded.rankedByMode['4x4'].division).toBe(null)
   })
 })

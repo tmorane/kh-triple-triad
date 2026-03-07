@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { RankedMatchResultSummary } from '../../domain/progression/ranked'
 import type { MatchMode, RankedTierId } from '../../domain/types'
+import { getRankEmblemSrc } from '../rankEmblems'
 
 type RankedLpRecapContext = 'modal' | 'results'
 
@@ -18,10 +19,7 @@ const tierNames: Record<RankedTierId, string> = {
   silver: 'Silver',
   gold: 'Gold',
   platinum: 'Platinum',
-  emerald: 'Emerald',
   diamond: 'Diamond',
-  master: 'Master',
-  grandmaster: 'Grandmaster',
   challenger: 'Challenger',
 }
 
@@ -135,7 +133,7 @@ export function RankedLpRecap({ mode, update, animated, context, testIdPrefix }:
     >
       <header className="ranked-lp-recap__header">
         <img
-          src={`/ranks/${update.next.tier}.svg`}
+          src={getRankEmblemSrc(update.next.tier)}
           alt={`${formatRankLabel(update.next.tier, update.next.division)} rank emblem`}
           className="ranked-lp-recap__emblem"
           data-testid={`${testIdPrefix}-emblem`}

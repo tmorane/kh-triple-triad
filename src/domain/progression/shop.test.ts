@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test } from 'bun:test'
 import { cardPool } from '../cards/cardPool'
 import { createSeededRng, type SeededRng } from '../random/seededRng'
 import type { PlayerProfile } from '../types'
@@ -20,6 +20,7 @@ function cloneProfile(profile: PlayerProfile): PlayerProfile {
     ...profile,
     ownedCardIds: [...profile.ownedCardIds],
     cardCopiesById: { ...profile.cardCopiesById },
+    cardFragmentsById: { ...profile.cardFragmentsById },
     shinyCardCopiesById: { ...profile.shinyCardCopiesById },
     packInventoryByRarity: { ...profile.packInventoryByRarity },
     deckSlots: profile.deckSlots.map((slot) => ({
@@ -29,7 +30,14 @@ function cloneProfile(profile: PlayerProfile): PlayerProfile {
       rules: { ...slot.rules },
     })) as PlayerProfile['deckSlots'],
     stats: { ...profile.stats },
+    achievementProgress: { ...profile.achievementProgress },
     achievements: [...profile.achievements],
+    missions: {
+      m1_type_specialist: { ...profile.missions.m1_type_specialist },
+      m2_combo_practitioner: { ...profile.missions.m2_combo_practitioner },
+      m3_corner_tactician: { ...profile.missions.m3_corner_tactician },
+    },
+    missionRewardsGrantedById: { ...profile.missionRewardsGrantedById },
     rankedByMode: {
       '3x3': {
         ...profile.rankedByMode['3x3'],
@@ -70,6 +78,10 @@ function getTotalCopies(profile: Pick<PlayerProfile, 'cardCopiesById' | 'shinyCa
   const normalCopies = Object.values(profile.cardCopiesById).reduce((sum, copies) => sum + copies, 0)
   const shinyCopies = Object.values(profile.shinyCardCopiesById).reduce((sum, copies) => sum + copies, 0)
   return normalCopies + shinyCopies
+}
+
+function getCardDexNumber(cardId: string): number {
+  return Number.parseInt(cardId.slice(1), 10)
 }
 
 describe('shop progression', () => {
@@ -331,7 +343,7 @@ describe('shop progression', () => {
     ).toThrow('Not enough gold for this special pack.')
   })
 
-  test('sans_coeur_focus pulls only Obscur cards', () => {
+  test('sans_coeur_focus pulls only Gen 1 cards', () => {
     const profile = createDefaultProfile()
     profile.gold = 2000
 
@@ -341,11 +353,13 @@ describe('shop progression', () => {
     expect(result.opened.pulls).toHaveLength(3)
     for (const pull of result.opened.pulls) {
       const card = cardPool.find((entry) => entry.id === pull.cardId)
-      expect(card?.categoryId).toBe('sans_coeur')
+      const dexNumber = card ? getCardDexNumber(card.id) : 0
+      expect(dexNumber).toBeGreaterThanOrEqual(1)
+      expect(dexNumber).toBeLessThanOrEqual(151)
     }
   })
 
-  test('sans_coeur_focus can roll a 1% legendary Obscur pull', () => {
+  test('sans_coeur_focus can roll a 1% legendary Gen 1 pull', () => {
     const profile = createDefaultProfile()
     profile.gold = 2000
 
@@ -357,16 +371,23 @@ describe('shop progression', () => {
 
     expect(result.opened.pulls[0].rarity).toBe('legendary')
     const firstPullCard = cardPool.find((entry) => entry.id === result.opened.pulls[0].cardId)
-    expect(firstPullCard?.categoryId).toBe('sans_coeur')
+    const dexNumber = firstPullCard ? getCardDexNumber(firstPullCard.id) : 0
+    expect(dexNumber).toBeGreaterThanOrEqual(1)
+    expect(dexNumber).toBeLessThanOrEqual(151)
   })
 
-  test('simili_focus pulls only Psy cards and never unsupported rarities', () => {
+  test('simili_focus pulls only Gen 2 cards and never unsupported rarities', () => {
     let profile = createDefaultProfile()
     profile.gold = 10000
     const rng = createSeededRng(33)
     const seenRarities = new Set<string>()
     const similiAllowedRarities = new Set(
-      cardPool.filter((card) => card.categoryId === 'simili').map((card) => card.rarity),
+      cardPool
+        .filter((card) => {
+          const dexNumber = getCardDexNumber(card.id)
+          return dexNumber >= 152 && dexNumber <= 251
+        })
+        .map((card) => card.rarity),
     )
 
     for (let index = 0; index < 10; index += 1) {
@@ -374,7 +395,9 @@ describe('shop progression', () => {
       profile = result.profile
       for (const pull of result.opened.pulls) {
         const card = cardPool.find((entry) => entry.id === pull.cardId)
-        expect(card?.categoryId).toBe('simili')
+        const dexNumber = card ? getCardDexNumber(card.id) : 0
+        expect(dexNumber).toBeGreaterThanOrEqual(152)
+        expect(dexNumber).toBeLessThanOrEqual(251)
         seenRarities.add(pull.rarity)
       }
     }
@@ -455,12 +478,50 @@ describe('shop progression', () => {
   test('purchaseAndOpenSpecialPack always evaluates achievements after opening', () => {
     const profile = createDefaultProfile()
     profile.gold = 2000
-    profile.stats.played = 1
     profile.achievements = []
 
     const result = purchaseAndOpenSpecialPack(profile, { packId: 'sans_coeur_focus' }, createSeededRng(97))
 
-    expect(result.profile.achievements.some((entry) => entry.id === 'play_1')).toBe(true)
+    expect(result.profile.achievements.some((entry) => entry.id === 'special_open_1')).toBe(true)
+  })
+
+  test('tracks packs purchased and unlocks first purchase achievement', () => {
+    const profile = createDefaultProfile()
+    profile.gold = 500
+
+    const result = purchaseShopPacks(profile, 'common', 2)
+
+    expect(result.profile.achievementProgress.packsPurchased).toBe(2)
+    expect(result.profile.achievements.some((entry) => entry.id === 'pack_buy_1')).toBe(true)
+  })
+
+  test('tracks packs opened and acquired copies when opening inventory packs', () => {
+    const profile = createDefaultProfile()
+    profile.packInventoryByRarity.common = 2
+
+    const result = openOwnedPacks(profile, 'common', 2, createSeededRng(1001))
+
+    expect(result.profile.achievementProgress.packsOpened).toBe(2)
+    expect(result.profile.achievementProgress.cardsAcquired).toBe(6)
+  })
+
+  test('tracks special pack openings as dedicated progress', () => {
+    const profile = createDefaultProfile()
+    profile.gold = 3000
+
+    const result = purchaseAndOpenSpecialPack(profile, { packId: 'simili_focus' }, createSeededRng(1002))
+
+    expect(result.profile.achievementProgress.specialPacksOpened).toBe(1)
+    expect(result.profile.achievementProgress.cardsAcquired).toBe(3)
+  })
+
+  test('tracks shiny pulls from shiny test pack', () => {
+    const profile = createDefaultProfile()
+
+    const result = openShinyTestPack(profile, createSeededRng(1003))
+
+    expect(result.profile.achievementProgress.shinyPulled).toBe(1)
+    expect(result.profile.achievementProgress.cardsAcquired).toBe(1)
   })
 
   test('purchaseAndOpenSpecialPack updates copies and NEW ownership flags', () => {

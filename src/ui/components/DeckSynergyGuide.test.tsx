@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test } from 'bun:test'
 import { DeckSynergyGuide } from './DeckSynergyGuide'
 
 const counts = {
@@ -59,7 +59,7 @@ describe('DeckSynergyGuide', () => {
 
     await user.hover(screen.getByTestId('guide-type-nescient'))
     expect(screen.getByTestId('guide-detail-title')).toHaveTextContent('Combat')
-    expect(screen.getByTestId('guide-detail-primary')).toHaveTextContent('Same/Plus')
+    expect(screen.getByTestId('guide-detail-primary')).toHaveTextContent('Main cachee')
 
     await user.unhover(screen.getByTestId('guide-type-nescient'))
     expect(screen.getByTestId('guide-detail-title')).toHaveTextContent('Obscur')

@@ -2,10 +2,11 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useGame } from '../../app/useGame'
 import { achievementCatalog } from '../../domain/progression/achievements'
+import { listClaimableAchievementRewardIds } from '../../domain/progression/achievementRewards'
 import type { AchievementId } from '../../domain/types'
 
 export function AchievementsPage() {
-  const { profile } = useGame()
+  const { profile, claimAllAchievementRewards } = useGame()
   const [hoveredId, setHoveredId] = useState<AchievementId | null>(null)
   const [focusedId, setFocusedId] = useState<AchievementId | null>(null)
   const [pinnedId, setPinnedId] = useState<AchievementId | null>(null)
@@ -18,16 +19,39 @@ export function AchievementsPage() {
     return ids
   }, [profile.achievements])
 
+  const claimableRewardCount = useMemo(
+    () => listClaimableAchievementRewardIds(profile).length,
+    [profile.achievements, profile.achievementRewardsClaimedById],
+  )
+  const claimButtonLabel = `Récupérer ${claimableRewardCount} pack(s) commun(s)`
+
   return (
     <section className="panel achievements-panel">
       <div className="achievements-headline">
-        <h1>Achievements</h1>
+        <h1>Succès</h1>
         <p className="small" data-testid="achievements-unlocked-count">
-          Unlocked {unlockedIds.size}/{achievementCatalog.length}
+          Débloqués {unlockedIds.size}/{achievementCatalog.length}
         </p>
+        <p className="small" data-testid="achievements-claimable-summary">
+          Récompenses claimables: {claimableRewardCount} pack(s) commun(s)
+        </p>
+        <button
+          type="button"
+          className="button"
+          data-testid="achievements-claim-all-button"
+          disabled={claimableRewardCount === 0 || !claimAllAchievementRewards}
+          onClick={() => {
+            if (!claimAllAchievementRewards) {
+              return
+            }
+            claimAllAchievementRewards()
+          }}
+        >
+          {claimButtonLabel}
+        </button>
       </div>
 
-      <div className="achievements-grid" aria-label="Achievements grid">
+      <div className="achievements-grid" aria-label="Grille des succès">
         {achievementCatalog.map((achievement) => {
           const isUnlocked = unlockedIds.has(achievement.id)
           const tooltipId = `achievement-tooltip-${achievement.id}`
@@ -79,10 +103,10 @@ export function AchievementsPage() {
 
       <div className="actions">
         <Link className="button button-primary" to="/setup">
-          Start Match
+          Lancer un match
         </Link>
         <Link className="button" to="/">
-          Home
+          Accueil
         </Link>
       </div>
     </section>

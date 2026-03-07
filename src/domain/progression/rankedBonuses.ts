@@ -14,25 +14,13 @@ const divisionWinLpBonusByDivision: Record<RankedDivision, number> = {
   I: 3,
 }
 
-const apexDeckBonusByTier: Record<'master' | 'grandmaster' | 'challenger', number> = {
-  master: 0,
-  grandmaster: 3,
-  challenger: 6,
-}
-
-const apexWinLpBonusByTier: Record<'master' | 'grandmaster' | 'challenger', number> = {
-  master: 0,
-  grandmaster: 1,
-  challenger: 2,
-}
-
-function isApexTier(tier: RankedTierId): tier is 'master' | 'grandmaster' | 'challenger' {
-  return tier === 'master' || tier === 'grandmaster' || tier === 'challenger'
+function isApexTier(tier: RankedTierId): tier is 'challenger' {
+  return tier === 'challenger'
 }
 
 export function getRankedDeckScoreBonus(tier: RankedTierId, division: RankedDivision | null): number {
   if (isApexTier(tier)) {
-    return apexDeckBonusByTier[tier]
+    return 6
   }
 
   return division ? divisionDeckBonusByDivision[division] : 0
@@ -40,7 +28,7 @@ export function getRankedDeckScoreBonus(tier: RankedTierId, division: RankedDivi
 
 export function getRankedWinLpBonus(tier: RankedTierId, division: RankedDivision | null): number {
   if (isApexTier(tier)) {
-    return apexWinLpBonusByTier[tier]
+    return 2
   }
 
   return division ? divisionWinLpBonusByDivision[division] : 0

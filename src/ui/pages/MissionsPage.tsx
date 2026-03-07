@@ -12,7 +12,7 @@ const missionTitles: Record<MissionId, string> = {
 
 const missionDescriptions: Record<MissionId, string> = {
   m1_type_specialist: 'Win 5 matches.',
-  m2_combo_practitioner: 'Trigger Same/Plus a total of 6 times.',
+  m2_combo_practitioner: 'Play 6 matches with Hidden enemy hand.',
   m3_corner_tactician: 'Play 12 cards in corner cells.',
 }
 
@@ -49,6 +49,7 @@ export function MissionsPage() {
       <div className="missions-grid">
         {missions.map((mission) => {
           const progressPercent = Math.max(0, Math.min(100, Math.round((mission.progress / mission.target) * 100)))
+          const rewardAlreadyGranted = profile.missionRewardsGrantedById[mission.id] === true
           const status = mission.claimed ? 'Claimed' : mission.completed ? 'Completed' : 'In progress'
           return (
             <article key={mission.id} className="missions-card" data-testid={`missions-card-${mission.id}`}>
@@ -57,6 +58,11 @@ export function MissionsPage() {
               <p className="small missions-reward" data-testid={`missions-reward-${mission.id}`}>
                 Reward: {formatMissionReward(missionRewards[mission.id])}
               </p>
+              {rewardAlreadyGranted ? (
+                <p className="small missions-reward" data-testid={`missions-reward-history-${mission.id}`}>
+                  Reward already granted before reset.
+                </p>
+              ) : null}
               <p className="small" data-testid={`missions-progress-${mission.id}`}>
                 {mission.progress}/{mission.target}
               </p>

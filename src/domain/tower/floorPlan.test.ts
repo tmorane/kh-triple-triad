@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test } from 'bun:test'
 import { isTowerBossFloor, resolveTowerFloorSpec, resolveTowerOpponentLevel } from './floorPlan'
 
 describe('tower floor plan', () => {
@@ -9,26 +9,22 @@ describe('tower floor plan', () => {
     expect(isTowerBossFloor(100)).toBe(true)
   })
 
-  test('uses non-boss rules in deterministic 3-floor cycles', () => {
+  test('uses Open-only rules on all non-boss floors', () => {
     expect(resolveTowerFloorSpec(1).rules).toEqual({ open: true, same: false, plus: false })
     expect(resolveTowerFloorSpec(3).rules).toEqual({ open: true, same: false, plus: false })
-
-    expect(resolveTowerFloorSpec(4).rules).toEqual({ open: true, same: true, plus: false })
-    expect(resolveTowerFloorSpec(6).rules).toEqual({ open: true, same: true, plus: false })
-
-    expect(resolveTowerFloorSpec(7).rules).toEqual({ open: true, same: false, plus: true })
-    expect(resolveTowerFloorSpec(9).rules).toEqual({ open: true, same: false, plus: true })
+    expect(resolveTowerFloorSpec(4).rules).toEqual({ open: true, same: false, plus: false })
+    expect(resolveTowerFloorSpec(6).rules).toEqual({ open: true, same: false, plus: false })
+    expect(resolveTowerFloorSpec(7).rules).toEqual({ open: true, same: false, plus: false })
+    expect(resolveTowerFloorSpec(9).rules).toEqual({ open: true, same: false, plus: false })
   })
 
-  test('uses boss rule sets by floor bracket', () => {
-    expect(resolveTowerFloorSpec(10).rules).toEqual({ open: true, same: true, plus: false })
-    expect(resolveTowerFloorSpec(20).rules).toEqual({ open: true, same: true, plus: false })
-
-    expect(resolveTowerFloorSpec(30).rules).toEqual({ open: true, same: false, plus: true })
-    expect(resolveTowerFloorSpec(50).rules).toEqual({ open: true, same: false, plus: true })
-
-    expect(resolveTowerFloorSpec(60).rules).toEqual({ open: true, same: true, plus: true })
-    expect(resolveTowerFloorSpec(100).rules).toEqual({ open: true, same: true, plus: true })
+  test('uses Open-only rules on all boss floors', () => {
+    expect(resolveTowerFloorSpec(10).rules).toEqual({ open: true, same: false, plus: false })
+    expect(resolveTowerFloorSpec(20).rules).toEqual({ open: true, same: false, plus: false })
+    expect(resolveTowerFloorSpec(30).rules).toEqual({ open: true, same: false, plus: false })
+    expect(resolveTowerFloorSpec(50).rules).toEqual({ open: true, same: false, plus: false })
+    expect(resolveTowerFloorSpec(60).rules).toEqual({ open: true, same: false, plus: false })
+    expect(resolveTowerFloorSpec(100).rules).toEqual({ open: true, same: false, plus: false })
   })
 
   test('applies score bonus spikes on bosses (+5 then +10)', () => {

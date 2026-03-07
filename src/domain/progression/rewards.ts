@@ -41,6 +41,7 @@ export function applyMatchRewards(
     ...profile,
     ownedCardIds: [...profile.ownedCardIds],
     cardCopiesById: { ...profile.cardCopiesById },
+    cardFragmentsById: { ...profile.cardFragmentsById },
     shinyCardCopiesById: { ...profile.shinyCardCopiesById },
     packInventoryByRarity: { ...profile.packInventoryByRarity },
     deckSlots: profile.deckSlots.map((slot) => ({
@@ -51,12 +52,14 @@ export function applyMatchRewards(
     })) as PlayerProfile['deckSlots'],
     selectedDeckSlotId: profile.selectedDeckSlotId,
     stats: { ...profile.stats },
+    achievementProgress: { ...profile.achievementProgress },
     achievements: [...profile.achievements],
     missions: {
       m1_type_specialist: { ...profile.missions.m1_type_specialist },
       m2_combo_practitioner: { ...profile.missions.m2_combo_practitioner },
       m3_corner_tactician: { ...profile.missions.m3_corner_tactician },
     },
+    missionRewardsGrantedById: { ...profile.missionRewardsGrantedById },
     rankedByMode: {
       '3x3': {
         ...profile.rankedByMode['3x3'],
@@ -71,12 +74,20 @@ export function applyMatchRewards(
   }
 
   updatedProfile.stats.played += 1
+  updatedProfile.achievementProgress.matchesPlayed += 1
   if (result.winner === 'player') {
     updatedProfile.stats.won += 1
     updatedProfile.stats.streak += 1
     updatedProfile.stats.bestStreak = Math.max(updatedProfile.stats.bestStreak, updatedProfile.stats.streak)
+    updatedProfile.achievementProgress.matchesWon += 1
+    updatedProfile.achievementProgress.currentStreak += 1
+    updatedProfile.achievementProgress.bestStreak = Math.max(
+      updatedProfile.achievementProgress.bestStreak,
+      updatedProfile.achievementProgress.currentStreak,
+    )
   } else {
     updatedProfile.stats.streak = 0
+    updatedProfile.achievementProgress.currentStreak = 0
   }
 
   const baseGold = result.winner === 'player' ? 60 : result.winner === 'draw' ? 30 : 20
@@ -95,13 +106,7 @@ export function applyMatchRewards(
   if (result.winner === 'player' && !disableCardCapture) {
     const capturedCardId = resolveCapturedCardId(updatedProfile.ownedCardIds, cpuDeck, rng, claimedCpuCardId)
     droppedCardId = capturedCardId
-
-    if (!updatedProfile.ownedCardIds.includes(capturedCardId)) {
-      updatedProfile.ownedCardIds.push(capturedCardId)
-      newlyOwnedCards.push(capturedCardId)
-    }
-
-    updatedProfile.cardCopiesById[capturedCardId] = (updatedProfile.cardCopiesById[capturedCardId] ?? 0) + 1
+    updatedProfile.cardFragmentsById[capturedCardId] = (updatedProfile.cardFragmentsById[capturedCardId] ?? 0) + 1
   }
 
   const criticalVictoryCellCount = getModeSpec(result.mode).cellCount
@@ -120,6 +125,7 @@ export function applyMatchRewards(
   const bonusGoldFromAutoDeck = Math.max(0, multipliedTotalGold - rawTotalGold)
 
   updatedProfile.gold += multipliedTotalGold
+  updatedProfile.achievementProgress.goldEarned += multipliedTotalGold
 
   const unlocked = evaluateAchievements(updatedProfile)
   updatedProfile.achievements.push(...unlocked)

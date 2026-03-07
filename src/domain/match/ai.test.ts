@@ -1,15 +1,12 @@
-import { beforeAll, describe, expect, test, vi } from 'vitest'
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
+import { __setCardPoolOverrideForTests } from '../cards/cardPool'
+import { selectCpuMove } from './ai'
+import { applyMove, createMatch, listLegalMoves } from './engine'
 import type { MatchConfig, Move } from '../types'
 import type { MatchState } from './types'
 
-let applyMove: typeof import('./engine')['applyMove']
-let createMatch: typeof import('./engine')['createMatch']
-let listLegalMoves: typeof import('./engine')['listLegalMoves']
-let selectCpuMove: typeof import('./ai')['selectCpuMove']
-
-beforeAll(async () => {
-  vi.doMock('../cards/cardPool', () => {
-    const cardById = {
+beforeAll(() => {
+  const cardById = {
       c01: {
         id: 'c01',
         name: 'Ember Scout',
@@ -131,23 +128,13 @@ beforeAll(async () => {
         categoryId: 'allie',
         elementId: 'tenebres',
       },
-    } as const
+  } as const
 
-    return {
-      cardPool: Object.values(cardById),
-      cardById,
-      getCard(cardId: string) {
-        const card = cardById[cardId as keyof typeof cardById]
-        if (!card) {
-          throw new Error(`Unknown card: ${cardId}`)
-        }
-        return card
-      },
-    }
-  })
+  __setCardPoolOverrideForTests(Object.values(cardById))
+})
 
-  ;({ applyMove, createMatch, listLegalMoves } = await import('./engine'))
-  ;({ selectCpuMove } = await import('./ai'))
+afterAll(() => {
+  __setCardPoolOverrideForTests(null)
 })
 
 function config(overrides?: Partial<MatchConfig>): MatchConfig {

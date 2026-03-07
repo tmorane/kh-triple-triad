@@ -26,6 +26,20 @@ function diffAddedValues(previousValues: string[], nextValues: string[]): string
   return nextValues.filter((value) => !previousSet.has(value))
 }
 
+function isOnPoseElement(elementId: CardElementId): boolean {
+  return (
+    elementId === 'feu' ||
+    elementId === 'eau' ||
+    elementId === 'electrik' ||
+    elementId === 'glace' ||
+    elementId === 'poison' ||
+    elementId === 'sol' ||
+    elementId === 'vol' ||
+    elementId === 'psy' ||
+    elementId === 'dragon'
+  )
+}
+
 export function deriveEffectFeedEntries(previous: MatchState, next: MatchState, move: Move): EffectFeedEntry[] {
   const entries: EffectFeedEntry[] = []
   const previousElementState = previous.elementState
@@ -56,10 +70,21 @@ export function deriveEffectFeedEntries(previous: MatchState, next: MatchState, 
   for (const actor of ['player', 'cpu'] as const) {
     const nextFrozen = nextElementState.frozenCellByActor[actor]
     const previousFrozen = previousElementState?.frozenCellByActor[actor]
-    if (Number.isInteger(nextFrozen) && nextFrozen !== previousFrozen) {
-      const blockedCell = nextFrozen as number
+    if (
+      nextFrozen &&
+      Number.isInteger(nextFrozen.cell) &&
+      nextFrozen.turnsRemaining > 0 &&
+      (!previousFrozen ||
+        previousFrozen.cell !== nextFrozen.cell ||
+        previousFrozen.turnsRemaining < nextFrozen.turnsRemaining)
+    ) {
+      const blockedCell = nextFrozen.cell
       entries.push(
-        makeEntry(`freeze:${next.turns}:${actor}:${blockedCell}`, `❄️ Case ${blockedCell + 1} gelée pour ${actorLabel(actor)}.`, 'debuff'),
+        makeEntry(
+          `freeze:${next.turns}:${actor}:${blockedCell}`,
+          `❄️ Case ${blockedCell + 1} gelée pour ${actorLabel(actor)} (${nextFrozen.turnsRemaining} tour(s)).`,
+          'debuff',
+        ),
       )
     }
   }
@@ -127,11 +152,17 @@ export function deriveEffectFeedEntries(previous: MatchState, next: MatchState, 
       )
     }
 
-    if (
-      !previousEffects?.volatileAllStatsMinusOneUntilEndOfOwnerNextTurn &&
-      nextEffects.volatileAllStatsMinusOneUntilEndOfOwnerNextTurn
-    ) {
+    const previousAllStatsMinusOneStacks = previousEffects?.allStatsMinusOneStacks ?? []
+    const nextAllStatsMinusOneStacks = nextEffects.allStatsMinusOneStacks
+    const previousVolatileCount = previousAllStatsMinusOneStacks.filter((stack) => stack.source === 'vol').length
+    const nextVolatileCount = nextAllStatsMinusOneStacks.filter((stack) => stack.source === 'vol').length
+    if (nextVolatileCount > previousVolatileCount) {
       entries.push(makeEntry(`vol:${next.turns}:${cell}`, `🕊️ ${cardName} subit un malus temporaire.`, 'debuff'))
+    }
+    const previousGroundCount = previousAllStatsMinusOneStacks.filter((stack) => stack.source === 'sol').length
+    const nextGroundCount = nextAllStatsMinusOneStacks.filter((stack) => stack.source === 'sol').length
+    if (nextGroundCount > previousGroundCount) {
+      entries.push(makeEntry(`sol:${next.turns}:${cell}`, `🪨 ${cardName} subit un malus temporaire de Sol.`, 'debuff'))
     }
 
     if (!previousEffects?.unflippableUntilEndOfOpponentNextTurn && nextEffects.unflippableUntilEndOfOpponentNextTurn) {
@@ -165,7 +196,8 @@ export function deriveEffectFeedEntries(previous: MatchState, next: MatchState, 
     }
   }
 
-  if (entries.length === 0 && nextElementState.usedOnPoseByActor[move.actor][getCard(move.cardId).elementId]) {
+  const moveElementId = getCard(move.cardId).elementId
+  if (entries.length === 0 && isOnPoseElement(moveElementId) && nextElementState.usedOnPoseByActor[move.actor][moveElementId]) {
     entries.push(makeEntry(`generic:${next.turns}:${move.actor}:${move.cardId}`, '✨ Effet de type appliqué.', 'info'))
   }
 

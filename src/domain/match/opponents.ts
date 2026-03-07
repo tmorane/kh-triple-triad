@@ -104,7 +104,7 @@ export const opponentLevelConfigs: ReadonlyArray<OpponentLevelConfig> = [
   },
   {
     level: 6,
-    tierId: 'emerald',
+    tierId: 'diamond',
     scoreRange: { min: 104, max: 128 },
     rarityWeights: { rare: 0.45, epic: 0.55 },
     aiProfile: 'expert',
@@ -112,7 +112,7 @@ export const opponentLevelConfigs: ReadonlyArray<OpponentLevelConfig> = [
   },
   {
     level: 7,
-    tierId: 'diamond',
+    tierId: 'challenger',
     scoreRange: { min: 132, max: 158 },
     rarityWeights: { epic: 0.65, legendary: 0.35 },
     aiProfile: 'expert',
@@ -120,7 +120,7 @@ export const opponentLevelConfigs: ReadonlyArray<OpponentLevelConfig> = [
   },
   {
     level: 8,
-    tierId: 'master',
+    tierId: 'challenger',
     scoreRange: { min: 150, max: 178 },
     rarityWeights: { epic: 0.25, legendary: 0.75 },
     aiProfile: 'expert',
@@ -128,7 +128,7 @@ export const opponentLevelConfigs: ReadonlyArray<OpponentLevelConfig> = [
   },
   {
     level: 9,
-    tierId: 'grandmaster',
+    tierId: 'challenger',
     scoreRange: { min: 156, max: 168 },
     rarityWeights: { epic: 0.1, legendary: 0.9 },
     aiProfile: 'expert',
@@ -150,10 +150,7 @@ const rankedTierToOpponentLevel: Record<RankedTierId, OpponentLevel> = {
   silver: 3,
   gold: 4,
   platinum: 5,
-  emerald: 6,
-  diamond: 7,
-  master: 8,
-  grandmaster: 8,
+  diamond: 6,
   challenger: 8,
 }
 

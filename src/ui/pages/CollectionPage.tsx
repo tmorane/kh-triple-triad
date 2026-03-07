@@ -4,12 +4,18 @@ import { useGame } from '../../app/useGame'
 import { cardPool } from '../../domain/cards/cardPool'
 import { compareCardsByPokedexNumber, formatCardPokedexNumber } from '../../domain/cards/pokedex'
 import { cardElementIds, getCategoryLabel, getElementLabel } from '../../domain/cards/taxonomy'
-import { SHINY_CRAFT_COST, getNormalCopies, getShinyCopies, getTotalCopies, hasShinyCopy } from '../../domain/progression/shiny'
+import {
+  canCraftCardFromFragments,
+  getCardFragmentCost,
+  getCardFragments,
+} from '../../domain/progression/fragments'
+import { hasUnlockedAllAchievements } from '../../domain/progression/achievementRewards'
+import { getNormalCopies, getShinyCraftCost, getShinyCopies, getTotalCopies, hasShinyCopy } from '../../domain/progression/shiny'
 import type { CardDef, CardElementId, CardId, Rarity } from '../../domain/types'
 import { TriadCard } from '../components/TriadCard'
 import { getElementLogoMeta } from '../components/elementLogos'
 
-type CollectionDiscoveryFilter = 'all' | 'owned' | 'locked'
+type CollectionDiscoveryFilter = 'all' | 'owned' | 'locked' | 'fragment'
 type CollectionFinishFilter = 'all' | 'shiny'
 
 const rarityFilterOrder: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary']
@@ -19,6 +25,7 @@ const discoveryFilterOptions: Array<{ value: CollectionDiscoveryFilter; label: s
   { value: 'all', label: 'Tous' },
   { value: 'owned', label: 'Capturés' },
   { value: 'locked', label: 'Non capturés' },
+  { value: 'fragment', label: 'Fragments' },
 ]
 
 const finishFilterOptions: Array<{ value: CollectionFinishFilter; label: string }> = [
@@ -98,7 +105,7 @@ const availableTypesInPool = cardElementIds
 const cardsByDexOrder = [...cardPool].sort(compareCardsByPokedexNumber)
 
 function isCollectionDiscoveryFilter(value: unknown): value is CollectionDiscoveryFilter {
-  return value === 'all' || value === 'owned' || value === 'locked'
+  return value === 'all' || value === 'owned' || value === 'locked' || value === 'fragment'
 }
 
 function isCollectionFinishFilter(value: unknown): value is CollectionFinishFilter {
@@ -253,6 +260,7 @@ type CollectionStatusSectionProps = {
   selectCardHandlers: Map<CardId, () => void>
   virtualizationEnabled: boolean
   viewport: ViewportSnapshot
+  fragmentSilhouette: boolean
 }
 
 type VirtualWindow = {
@@ -272,6 +280,7 @@ function CollectionStatusSection({
   selectCardHandlers,
   virtualizationEnabled,
   viewport,
+  fragmentSilhouette,
 }: CollectionStatusSectionProps) {
   const gridRef = useRef<HTMLDivElement | null>(null)
   const cardsPerPage = useMemo(() => getCollectionCardsPerPage(), [])
@@ -486,6 +495,7 @@ function CollectionStatusSection({
               key={card.id}
               card={card}
               context="collection-list"
+              displayMode={fragmentSilhouette ? 'fragment-silhouette' : 'default'}
               owned={isOwned}
               copies={normalCopies + shinyCopies}
               shiny={shinyCopies > 0}
@@ -511,7 +521,7 @@ function CollectionStatusSection({
 }
 
 export function CollectionPage() {
-  const { profile, lastMatchSummary, craftShinyCard } = useGame()
+  const { profile, lastMatchSummary, craftCardFromFragments, craftShinyCard } = useGame()
   const [virtualizationEnabled] = useState(false)
   const viewport = useViewportSnapshot(virtualizationEnabled)
   const owned = useMemo(() => new Set(profile.ownedCardIds), [profile.ownedCardIds])
@@ -530,6 +540,7 @@ export function CollectionPage() {
   const [selectedTypes, setSelectedTypes] = useState<CardElementId[]>(initialFilters?.selectedTypes ?? availableTypesInPool)
   const [discoveryFilter, setDiscoveryFilter] = useState<CollectionDiscoveryFilter>(initialFilters?.discoveryFilter ?? 'all')
   const [finishFilter, setFinishFilter] = useState<CollectionFinishFilter>(initialFilters?.finishFilter ?? 'all')
+  const isFragmentFilterActive = discoveryFilter === 'fragment'
   const selectCardHandlers = useMemo(() => {
     const handlers = new Map<CardId, () => void>()
     for (const card of cardsByDexOrder) {
@@ -545,6 +556,7 @@ export function CollectionPage() {
       const cards: CardDef[] = []
       const filterOwned = discoveryFilter === 'owned'
       const filterLocked = discoveryFilter === 'locked'
+      const filterFragments = discoveryFilter === 'fragment'
       const filterShiny = finishFilter === 'shiny'
 
       for (const card of cardsByDexOrder) {
@@ -561,6 +573,9 @@ export function CollectionPage() {
           continue
         }
         if (filterLocked && isOwnedCard) {
+          continue
+        }
+        if (filterFragments && getCardFragments(profile, card.id) <= 0) {
           continue
         }
         if (filterShiny && !hasShinyCopy(profile, card.id)) {
@@ -632,9 +647,15 @@ export function CollectionPage() {
   const selectedElementLogo = selectedCard ? getElementLogoMeta(selectedCard.elementId) : null
   const selectedNormalCopies = selectedCard ? getNormalCopies(profile, selectedCard.id) : 0
   const selectedShinyCopies = selectedCard ? getShinyCopies(profile, selectedCard.id) : 0
+  const selectedCardFragments = selectedCard ? getCardFragments(profile, selectedCard.id) : 0
+  const selectedCardFragmentCost = selectedCard ? getCardFragmentCost(selectedCard.id) : 0
   const selectedTotalCopies = selectedNormalCopies + selectedShinyCopies
   const selectedDisplayShiny = selectedCard ? hasShinyCopy(profile, selectedCard.id) : false
-  const canCraftSelected = selectedOwned && selectedNormalCopies >= SHINY_CRAFT_COST
+  const shinyCraftCost = getShinyCraftCost(profile)
+  const chromaCharmActive = hasUnlockedAllAchievements(profile)
+  const canCraftSelectedFromFragments =
+    selectedCard !== null && canCraftCardFromFragments(profile, selectedCard.id) && Boolean(craftCardFromFragments)
+  const canCraftSelected = selectedOwned && selectedNormalCopies >= shinyCraftCost
 
   const isDefaultFilterState =
     discoveryFilter === 'all' &&
@@ -817,6 +838,7 @@ export function CollectionPage() {
                   selectCardHandlers={selectCardHandlers}
                   virtualizationEnabled={virtualizationEnabled}
                   viewport={viewport}
+                  fragmentSilhouette={isFragmentFilterActive}
                 />
               ))}
             </div>
@@ -834,6 +856,7 @@ export function CollectionPage() {
               <TriadCard
                 card={selectedCard}
                 context="collection-detail"
+                displayMode={isFragmentFilterActive ? 'fragment-silhouette' : 'default'}
                 owned={selectedOwned}
                 copies={selectedTotalCopies}
                 shiny={selectedDisplayShiny}
@@ -899,10 +922,30 @@ export function CollectionPage() {
                 </div>
               </dl>
 
+              <div className="collection-shiny-craft" data-testid="collection-fragment-craft">
+                <p className="small" data-testid="collection-fragment-craft-progress">
+                  Fragments: {selectedCardFragments}/{selectedCardFragmentCost}
+                </p>
+                <button
+                  type="button"
+                  className="button collection-shiny-craft-button"
+                  onClick={() => craftCardFromFragments?.(selectedCard.id)}
+                  disabled={!canCraftSelectedFromFragments}
+                  data-testid="collection-fragment-craft-button"
+                >
+                  Fabriquer 1 carte
+                </button>
+              </div>
+
               {selectedOwned ? (
                 <div className="collection-shiny-craft" data-testid="collection-shiny-craft">
+                  {chromaCharmActive ? (
+                    <p className="small" data-testid="collection-chroma-charm-badge">
+                      Charm Chroma actif: coût shiny réduit de 50%
+                    </p>
+                  ) : null}
                   <p className="small" data-testid="collection-shiny-craft-progress">
-                    Normales: {selectedNormalCopies}/{SHINY_CRAFT_COST}
+                    Normales: {selectedNormalCopies}/{shinyCraftCost}
                   </p>
                   <button
                     type="button"

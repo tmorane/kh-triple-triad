@@ -17,6 +17,11 @@ export interface MatchMissionsResult {
   claimedMissionIds: MissionId[]
 }
 
+export interface ClaimCompletedMissionResult {
+  profile: PlayerProfile
+  claimed: boolean
+}
+
 interface MissionDefinition {
   id: MissionId
   target: number
@@ -56,7 +61,7 @@ export function applyMatchMissions(
   metrics: MatchMissionMetrics,
   seed: number,
 ): MatchMissionsResult {
-  const rng = createSeededRng(seed)
+  void seed
   const nextProfile = cloneProfile(profile)
   const completedMissionIds: MissionId[] = []
   const claimedMissionIds: MissionId[] = []
@@ -75,16 +80,13 @@ export function applyMatchMissions(
     if (!mission.completed && mission.progress >= target) {
       mission.completed = true
       completedMissionIds.push(missionId)
+      nextProfile.achievementProgress.missionsCompleted += 1
     }
 
-    const shouldClaim = mission.completed && !mission.claimed && mission.progress >= target && previousProgress < target
-    if (!shouldClaim) {
-      continue
+    const shouldMarkClaimable = mission.completed && !mission.claimed && mission.progress >= target && previousProgress < target
+    if (shouldMarkClaimable) {
+      mission.claimed = false
     }
-
-    applyMissionReward(nextProfile, missionDefinitions[missionId].reward, rng)
-    mission.claimed = true
-    claimedMissionIds.push(missionId)
   }
 
   const unlocked = evaluateAchievements(nextProfile)
@@ -96,6 +98,42 @@ export function applyMatchMissions(
     profile: nextProfile,
     completedMissionIds,
     claimedMissionIds,
+  }
+}
+
+export function claimCompletedMission(
+  profile: PlayerProfile,
+  missionId: MissionId,
+  seed: number,
+): ClaimCompletedMissionResult {
+  const currentMission = profile.missions[missionId]
+  if (!currentMission.completed) {
+    return { profile, claimed: false }
+  }
+
+  const nextProfile = cloneProfile(profile)
+  const mission = nextProfile.missions[missionId]
+  const rewardAlreadyGrantedBeforeReset = nextProfile.missionRewardsGrantedById[missionId] === true
+
+  if (!mission.claimed && !rewardAlreadyGrantedBeforeReset) {
+    const rng = createSeededRng(seed)
+    applyMissionReward(nextProfile, missionDefinitions[missionId].reward, rng)
+  }
+
+  if (rewardAlreadyGrantedBeforeReset) {
+    delete nextProfile.missionRewardsGrantedById[missionId]
+  }
+
+  nextProfile.missions[missionId] = createMissionProgress(missionId)
+
+  const unlocked = evaluateAchievements(nextProfile)
+  if (unlocked.length > 0) {
+    nextProfile.achievements.push(...unlocked)
+  }
+
+  return {
+    profile: nextProfile,
+    claimed: true,
   }
 }
 
@@ -140,6 +178,7 @@ function applyMissionReward(
 ) {
   if (reward.kind === 'gold') {
     profile.gold += reward.amount
+    profile.achievementProgress.goldEarned += reward.amount
     return
   }
 
@@ -154,6 +193,7 @@ function applyMissionReward(
     profile.ownedCardIds.push(cardId)
   }
   profile.cardCopiesById[cardId] = previousCopies + 1
+  profile.achievementProgress.cardsAcquired += 1
 }
 
 function chooseMissionCard(profile: PlayerProfile, rng: ReturnType<typeof createSeededRng>): CardId {
@@ -167,6 +207,7 @@ function cloneProfile(profile: PlayerProfile): PlayerProfile {
     ...profile,
     ownedCardIds: [...profile.ownedCardIds],
     cardCopiesById: { ...profile.cardCopiesById },
+    cardFragmentsById: { ...profile.cardFragmentsById },
     shinyCardCopiesById: { ...profile.shinyCardCopiesById },
     packInventoryByRarity: { ...profile.packInventoryByRarity },
     deckSlots: profile.deckSlots.map((slot) => ({
@@ -176,12 +217,14 @@ function cloneProfile(profile: PlayerProfile): PlayerProfile {
       rules: { ...slot.rules },
     })) as PlayerProfile['deckSlots'],
     stats: { ...profile.stats },
+    achievementProgress: { ...profile.achievementProgress },
     achievements: [...profile.achievements],
     missions: {
       m1_type_specialist: { ...profile.missions.m1_type_specialist },
       m2_combo_practitioner: { ...profile.missions.m2_combo_practitioner },
       m3_corner_tactician: { ...profile.missions.m3_corner_tactician },
     },
+    missionRewardsGrantedById: { ...profile.missionRewardsGrantedById },
     rankedByMode: {
       '3x3': {
         ...profile.rankedByMode['3x3'],
@@ -193,5 +236,20 @@ function cloneProfile(profile: PlayerProfile): PlayerProfile {
       },
     },
     settings: { ...profile.settings },
+    tutorialProgress: profile.tutorialProgress
+      ? {
+          baseCompleted: profile.tutorialProgress.baseCompleted,
+          completedElementById: { ...profile.tutorialProgress.completedElementById },
+        }
+      : undefined,
+    towerProgress: profile.towerProgress ? { ...profile.towerProgress } : undefined,
+    towerRun: profile.towerRun
+      ? {
+          ...profile.towerRun,
+          deck: [...profile.towerRun.deck],
+          relics: { ...profile.towerRun.relics },
+          pendingRewards: [...profile.towerRun.pendingRewards],
+        }
+      : profile.towerRun,
   }
 }

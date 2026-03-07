@@ -1,14 +1,10 @@
-import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest'
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
+import { __setCardPoolOverrideForTests } from '../cards/cardPool'
+import { applyMove, applyMoveDetailed, createMatch, resolveMatchResult } from './engine'
 import type { MatchConfig, Move } from '../types'
 
-let applyMove: typeof import('./engine')['applyMove']
-let createMatch: typeof import('./engine')['createMatch']
-let resolveMatchResult: typeof import('./engine')['resolveMatchResult']
-
-beforeAll(async () => {
-  vi.resetModules()
-  vi.doMock('../cards/cardPool', () => {
-    const cardById = {
+beforeAll(() => {
+  const cardById = {
       c01: {
         id: 'c01',
         name: 'Ember Scout',
@@ -152,27 +148,13 @@ beforeAll(async () => {
         categoryId: 'humain',
         elementId: 'acier',
       },
-    } as const
+  } as const
 
-    return {
-      cardPool: Object.values(cardById),
-      cardById,
-      getCard(cardId: string) {
-        const card = cardById[cardId as keyof typeof cardById]
-        if (!card) {
-          throw new Error(`Unknown card: ${cardId}`)
-        }
-        return card
-      },
-    }
-  })
-
-  ;({ applyMove, createMatch, resolveMatchResult } = await import('./engine'))
+  __setCardPoolOverrideForTests(Object.values(cardById))
 })
 
 afterAll(() => {
-  vi.doUnmock('../cards/cardPool')
-  vi.resetModules()
+  __setCardPoolOverrideForTests(null)
 })
 
 function makeConfig(overrides?: Partial<MatchConfig>): MatchConfig {
@@ -247,111 +229,72 @@ describe('match engine', () => {
     expect(result.board[7]?.owner).toBe('player')
   })
 
-  test('Same flips only when two or more exact matches exist', () => {
+  test('ignores Same and Plus flags and keeps only normal capture behavior', () => {
     const state = createMatch(
       makeConfig({
-        rules: { open: true, same: true, plus: false },
+        rules: { open: true, same: true, plus: true },
         playerDeck: ['c01', 'c02', 'c03', 'c09', 'c16'],
         cpuDeck: ['c06', 'c08', 'c07', 'c10', 'c11'],
       }),
     )
 
+    expect(state.rules.same).toBe(false)
+    expect(state.rules.plus).toBe(false)
+
     const result = play(state, [
       { actor: 'player', cardId: 'c01', cell: 8 },
-
       { actor: 'cpu', cardId: 'c06', cell: 1 },
       { actor: 'player', cardId: 'c02', cell: 7 },
       { actor: 'cpu', cardId: 'c08', cell: 3 },
       { actor: 'player', cardId: 'c09', cell: 4 },
     ])
 
-    expect(result.board[1]?.owner).toBe('player')
-    expect(result.board[3]?.owner).toBe('player')
-  })
-
-  test('Same does not flip with only one exact match', () => {
-    const state = createMatch(
-      makeConfig({
-        rules: { open: true, same: true, plus: false },
-        playerDeck: ['c01', 'c02', 'c03', 'c05', 'c16'],
-        cpuDeck: ['c06', 'c08', 'c07', 'c10', 'c11'],
-      }),
-    )
-
-    const result = play(state, [
-      { actor: 'player', cardId: 'c01', cell: 8 },
-      { actor: 'cpu', cardId: 'c06', cell: 1 },
-      { actor: 'player', cardId: 'c02', cell: 7 },
-      { actor: 'cpu', cardId: 'c08', cell: 3 },
-      { actor: 'player', cardId: 'c05', cell: 4 },
-    ])
-
     expect(result.board[1]?.owner).toBe('cpu')
     expect(result.board[3]?.owner).toBe('cpu')
   })
 
-  test('Plus flips only when two or more equal sums exist', () => {
-    const state = createMatch(
-      makeConfig({
-        rules: { open: true, same: false, plus: true },
-        playerDeck: ['c01', 'c02', 'c03', 'c05', 'c16'],
-        cpuDeck: ['c03', 'c07', 'c08', 'c10', 'c11'],
-      }),
-    )
-
-    const result = play(state, [
+  test('applyMoveDetailed emits normal flip events with direction-based axis', () => {
+    const horizontalState = play(createMatch(makeConfig()), [
       { actor: 'player', cardId: 'c01', cell: 8 },
-      { actor: 'cpu', cardId: 'c03', cell: 1 },
-      { actor: 'player', cardId: 'c02', cell: 7 },
-      { actor: 'cpu', cardId: 'c07', cell: 3 },
-      { actor: 'player', cardId: 'c05', cell: 4 },
+      { actor: 'cpu', cardId: 'c06', cell: 0 },
+    ])
+    const horizontalResolution = applyMoveDetailed(horizontalState, { actor: 'player', cardId: 'c16', cell: 1 })
+
+    expect(horizontalResolution.flipEvents).toEqual([
+      { cell: 0, kind: 'flipped', axis: 'horizontal', phase: 'primary' },
     ])
 
-    expect(result.board[1]?.owner).toBe('player')
-    expect(result.board[3]?.owner).toBe('player')
-  })
-
-  test('Plus does not flip when equal sum exists on only one side', () => {
-    const state = createMatch(
-      makeConfig({
-        rules: { open: true, same: false, plus: true },
-        playerDeck: ['c01', 'c02', 'c03', 'c04', 'c16'],
-        cpuDeck: ['c03', 'c08', 'c07', 'c10', 'c11'],
-      }),
-    )
-
-    const result = play(state, [
-      { actor: 'player', cardId: 'c01', cell: 8 },
-      { actor: 'cpu', cardId: 'c03', cell: 1 },
-      { actor: 'player', cardId: 'c04', cell: 7 },
-      { actor: 'cpu', cardId: 'c08', cell: 3 },
-      { actor: 'player', cardId: 'c02', cell: 4 },
-    ])
-
-    expect(result.board[1]?.owner).toBe('cpu')
-    expect(result.board[3]?.owner).toBe('cpu')
-  })
-
-  test('combo chain flips continue from Same or Plus flips', () => {
-    const state = createMatch(
-      makeConfig({
-        rules: { open: true, same: true, plus: false },
-        playerDeck: ['c01', 'c03', 'c04', 'c09', 'c16'],
-        cpuDeck: ['c06', 'c08', 'c02', 'c10', 'c11'],
-      }),
-    )
-
-    const result = play(state, [
+    const verticalState = play(createMatch(makeConfig()), [
       { actor: 'player', cardId: 'c01', cell: 8 },
       { actor: 'cpu', cardId: 'c06', cell: 1 },
-      { actor: 'player', cardId: 'c03', cell: 7 },
-      { actor: 'cpu', cardId: 'c08', cell: 3 },
-      { actor: 'player', cardId: 'c04', cell: 6 },
-      { actor: 'cpu', cardId: 'c02', cell: 0 },
-      { actor: 'player', cardId: 'c09', cell: 4 },
     ])
+    const verticalResolution = applyMoveDetailed(verticalState, { actor: 'player', cardId: 'c16', cell: 4 })
 
-    expect(result.board[0]?.owner).toBe('player')
+    expect(verticalResolution.flipEvents).toEqual([
+      { cell: 1, kind: 'flipped', axis: 'vertical', phase: 'primary' },
+    ])
+  })
+
+  test('applyMoveDetailed does not emit Same/Plus/Combo flips', () => {
+    const state = play(
+      createMatch(
+        makeConfig({
+          rules: { open: true, same: true, plus: true },
+          playerDeck: ['c01', 'c02', 'c03', 'c09', 'c16'],
+          cpuDeck: ['c06', 'c08', 'c07', 'c10', 'c11'],
+        }),
+      ),
+      [
+        { actor: 'player', cardId: 'c01', cell: 8 },
+        { actor: 'cpu', cardId: 'c06', cell: 1 },
+        { actor: 'player', cardId: 'c02', cell: 7 },
+        { actor: 'cpu', cardId: 'c08', cell: 3 },
+      ],
+    )
+    const resolution = applyMoveDetailed(state, { actor: 'player', cardId: 'c09', cell: 4 })
+
+    expect(resolution.wasSpecialRuleTrigger).toBe(false)
+    expect(resolution.flipEvents.every((event) => event.kind === 'flipped')).toBe(true)
   })
 
   test('throws on occupied cell placement', () => {
@@ -562,4 +505,3 @@ describe('match engine', () => {
     expect(withSecondaryOnly.board[0]?.owner).toBe('cpu')
   })
 })
-

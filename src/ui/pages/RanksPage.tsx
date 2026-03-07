@@ -8,6 +8,7 @@ import {
   type LadderEntry,
 } from '../../app/cloud/cloudLadderStore'
 import { rankedTiers } from '../../domain/progression/ranked'
+import { getRankEmblemSrc } from '../rankEmblems'
 
 const divisionLabelByTierType = {
   withDivisions: 'Divisions IV, III, II, I',
@@ -17,10 +18,10 @@ const divisionLabelByTierType = {
 const rankedRules = [
   'Win streak LP: +60 / +65 / +70 LP',
   'Win bonus by division: IV +0, III +1, II +2, I +3 LP',
-  'Win bonus by apex tier: Master +0, Grandmaster +1, Challenger +2 LP',
+  'Win bonus at apex tier: Challenger +2 LP',
   'Loss streak LP: -20 / -25 / -30 LP',
   'Deck bonus by division: IV +0, III +2, II +4, I +6 score',
-  'Deck bonus by apex tier: Master +0, Grandmaster +3, Challenger +6 score',
+  'Deck bonus at apex tier: Challenger +6 score',
   'Draw: 0 LP',
   'Promotion at 100 LP with carry',
   'Demotion shield: 3 losses after promotion',
@@ -88,13 +89,13 @@ export function RanksPage() {
       </div>
 
       <p className="ranks-open-only-note" data-testid="ranks-open-only-note">
-        Ranked queue always uses Open only.
+        Ranked queue uses visibility rule only (Open or Hidden).
       </p>
 
       <div className="ranks-grid" aria-label="Rank tiers">
         {rankedTiers.map((tier) => (
           <article className="ranks-tier-card" data-testid={`ranks-tier-${tier.id}`} key={tier.id}>
-            <img src={`/ranks/${tier.id}.svg`} alt={`${tier.name} rank emblem`} className="ranks-tier-emblem" />
+            <img src={getRankEmblemSrc(tier.id)} alt={`${tier.name} rank emblem`} className="ranks-tier-emblem" />
             <div className="ranks-tier-copy">
               <h2>{tier.name}</h2>
               <p>{tier.hasDivisions ? divisionLabelByTierType.withDivisions : divisionLabelByTierType.apex}</p>

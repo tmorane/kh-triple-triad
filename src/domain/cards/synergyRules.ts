@@ -37,9 +37,9 @@ const synergyRuleByTypeId: Record<CardTypeId, SynergyRuleSpec> = {
     label: 'Combat',
     primaryThreshold: 3,
     secondaryThreshold: 2,
-    primaryEffect: 'Same/Plus: +3 or par declenchement (max +12/match).',
+    primaryEffect: 'Main cachee: +3 or par match (max +12/match).',
     secondaryEffect: sharedSecondaryEffect,
-    legendDescription: 'Combat (3+) : +3 gold per Same/Plus trigger (cap +12/match).',
+    legendDescription: 'Combat (3+) : +3 gold in hidden-hand matches (cap +12/match).',
   },
   humain: {
     typeId: 'humain',
@@ -57,4 +57,3 @@ export const synergyRuleSpecs: SynergyRuleSpec[] = cardTypeIds.map((typeId) => s
 export function getSynergyRuleSpec(typeId: CardTypeId): SynergyRuleSpec {
   return synergyRuleByTypeId[typeId]
 }
-

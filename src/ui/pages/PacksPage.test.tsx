@@ -1,20 +1,15 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import type { ComponentProps } from 'react'
 import { MemoryRouter } from 'react-router-dom'
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+import { afterAll, afterEach, beforeEach, describe, expect, mock, test, vi } from 'bun:test'
 import { GameContext } from '../../app/GameContext'
 import { createDefaultProfile } from '../../domain/progression/profile'
 import type { OpenedPackBatchResult, OpenedPackResult, ShopPackId } from '../../domain/progression/shop'
 import { playNewCardSound } from '../audio/newCardSound'
-import { playShinyPullSound } from '../audio/shinyPullSound'
 import { PacksPage } from './PacksPage'
 
 vi.mock('../audio/newCardSound', () => ({
   playNewCardSound: vi.fn(),
-}))
-
-vi.mock('../audio/shinyPullSound', () => ({
-  playShinyPullSound: vi.fn(),
 }))
 
 type GameContextValue = NonNullable<ComponentProps<typeof GameContext.Provider>['value']>
@@ -120,7 +115,6 @@ describe('PacksPage', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     vi.mocked(playNewCardSound).mockReset()
-    vi.mocked(playShinyPullSound).mockReset()
   })
 
   afterEach(() => {
@@ -237,44 +231,6 @@ describe('PacksPage', () => {
       vi.advanceTimersByTime(1000)
     })
     expect(playNewCardSound).toHaveBeenCalledTimes(2)
-    expect(playShinyPullSound).not.toHaveBeenCalled()
-  })
-
-  test('plays shiny fanfare when a shiny pull is revealed and keeps NEW sound for non-shiny new cards', () => {
-    const openOwnedPack = vi.fn<(packId: ShopPackId) => OpenedPackResult>().mockReturnValue({
-      packId: 'rare',
-      remainingPackCount: 0,
-      pulls: [
-        { cardId: 'c41', rarity: 'rare', isNewOwnership: true, copiesAfter: 1, isShiny: true },
-        { cardId: 'c42', rarity: 'rare', isNewOwnership: true, copiesAfter: 1, isShiny: false },
-        { cardId: 'c41', rarity: 'rare', isNewOwnership: false, copiesAfter: 2, isShiny: true },
-      ],
-    })
-
-    renderPacksWithContext({
-      rarePackCount: 1,
-      openOwnedPack,
-    })
-
-    fireEvent.click(screen.getByTestId('open-pack-rare'))
-
-    act(() => {
-      vi.advanceTimersByTime(0)
-    })
-    expect(playShinyPullSound).toHaveBeenCalledTimes(1)
-    expect(playNewCardSound).not.toHaveBeenCalled()
-
-    act(() => {
-      vi.advanceTimersByTime(666)
-    })
-    expect(playShinyPullSound).toHaveBeenCalledTimes(1)
-    expect(playNewCardSound).toHaveBeenCalledTimes(1)
-
-    act(() => {
-      vi.advanceTimersByTime(667)
-    })
-    expect(playShinyPullSound).toHaveBeenCalledTimes(2)
-    expect(playNewCardSound).toHaveBeenCalledTimes(1)
   })
 
   test('does not play sounds when profile audio is disabled', () => {
@@ -300,7 +256,6 @@ describe('PacksPage', () => {
     })
 
     expect(playNewCardSound).not.toHaveBeenCalled()
-    expect(playShinyPullSound).not.toHaveBeenCalled()
   })
 
   test('opens multiple packs at once when quantity selector is above 1', () => {
@@ -335,4 +290,8 @@ describe('PacksPage', () => {
     expect(screen.queryByTestId('packs-reveal-placeholder-0')).not.toBeInTheDocument()
     expect(screen.getByText('Opened x2 | Remaining: x1')).toBeInTheDocument()
   })
+})
+
+afterAll(() => {
+  mock.restore()
 })

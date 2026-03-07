@@ -24,6 +24,20 @@ export interface CaptureResolution {
   flippedCells: number[]
   immediateFlips: number
   wasSpecialRuleTrigger: boolean
+  flipEvents: MoveFlipEvent[]
+}
+
+export type MoveFlipKind = 'flipped' | 'same' | 'plus' | 'combo'
+
+export type MoveFlipAxis = 'horizontal' | 'vertical'
+
+export type MoveFlipPhase = 'primary' | 'combo'
+
+export interface MoveFlipEvent {
+  cell: number
+  kind: MoveFlipKind
+  axis: MoveFlipAxis
+  phase: MoveFlipPhase
 }
 
 export type ElementMode = 'normal' | 'effects'
@@ -35,7 +49,8 @@ export interface SideDelta {
   left: number
 }
 
-export interface VolatileDebuff {
+export interface AllStatsMinusOneStack {
+  source: 'vol' | 'sol'
   actor: Actor
   untilTurn: number
 }
@@ -45,16 +60,22 @@ export interface ShieldTimer {
   untilTurn: number
 }
 
+export interface FrozenCellEffect {
+  cell: number
+  turnsRemaining: number
+}
+
 export interface CardBoardEffects {
   permanentDelta: SideDelta
   burnTicksRemaining: number
-  volatileAllStatsMinusOneUntilEndOfOwnerNextTurn: VolatileDebuff | null
+  allStatsMinusOneStacks: AllStatsMinusOneStack[]
   unflippableUntilEndOfOpponentNextTurn: ShieldTimer | null
   swappedHighLowUntilMatchEnd: boolean
   rockShieldCharges: number
   poisonFirstCombatPending: boolean
-  insectEntryStacks: 0 | 1 | 2
+  insectEntryStacks: 0 | 1 | 2 | 3
   dragonApplied: boolean
+  planteSourceOwner?: Actor
 }
 
 export interface MatchElementState {
@@ -63,7 +84,7 @@ export interface MatchElementState {
   strictPowerTargeting: boolean
   usedOnPoseByActor: Record<Actor, Partial<Record<CardElementId, true>>>
   actorTurnCount: Record<Actor, number>
-  frozenCellByActor: Partial<Record<Actor, number>>
+  frozenCellByActor: Partial<Record<Actor, FrozenCellEffect>>
   floodedCell: number | null
   poisonedHandByActor: Record<Actor, CardId[]>
   boardEffectsByCell: Partial<Record<number, CardBoardEffects>>

@@ -1,5 +1,5 @@
 import { render } from '@testing-library/react'
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test } from 'bun:test'
 import type { CardDef } from '../../domain/types'
 import { TriadCard } from './TriadCard'
 
@@ -60,6 +60,9 @@ describe('TriadCard splashart', () => {
     rerender(<TriadCard card={aboCard} context="collection-list" owned={false} />)
     expect(container.querySelector('[data-testid="triad-card-type-badge"]')).toBeNull()
     expect(container.querySelector('[data-testid="triad-card-type-logo"]')).toBeNull()
+    const lockedRoot = container.querySelector('.triad-card')
+    expect(lockedRoot).not.toHaveClass('triad-card--element-poison')
+    expect(container.querySelector('.triad-card__rarity')).toBeNull()
   })
 
   test('adds element class on card root in collection detail context', () => {
@@ -153,5 +156,16 @@ describe('TriadCard splashart', () => {
     const image = container.querySelector<HTMLImageElement>('.triad-card__art-image')
     expect(image).not.toBeNull()
     expect(image?.getAttribute('src')).toContain('/splashart-shiny/Abo_Shiny.png')
+  })
+
+  test('fragment-silhouette mode renders art for locked card', () => {
+    const { container } = render(
+      <TriadCard card={aboCard} context="collection-list" owned={false} displayMode="fragment-silhouette" />,
+    )
+
+    const image = container.querySelector<HTMLImageElement>('.triad-card__art-image')
+    expect(image).not.toBeNull()
+    expect(image?.getAttribute('src')).toContain('/splashart/Abo.png')
+    expect(container.querySelector('.triad-card__frame')).toBeNull()
   })
 })

@@ -1,7 +1,14 @@
-import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useMemo, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import { useGame } from '../../app/useGame'
 import type { CardElementId } from '../../domain/types'
 import { ELEMENT_EFFECT_ORDERED_IDS, getElementEffectText } from '../../domain/match/elementEffectsCatalog'
+import {
+  BASE_TUTORIAL_SCENARIO_ID,
+  listElementTutorialScenarioIds,
+  resolveTutorialScenario,
+  type TutorialScenarioId,
+} from '../../domain/match/tutorialScenarios'
 import { getElementLogoMeta } from '../components/elementLogos'
 
 const elementRuleItems = ELEMENT_EFFECT_ORDERED_IDS.map((elementId) => ({
@@ -12,9 +19,12 @@ const elementRuleItems = ELEMENT_EFFECT_ORDERED_IDS.map((elementId) => ({
 type RulesTutorialMode = 'idle' | 'active' | 'completed'
 
 export function RulesPage() {
+  const navigate = useNavigate()
+  const { profile, startMatch } = useGame()
   const [hoveredElementId, setHoveredElementId] = useState<CardElementId | null>(null)
   const [tutorialMode, setTutorialMode] = useState<RulesTutorialMode>('idle')
   const [tutorialStepIndex, setTutorialStepIndex] = useState(0)
+  const [matchTutorialError, setMatchTutorialError] = useState<string | null>(null)
 
   const isTutorialActive = tutorialMode === 'active'
   const isTutorialCompleted = tutorialMode === 'completed'
@@ -26,6 +36,29 @@ export function RulesPage() {
   const displayedLogo = displayedRule ? getElementLogoMeta(displayedRule.id) : null
 
   const totalTutorialSteps = elementRuleItems.length
+  const elementTutorialIds = useMemo(() => listElementTutorialScenarioIds(), [])
+  const tutorialProgress = profile.tutorialProgress ?? { baseCompleted: false, completedElementById: {} }
+  const isBaseMatchTutorialCompleted = tutorialProgress.baseCompleted
+
+  const startMatchTutorial = (scenarioId: TutorialScenarioId) => {
+    const scenario = resolveTutorialScenario(scenarioId)
+    try {
+      startMatch(
+        'tutorial',
+        scenario.mode,
+        [],
+        { ...scenario.rules },
+        {
+          tutorialScenarioId: scenario.id,
+        },
+      )
+      setMatchTutorialError(null)
+      navigate('/match')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Impossible de lancer le tutoriel.'
+      setMatchTutorialError(message)
+    }
+  }
 
   const resetTutorialToIdle = () => {
     setTutorialMode('idle')
@@ -55,19 +88,52 @@ export function RulesPage() {
       <h1>Rules</h1>
       <ul className="rule-copy">
         <li>
-          <strong>Open:</strong> Both players can see each other's hands.
-        </li>
-        <li>
-          <strong>Same:</strong> If your placed card matches two or more adjacent enemy sides exactly, those cards
-          flip. Combo flips then continue with normal capture rules.
-        </li>
-        <li>
-          <strong>Plus:</strong> If your placed card and adjacent enemy sides form equal sums on two or more sides,
-          those cards flip. Combo flips then continue with normal capture rules.
+          <strong>Open:</strong> Turn it on to see the CPU hand. Turn it off to keep the CPU hand hidden.
         </li>
       </ul>
 
       <h2>Element effects</h2>
+      <section className="rules-match-tutorials" aria-label="Tutoriels de partie">
+        <h3>Tutoriels de partie</h3>
+        <p className="small">Commence par le tutoriel de base, puis enchaine sur les types.</p>
+        <div className="rules-match-tutorials__row">
+          <button
+            type="button"
+            className="button button-primary"
+            data-testid="rules-match-tutorial-start-base"
+            onClick={() => startMatchTutorial(BASE_TUTORIAL_SCENARIO_ID)}
+          >
+            Lancer le tuto de base
+          </button>
+          <p className="small" data-testid="rules-match-tutorial-base-status">
+            {isBaseMatchTutorialCompleted ? 'Base: termine' : 'Base: a faire'}
+          </p>
+        </div>
+
+        <div className="rules-match-tutorials__grid">
+          {elementTutorialIds.map((scenarioId) => {
+            const scenario = resolveTutorialScenario(scenarioId)
+            const elementId = scenario.elementId ?? 'normal'
+            const logo = getElementLogoMeta(elementId)
+            const completed = Boolean(tutorialProgress.completedElementById[elementId])
+            return (
+              <button
+                key={scenarioId}
+                type="button"
+                className="button"
+                data-testid={`rules-match-tutorial-start-element-${elementId}`}
+                disabled={!isBaseMatchTutorialCompleted}
+                onClick={() => startMatchTutorial(scenarioId)}
+              >
+                {logo?.name ?? elementId}
+                {completed ? ' ✓' : ''}
+              </button>
+            )
+          })}
+        </div>
+        {matchTutorialError ? <p className="error">{matchTutorialError}</p> : null}
+      </section>
+
       <section className="rules-tutorial" aria-label="Tutoriel des effets de type">
         {isTutorialActive ? (
           <>

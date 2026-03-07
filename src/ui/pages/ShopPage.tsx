@@ -15,7 +15,7 @@ import {
 } from '../../domain/progression/shop'
 import { cardPool, getCard } from '../../domain/cards/cardPool'
 import { getTotalCopies, hasShinyCopy } from '../../domain/progression/shiny'
-import type { CardCategoryId, Rarity } from '../../domain/types'
+import type { Rarity } from '../../domain/types'
 import { TriadCard } from '../components/TriadCard'
 
 const packOrder: ShopPackId[] = ['common', 'uncommon', 'rare', 'legendary']
@@ -23,11 +23,14 @@ const specialPackOrder: SpecialPackId[] = ['sans_coeur_focus', 'simili_focus', '
 const dropRarityOrder: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary']
 const SHOP_MODAL_PAGE_SIZE = 5
 const SHOP_MAX_STANDARD_PACK_QUANTITY = 20
-const typeFocusBaseRates: Record<Rarity, number> = { common: 70, uncommon: 22, rare: 5, epic: 2, legendary: 1 }
-const typeFocusCategoryByPack: Record<'sans_coeur_focus' | 'simili_focus', CardCategoryId> = {
-  sans_coeur_focus: 'sans_coeur',
-  simili_focus: 'simili',
+const generationFocusBaseRates: Record<Rarity, number> = { common: 70, uncommon: 22, rare: 5, epic: 2, legendary: 1 }
+const generationFocusByPack: Record<'sans_coeur_focus' | 'simili_focus', 1 | 2> = {
+  sans_coeur_focus: 1,
+  simili_focus: 2,
 }
+const GEN_1_MAX_POKEDEX_NUMBER = 151
+const GEN_2_MIN_POKEDEX_NUMBER = 152
+const GEN_2_MAX_POKEDEX_NUMBER = 251
 
 type AnyShopPackId = ShopPackId | SpecialPackId
 type DisplayPackId = AnyShopPackId | 'shiny_test'
@@ -60,16 +63,16 @@ const packVisuals: Record<DisplayPackId, PackVisual> = {
     artSrc: '/packs/legendary-pack.svg',
   },
   sans_coeur_focus: {
-    tagline: 'Theme Booster: 3 pulls from the Obscur pool with tuned rarity odds.',
-    artSrc: '/packs/sans-coeur-focus-pack.svg',
+    tagline: 'Gen 1 Booster: 3 pulls from Kanto (#001-#151) with tuned rarity odds.',
+    artSrc: '/packs/sans-coeur-focus-pack.png',
   },
   simili_focus: {
-    tagline: 'Theme Booster: 3 pulls from the Psy pool with tuned rarity odds.',
-    artSrc: '/packs/simili-focus-pack.svg',
+    tagline: 'Gen 2 Booster: 3 pulls from Johto (#152-#251) with tuned rarity odds.',
+    artSrc: '/packs/simili-focus-pack.png',
   },
   legendary_focus: {
     tagline: 'Target Booster: pick a legendary target, pity ramps after each miss.',
-    artSrc: '/packs/legendary-focus-pack.svg',
+    artSrc: '/packs/legendary-focus-pack.png',
   },
   shiny_test: {
     tagline: 'Debug pack: 1 guaranteed shiny pull.',
@@ -83,8 +86,8 @@ const packLabels: Record<DisplayPackId, string> = {
   rare: 'Rare Pack',
   epic: 'Epic Pack',
   legendary: 'Legendary Pack',
-  sans_coeur_focus: 'Obscur Theme Booster',
-  simili_focus: 'Psy Theme Booster',
+  sans_coeur_focus: 'Gen 1 Booster',
+  simili_focus: 'Gen 2 Booster',
   legendary_focus: 'Legendary Target Booster',
   shiny_test: 'Shiny Test Pack',
 }
@@ -101,8 +104,21 @@ function isOpenedInventoryPack(result: OpenedRevealResult): result is OpenedPack
   return 'remainingPackCount' in result
 }
 
-function isTypeFocusPack(packId: SpecialPackId): packId is 'sans_coeur_focus' | 'simili_focus' {
+function isGenerationFocusPack(packId: SpecialPackId): packId is 'sans_coeur_focus' | 'simili_focus' {
   return packId === 'sans_coeur_focus' || packId === 'simili_focus'
+}
+
+function getCardDexNumber(cardId: string): number {
+  return Number.parseInt(cardId.slice(1), 10)
+}
+
+function isCardInGeneration(cardId: string, generation: 1 | 2): boolean {
+  const dexNumber = getCardDexNumber(cardId)
+  if (generation === 1) {
+    return dexNumber >= 1 && dexNumber <= GEN_1_MAX_POKEDEX_NUMBER
+  }
+
+  return dexNumber >= GEN_2_MIN_POKEDEX_NUMBER && dexNumber <= GEN_2_MAX_POKEDEX_NUMBER
 }
 
 function sanitizePackQuantity(value: number): number {
@@ -502,7 +518,7 @@ export function ShopPage() {
       <section className="shop-special-section" aria-labelledby="shop-special-title">
         <div className="shop-special-head">
           <h2 id="shop-special-title">Special Packs</h2>
-          <p className="small">Instant opening with TCG-style theme/target boosters.</p>
+          <p className="small">Instant opening with generation/target boosters.</p>
         </div>
         <div className="shop-special-grid">
           {specialPackOrder.map((packId) => {
@@ -512,11 +528,13 @@ export function ShopPage() {
             const canBuy = affordable && (!isLegendaryFocus || legendaryFocusTargetCardId.length > 0)
             const visual = packVisuals[packId]
             const selectedLegendaryCard = legendaryCards.find((card) => card.id === legendaryFocusTargetCardId) ?? null
-            const typeFocusPool = isTypeFocusPack(packId)
-              ? cardPool.filter((card) => card.categoryId === typeFocusCategoryByPack[packId])
+            const generationFocusPool = isGenerationFocusPack(packId)
+              ? cardPool.filter((card) => isCardInGeneration(card.id, generationFocusByPack[packId]))
               : []
-            const typeFocusOwnedCount = typeFocusPool.filter((card) => ownedCardIdsSet.has(card.id)).length
-            const typeFocusRarities = dropRarityOrder.filter((rarity) => typeFocusPool.some((card) => card.rarity === rarity))
+            const generationFocusOwnedCount = generationFocusPool.filter((card) => ownedCardIdsSet.has(card.id)).length
+            const generationFocusRarities = dropRarityOrder.filter((rarity) =>
+              generationFocusPool.some((card) => card.rarity === rarity),
+            )
 
             return (
               <article
@@ -599,17 +617,17 @@ export function ShopPage() {
                   </div>
                 ) : (
                   <div className="shop-special-pack-intel">
-                      <span className="shop-special-pack-intel-tag">Theme Booster · 3 Pulls</span>
+                    <span className="shop-special-pack-intel-tag">Gen Booster · 3 Pulls</span>
                     <div className="shop-special-pack-intel-stats">
-                      <span>Pool: {typeFocusPool.length}</span>
+                      <span>Pool: {generationFocusPool.length}</span>
                       <span>
-                        Owned: {typeFocusOwnedCount}/{typeFocusPool.length}
+                        Owned: {generationFocusOwnedCount}/{generationFocusPool.length}
                       </span>
                     </div>
                     <div className="shop-special-pack-intel-rates">
-                      {typeFocusRarities.map((rarity) => (
+                      {generationFocusRarities.map((rarity) => (
                         <span key={rarity} className={`shop-special-pack-intel-rate shop-special-pack-intel-rate--${rarity}`}>
-                          {formatRarityLabel(rarity)} {typeFocusBaseRates[rarity]}%
+                          {formatRarityLabel(rarity)} {generationFocusBaseRates[rarity]}%
                         </span>
                       ))}
                     </div>

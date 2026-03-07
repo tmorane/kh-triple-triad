@@ -29,10 +29,7 @@ const tierNames: Record<RankedTierId, string> = {
   silver: 'Silver',
   gold: 'Gold',
   platinum: 'Platinum',
-  emerald: 'Emerald',
   diamond: 'Diamond',
-  master: 'Master',
-  grandmaster: 'Grandmaster',
   challenger: 'Challenger',
 }
 

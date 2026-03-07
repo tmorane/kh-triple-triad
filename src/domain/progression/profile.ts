@@ -1,6 +1,9 @@
 import { createResetStarterCards, isDeckNameValid, starterDeck, starterOwnedCardIds } from '../cards/decks'
+import { ELEMENT_EFFECT_ORDERED_IDS } from '../match/elementEffectsCatalog'
 import type {
+  AchievementProgress,
   AchievementUnlock,
+  CardElementId,
   CardId,
   DeckSlot,
   DeckSlotId,
@@ -30,6 +33,7 @@ const LEGENDARY_FOCUS_PITY_BASE_CHANCE_PERCENT = 1
 const LEGENDARY_FOCUS_PITY_MAX_CHANCE_PERCENT = 100
 const packInventoryRarities: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary']
 const missionIds: MissionId[] = ['m1_type_specialist', 'm2_combo_practitioner', 'm3_corner_tactician']
+const tutorialElementIds = new Set<string>(ELEMENT_EFFECT_ORDERED_IDS)
 const legacyRankIds = new Set(['R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7', 'R8'])
 const rankedTierIds = new Set<RankedTierId>([
   'iron',
@@ -37,14 +41,11 @@ const rankedTierIds = new Set<RankedTierId>([
   'silver',
   'gold',
   'platinum',
-  'emerald',
   'diamond',
-  'master',
-  'grandmaster',
   'challenger',
 ])
 const rankedDivisions = new Set<RankedDivision>(['IV', 'III', 'II', 'I'])
-const tiersWithDivisions = new Set<RankedTierId>(['iron', 'bronze', 'silver', 'gold', 'platinum', 'emerald', 'diamond'])
+const tiersWithDivisions = new Set<RankedTierId>(['iron', 'bronze', 'silver', 'gold', 'platinum', 'diamond'])
 
 interface LegacyAchievementUnlock {
   id: string
@@ -154,18 +155,51 @@ interface PlayerProfileV6WithoutCards4x4Legacy extends Omit<PlayerProfileV6Legac
 
 type PlayerProfileV6WithoutPlayerNameLegacy = Omit<PlayerProfileV6WithoutCards4x4Legacy, 'playerName'>
 
-interface PlayerProfileV7Legacy extends Omit<PlayerProfile, 'version' | 'rankedByMode' | 'shinyCardCopiesById'> {
+interface PlayerProfileV7Legacy
+  extends Omit<
+    PlayerProfile,
+    | 'version'
+    | 'rankedByMode'
+    | 'cardFragmentsById'
+    | 'shinyCardCopiesById'
+    | 'achievementProgress'
+    | 'missionRewardsGrantedById'
+    | 'achievementRewardsClaimedById'
+  > {
   version: 7
   ranked: RankedState
 }
 
-interface PlayerProfileV8Legacy extends Omit<PlayerProfile, 'version' | 'settings' | 'shinyCardCopiesById'> {
+interface PlayerProfileV8Legacy
+  extends Omit<
+    PlayerProfile,
+    | 'version'
+    | 'settings'
+    | 'cardFragmentsById'
+    | 'shinyCardCopiesById'
+    | 'achievementProgress'
+    | 'missionRewardsGrantedById'
+    | 'achievementRewardsClaimedById'
+  > {
   version: 8
   settings: { audioEnabled: false }
 }
 
-interface PlayerProfileV9Legacy extends Omit<PlayerProfile, 'version' | 'shinyCardCopiesById'> {
+interface PlayerProfileV9Legacy
+  extends Omit<
+    PlayerProfile,
+    'version' | 'cardFragmentsById' | 'shinyCardCopiesById' | 'achievementProgress' | 'missionRewardsGrantedById' | 'achievementRewardsClaimedById'
+  > {
   version: 9
+}
+
+interface PlayerProfileV10Legacy
+  extends Omit<PlayerProfile, 'version' | 'cardFragmentsById' | 'achievementProgress' | 'missionRewardsGrantedById' | 'achievementRewardsClaimedById'> {
+  version: 10
+}
+
+interface PlayerProfileV11Legacy extends Omit<PlayerProfile, 'version' | 'achievementRewardsClaimedById'> {
+  version: 11
 }
 
 interface StoredProfileEntryV1 {
@@ -213,19 +247,6 @@ export interface StoredProfileMutationResult {
   profiles?: StoredProfilesSnapshot
 }
 
-const legacyCollectionAchievementIds = new Set([
-  'owned_11',
-  'owned_12',
-  'owned_13',
-  'owned_14',
-  'collector_15',
-  'owned_16',
-  'owned_17',
-  'owned_18',
-  'owned_19',
-  'owned_20',
-])
-
 export function isPlayerNameValid(name: string): { valid: boolean; reason?: string } {
   const normalized = name.trim()
   if (normalized.length < 1 || normalized.length > MAX_PLAYER_NAME_LENGTH) {
@@ -249,11 +270,12 @@ function createProfileFromStarterCards(initialOwnedCardIds: CardId[], initialDec
   const initialRanked = createInitialRankedState()
 
   return {
-    version: 10,
+    version: 12,
     playerName: DEFAULT_PLAYER_NAME,
     gold: 100,
     ownedCardIds,
     cardCopiesById: createCardCopiesById(ownedCardIds),
+    cardFragmentsById: createEmptyCardFragmentsById(),
     shinyCardCopiesById: createEmptyShinyCardCopiesById(),
     packInventoryByRarity: createEmptyPackInventoryByRarity(),
     deckSlots: [
@@ -268,8 +290,11 @@ function createProfileFromStarterCards(initialOwnedCardIds: CardId[], initialDec
       streak: 0,
       bestStreak: 0,
     },
+    achievementProgress: createDefaultAchievementProgress(),
     achievements: [],
+    achievementRewardsClaimedById: {},
     missions: createInitialMissionsProgress(),
+    missionRewardsGrantedById: {},
     specialPackPity: {
       legendaryFocusChancePercent: LEGENDARY_FOCUS_PITY_BASE_CHANCE_PERCENT,
     },
@@ -277,6 +302,7 @@ function createProfileFromStarterCards(initialOwnedCardIds: CardId[], initialDec
       '3x3': { ...initialRanked, resultStreak: { ...initialRanked.resultStreak } },
       '4x4': { ...initialRanked, resultStreak: { ...initialRanked.resultStreak } },
     },
+    tutorialProgress: createDefaultTutorialProgress(),
     settings: {
       audioEnabled: true,
     },
@@ -608,61 +634,178 @@ function loadLegacyProfileFromStorage(): PlayerProfile {
 }
 
 function parseProfileCandidate(value: unknown): PlayerProfile | null {
-  if (isPlayerProfile(value)) {
-    return value
+  const normalizedCandidate = normalizeLegacyRemovedTierCandidate(value)
+
+  if (isPlayerProfile(normalizedCandidate)) {
+    return normalizedCandidate
   }
 
-  if (isPlayerProfileV9Legacy(value)) {
-    return migrateProfileV9ToV10(value)
+  if (isPlayerProfileV11Legacy(normalizedCandidate)) {
+    return migrateProfileV11ToV12(normalizedCandidate)
   }
 
-  if (isPlayerProfileV8Legacy(value)) {
-    return migrateProfileV9ToV10(migrateProfileV8ToV9(value))
+  if (isPlayerProfileV10Legacy(normalizedCandidate)) {
+    return migrateProfileV11ToV12(migrateProfileV10ToV11(normalizedCandidate))
   }
 
-  if (isPlayerProfileV7Legacy(value)) {
-    return migrateProfileV9ToV10(migrateProfileV8ToV9(migrateProfileV7ToV8(value)))
+  if (isPlayerProfileV9Legacy(normalizedCandidate)) {
+    return migrateProfileV11ToV12(migrateProfileV10ToV11(migrateProfileV9ToV10(normalizedCandidate)))
   }
 
-  if (isPlayerProfileV6WithoutCards4x4Legacy(value)) {
-    return migrateProfileV9ToV10(migrateProfileV8ToV9(migrateProfileV7ToV8(migrateProfileV6WithoutCards4x4ToV7(value))))
+  if (isPlayerProfileV8Legacy(normalizedCandidate)) {
+    return migrateProfileV11ToV12(migrateProfileV10ToV11(migrateProfileV9ToV10(migrateProfileV8ToV9(normalizedCandidate))))
   }
 
-  if (isPlayerProfileV6WithoutPlayerNameLegacy(value)) {
-    return migrateProfileV9ToV10(migrateProfileV8ToV9(migrateProfileV7ToV8(migrateProfileV6WithoutPlayerNameToV7(value))))
-  }
-
-  if (isPlayerProfileV6Legacy(value)) {
-    return migrateProfileV9ToV10(migrateProfileV8ToV9(migrateProfileV7ToV8(migrateProfileV6ToV7(value))))
-  }
-
-  if (isPlayerProfileV5Legacy(value)) {
-    return migrateProfileV9ToV10(migrateProfileV8ToV9(migrateProfileV7ToV8(migrateProfileV5ToV7(value))))
-  }
-
-  if (isPlayerProfileV4Legacy(value)) {
-    return migrateProfileV9ToV10(migrateProfileV8ToV9(migrateProfileV7ToV8(migrateProfileV5ToV7(migrateProfileV4ToV5(value)))))
-  }
-
-  if (isPlayerProfileV4WithoutPacksLegacy(value)) {
-    return migrateProfileV9ToV10(
-      migrateProfileV8ToV9(migrateProfileV7ToV8(migrateProfileV5ToV7(migrateProfileV4WithoutPacksToV5(value)))),
+  if (isPlayerProfileV7Legacy(normalizedCandidate)) {
+    return migrateProfileV11ToV12(
+      migrateProfileV10ToV11(migrateProfileV9ToV10(migrateProfileV8ToV9(migrateProfileV7ToV8(normalizedCandidate)))),
     )
   }
 
-  if (isPlayerProfileV3Legacy(value)) {
-    return migrateProfileV9ToV10(migrateProfileV8ToV9(migrateProfileV7ToV8(migrateProfileV5ToV7(migrateProfileV3ToV5(value)))))
+  if (isPlayerProfileV6WithoutCards4x4Legacy(normalizedCandidate)) {
+    return migrateProfileV11ToV12(
+      migrateProfileV10ToV11(
+        migrateProfileV9ToV10(
+          migrateProfileV8ToV9(migrateProfileV7ToV8(migrateProfileV6WithoutCards4x4ToV7(normalizedCandidate))),
+        ),
+      ),
+    )
   }
 
-  if (isPlayerProfileV2Legacy(value)) {
-    return migrateProfileV9ToV10(migrateProfileV8ToV9(migrateProfileV7ToV8(migrateProfileV5ToV7(migrateProfileV2ToV5(value)))))
+  if (isPlayerProfileV6WithoutPlayerNameLegacy(normalizedCandidate)) {
+    return migrateProfileV11ToV12(
+      migrateProfileV10ToV11(
+        migrateProfileV9ToV10(
+          migrateProfileV8ToV9(migrateProfileV7ToV8(migrateProfileV6WithoutPlayerNameToV7(normalizedCandidate))),
+        ),
+      ),
+    )
   }
 
-  if (isPlayerProfileV1Legacy(value)) {
-    return migrateProfileV9ToV10(migrateProfileV8ToV9(migrateProfileV7ToV8(migrateProfileV5ToV7(migrateProfileV1ToV5(value)))))
+  if (isPlayerProfileV6Legacy(normalizedCandidate)) {
+    return migrateProfileV11ToV12(
+      migrateProfileV10ToV11(
+        migrateProfileV9ToV10(migrateProfileV8ToV9(migrateProfileV7ToV8(migrateProfileV6ToV7(normalizedCandidate)))),
+      ),
+    )
+  }
+
+  if (isPlayerProfileV5Legacy(normalizedCandidate)) {
+    return migrateProfileV11ToV12(
+      migrateProfileV10ToV11(
+        migrateProfileV9ToV10(migrateProfileV8ToV9(migrateProfileV7ToV8(migrateProfileV5ToV7(normalizedCandidate)))),
+      ),
+    )
+  }
+
+  if (isPlayerProfileV4Legacy(normalizedCandidate)) {
+    return migrateProfileV11ToV12(
+      migrateProfileV10ToV11(
+        migrateProfileV9ToV10(
+          migrateProfileV8ToV9(migrateProfileV7ToV8(migrateProfileV5ToV7(migrateProfileV4ToV5(normalizedCandidate)))),
+        ),
+      ),
+    )
+  }
+
+  if (isPlayerProfileV4WithoutPacksLegacy(normalizedCandidate)) {
+    return migrateProfileV11ToV12(
+      migrateProfileV10ToV11(
+        migrateProfileV9ToV10(
+          migrateProfileV8ToV9(
+            migrateProfileV7ToV8(migrateProfileV5ToV7(migrateProfileV4WithoutPacksToV5(normalizedCandidate))),
+          ),
+        ),
+      ),
+    )
+  }
+
+  if (isPlayerProfileV3Legacy(normalizedCandidate)) {
+    return migrateProfileV11ToV12(
+      migrateProfileV10ToV11(
+        migrateProfileV9ToV10(
+          migrateProfileV8ToV9(migrateProfileV7ToV8(migrateProfileV5ToV7(migrateProfileV3ToV5(normalizedCandidate)))),
+        ),
+      ),
+    )
+  }
+
+  if (isPlayerProfileV2Legacy(normalizedCandidate)) {
+    return migrateProfileV11ToV12(
+      migrateProfileV10ToV11(
+        migrateProfileV9ToV10(
+          migrateProfileV8ToV9(migrateProfileV7ToV8(migrateProfileV5ToV7(migrateProfileV2ToV5(normalizedCandidate)))),
+        ),
+      ),
+    )
+  }
+
+  if (isPlayerProfileV1Legacy(normalizedCandidate)) {
+    return migrateProfileV11ToV12(
+      migrateProfileV10ToV11(
+        migrateProfileV9ToV10(
+          migrateProfileV8ToV9(migrateProfileV7ToV8(migrateProfileV5ToV7(migrateProfileV1ToV5(normalizedCandidate)))),
+        ),
+      ),
+    )
   }
 
   return null
+}
+
+function normalizeLegacyRemovedTierCandidate(value: unknown): unknown {
+  if (!isRecord(value)) {
+    return value
+  }
+
+  let changed = false
+  const nextCandidate: Record<string, unknown> = { ...value }
+
+  const normalizedRanked = normalizeLegacyRemovedTierInRankedState(value.ranked)
+  if (normalizedRanked !== value.ranked) {
+    nextCandidate.ranked = normalizedRanked
+    changed = true
+  }
+
+  if (isRecord(value.rankedByMode)) {
+    const normalized3x3 = normalizeLegacyRemovedTierInRankedState(value.rankedByMode['3x3'])
+    const normalized4x4 = normalizeLegacyRemovedTierInRankedState(value.rankedByMode['4x4'])
+
+    if (normalized3x3 !== value.rankedByMode['3x3'] || normalized4x4 !== value.rankedByMode['4x4']) {
+      nextCandidate.rankedByMode = {
+        ...value.rankedByMode,
+        '3x3': normalized3x3,
+        '4x4': normalized4x4,
+      }
+      changed = true
+    }
+  }
+
+  return changed ? nextCandidate : value
+}
+
+function normalizeLegacyRemovedTierInRankedState(value: unknown): unknown {
+  if (!isRecord(value)) {
+    return value
+  }
+
+  const tier = value.tier
+  if (tier === 'emerald') {
+    return {
+      ...value,
+      tier: 'diamond',
+    }
+  }
+
+  if (tier === 'master' || tier === 'grandmaster') {
+    return {
+      ...value,
+      tier: 'challenger',
+      division: null,
+    }
+  }
+
+  return value
 }
 
 function getActiveStoredProfileEntry(storedProfiles: StoredProfilesV1): StoredProfileEntryV1 | null {
@@ -938,11 +1081,39 @@ function migrateProfileV8ToV9(profile: PlayerProfileV8Legacy): PlayerProfileV9Le
   }
 }
 
-function migrateProfileV9ToV10(profile: PlayerProfileV9Legacy): PlayerProfile {
+function migrateProfileV9ToV10(profile: PlayerProfileV9Legacy): PlayerProfileV10Legacy {
   return {
     ...profile,
     version: 10,
     shinyCardCopiesById: createEmptyShinyCardCopiesById(),
+  }
+}
+
+function migrateProfileV10ToV11(profile: PlayerProfileV10Legacy): PlayerProfileV11Legacy {
+  const legacyRewardsGranted: Partial<Record<MissionId, true>> = {}
+  for (const missionId of missionIds) {
+    if (profile.missions[missionId]?.claimed) {
+      legacyRewardsGranted[missionId] = true
+    }
+  }
+
+  return {
+    ...profile,
+    version: 11,
+    cardFragmentsById: createEmptyCardFragmentsById(),
+    achievements: [],
+    achievementProgress: createDefaultAchievementProgress(),
+    missions: createInitialMissionsProgress(),
+    missionRewardsGrantedById: legacyRewardsGranted,
+    tutorialProgress: createDefaultTutorialProgress(),
+  }
+}
+
+function migrateProfileV11ToV12(profile: PlayerProfileV11Legacy): PlayerProfile {
+  return {
+    ...profile,
+    version: 12,
+    achievementRewardsClaimedById: {},
   }
 }
 
@@ -964,11 +1135,148 @@ function migrateLegacyDeckSlotsToCurrent(
 }
 
 function finalizeLoadedProfile(profile: PlayerProfile): { profile: PlayerProfile; changed: boolean } {
-  const synced = syncAchievements(syncSpecialPackPity(syncMissions(syncDeckSlots(syncPlayerName(profile)))))
+  const synced = syncAchievements(
+    syncSpecialPackPity(
+      syncTutorialProgress(
+        syncMissions(
+          syncMissionRewardsGrantedById(
+            syncAchievementRewardsClaimedById(syncAchievementProgress(syncCardFragmentsById(syncDeckSlots(syncPlayerName(profile))))),
+          ),
+        ),
+      ),
+    ),
+  )
 
   return {
     profile: synced,
     changed: synced !== profile,
+  }
+}
+
+function syncAchievementProgress(profile: PlayerProfile): PlayerProfile {
+  if (isAchievementProgress(profile.achievementProgress)) {
+    return profile
+  }
+
+  return {
+    ...profile,
+    achievementProgress: createDefaultAchievementProgress(),
+  }
+}
+
+function syncCardFragmentsById(profile: PlayerProfile): PlayerProfile {
+  const current = profile.cardFragmentsById
+  if (isCardFragmentsById(current)) {
+    return profile
+  }
+
+  const next: Record<CardId, number> = {}
+  if (current && typeof current === 'object' && !Array.isArray(current)) {
+    for (const [cardId, fragments] of Object.entries(current)) {
+      if (cardId.length === 0) {
+        continue
+      }
+      if (!Number.isInteger(fragments) || Number(fragments) < 1) {
+        continue
+      }
+      next[cardId] = Number(fragments)
+    }
+  }
+
+  return {
+    ...profile,
+    cardFragmentsById: next,
+  }
+}
+
+function syncMissionRewardsGrantedById(profile: PlayerProfile): PlayerProfile {
+  const current = profile.missionRewardsGrantedById
+  if (isMissionRewardsGrantedById(current)) {
+    return profile
+  }
+
+  const next: Partial<Record<MissionId, true>> = {}
+  if (current && typeof current === 'object' && !Array.isArray(current)) {
+    for (const missionId of missionIds) {
+      if ((current as Partial<Record<MissionId, unknown>>)[missionId] === true) {
+        next[missionId] = true
+      }
+    }
+  }
+
+  return {
+    ...profile,
+    missionRewardsGrantedById: next,
+  }
+}
+
+function syncAchievementRewardsClaimedById(profile: PlayerProfile): PlayerProfile {
+  const current = profile.achievementRewardsClaimedById
+  if (isAchievementRewardsClaimedById(current)) {
+    return profile
+  }
+
+  const next: Partial<Record<AchievementUnlock['id'], true>> = {}
+  if (current && typeof current === 'object' && !Array.isArray(current)) {
+    for (const [achievementId, value] of Object.entries(current)) {
+      if (!isAchievementId(achievementId)) {
+        continue
+      }
+      if (value !== true) {
+        continue
+      }
+      next[achievementId] = true
+    }
+  }
+
+  return {
+    ...profile,
+    achievementRewardsClaimedById: next,
+  }
+}
+
+function createDefaultTutorialProgress(): NonNullable<PlayerProfile['tutorialProgress']> {
+  return {
+    baseCompleted: false,
+    completedElementById: {},
+  }
+}
+
+function syncTutorialProgress(profile: PlayerProfile): PlayerProfile {
+  const expected = createDefaultTutorialProgress()
+  const current = profile.tutorialProgress
+  if (!current) {
+    return {
+      ...profile,
+      tutorialProgress: expected,
+    }
+  }
+
+  const nextCompleted: Partial<Record<CardElementId, true>> = {}
+  for (const elementId of ELEMENT_EFFECT_ORDERED_IDS) {
+    if (current.completedElementById[elementId]) {
+      nextCompleted[elementId] = true
+    }
+  }
+
+  const next = {
+    baseCompleted: current.baseCompleted === true,
+    completedElementById: nextCompleted,
+  }
+
+  const currentCompletedKeys = Object.keys(current.completedElementById)
+  const nextCompletedKeys = Object.keys(next.completedElementById)
+  const unchanged =
+    current.baseCompleted === next.baseCompleted &&
+    currentCompletedKeys.length === nextCompletedKeys.length &&
+    currentCompletedKeys.every((key) => next.completedElementById[key as CardElementId] === true)
+  if (unchanged) {
+    return profile
+  }
+
+  return {
+    ...profile,
+    tutorialProgress: next,
   }
 }
 
@@ -1134,23 +1442,9 @@ function syncAchievements(profile: PlayerProfile): PlayerProfile {
 }
 
 function migrateAchievementsToV4(profile: PlayerProfileV5Legacy, legacyAchievements: LegacyAchievementUnlock[]): AchievementUnlock[] {
-  const preserved = legacyAchievements.filter(
-    (entry) => isAchievementId(entry.id) && !legacyCollectionAchievementIds.has(entry.id),
-  ) as AchievementUnlock[]
-
-  const withPreservedOnly = migrateProfileV9ToV10(
-    migrateProfileV8ToV9(
-      migrateProfileV7ToV8(
-        migrateProfileV5ToV7({
-          ...profile,
-          achievements: preserved,
-        }),
-      ),
-    ),
-  )
-
-  const collectionUnlocks = evaluateAchievements(withPreservedOnly)
-  return [...preserved, ...collectionUnlocks]
+  void profile
+  void legacyAchievements
+  return []
 }
 
 function createCardCopiesById(ownedCardIds: CardId[]): Record<CardId, number> {
@@ -1171,6 +1465,10 @@ function createEmptyShinyCardCopiesById(): Record<CardId, number> {
   return {}
 }
 
+function createEmptyCardFragmentsById(): Record<CardId, number> {
+  return {}
+}
+
 function createEmptyPackInventoryByRarity(): Record<Rarity, number> {
   return {
     common: 0,
@@ -1181,12 +1479,73 @@ function createEmptyPackInventoryByRarity(): Record<Rarity, number> {
   }
 }
 
+export function createDefaultAchievementProgress(): AchievementProgress {
+  return {
+    matchesPlayed: 0,
+    matchesWon: 0,
+    currentStreak: 0,
+    bestStreak: 0,
+    cardsAcquired: 0,
+    goldEarned: 0,
+    packsPurchased: 0,
+    packsOpened: 0,
+    specialPacksOpened: 0,
+    missionsCompleted: 0,
+    baseTutorialsCompleted: 0,
+    elementTutorialsCompleted: 0,
+    rankedMatchesPlayed: 0,
+    rankedWins: 0,
+    deckEdits: 0,
+    shinyPulled: 0,
+    shinyCrafted: 0,
+  }
+}
+
 function isPlayerProfile(value: unknown): value is PlayerProfile {
   if (!value || typeof value !== 'object') {
     return false
   }
 
   const candidate = value as Partial<PlayerProfile>
+
+  return (
+    candidate.version === 12 &&
+    typeof candidate.playerName === 'string' &&
+    isPlayerNameValid(candidate.playerName).valid &&
+    typeof candidate.gold === 'number' &&
+    Array.isArray(candidate.ownedCardIds) &&
+    candidate.ownedCardIds.every((card) => typeof card === 'string') &&
+    isCardCopiesById(candidate.cardCopiesById) &&
+    (candidate.cardFragmentsById === undefined || isCardFragmentsById(candidate.cardFragmentsById)) &&
+    isCardCopiesById(candidate.shinyCardCopiesById) &&
+    isPackInventoryByRarity(candidate.packInventoryByRarity) &&
+    doesOwnershipMatchCopies(candidate.ownedCardIds, candidate.cardCopiesById, candidate.shinyCardCopiesById) &&
+    isDeckSlotsLegacy(candidate.deckSlots) &&
+    isDeckSlotId(candidate.selectedDeckSlotId) &&
+    typeof candidate.stats?.played === 'number' &&
+    typeof candidate.stats?.won === 'number' &&
+    typeof candidate.stats?.streak === 'number' &&
+    typeof candidate.stats?.bestStreak === 'number' &&
+    isAchievementProgress(candidate.achievementProgress) &&
+    isAchievementUnlocks(candidate.achievements) &&
+    (candidate.achievementRewardsClaimedById === undefined ||
+      (candidate.achievementRewardsClaimedById !== null &&
+        typeof candidate.achievementRewardsClaimedById === 'object' &&
+        !Array.isArray(candidate.achievementRewardsClaimedById))) &&
+    isMissionProgressMap(candidate.missions) &&
+    isMissionRewardsGrantedById(candidate.missionRewardsGrantedById) &&
+    isRankedByMode(candidate.rankedByMode) &&
+    (candidate.tutorialProgress === undefined || isTutorialProgress(candidate.tutorialProgress)) &&
+    typeof candidate.settings?.audioEnabled === 'boolean'
+  )
+}
+
+function isPlayerProfileV10Legacy(value: unknown): value is PlayerProfileV10Legacy {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+
+  const candidate = value as Partial<PlayerProfileV10Legacy>
 
   return (
     candidate.version === 10 &&
@@ -1208,8 +1567,60 @@ function isPlayerProfile(value: unknown): value is PlayerProfile {
     isAchievementUnlocks(candidate.achievements) &&
     isMissionProgressMap(candidate.missions) &&
     isRankedByMode(candidate.rankedByMode) &&
+    (candidate.tutorialProgress === undefined || isTutorialProgress(candidate.tutorialProgress)) &&
     typeof candidate.settings?.audioEnabled === 'boolean'
   )
+}
+
+function isPlayerProfileV11Legacy(value: unknown): value is PlayerProfileV11Legacy {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+
+  const candidate = value as Partial<PlayerProfileV11Legacy>
+
+  return (
+    candidate.version === 11 &&
+    typeof candidate.playerName === 'string' &&
+    isPlayerNameValid(candidate.playerName).valid &&
+    typeof candidate.gold === 'number' &&
+    Array.isArray(candidate.ownedCardIds) &&
+    candidate.ownedCardIds.every((card) => typeof card === 'string') &&
+    isCardCopiesById(candidate.cardCopiesById) &&
+    (candidate.cardFragmentsById === undefined || isCardFragmentsById(candidate.cardFragmentsById)) &&
+    isCardCopiesById(candidate.shinyCardCopiesById) &&
+    isPackInventoryByRarity(candidate.packInventoryByRarity) &&
+    doesOwnershipMatchCopies(candidate.ownedCardIds, candidate.cardCopiesById, candidate.shinyCardCopiesById) &&
+    isDeckSlotsLegacy(candidate.deckSlots) &&
+    isDeckSlotId(candidate.selectedDeckSlotId) &&
+    typeof candidate.stats?.played === 'number' &&
+    typeof candidate.stats?.won === 'number' &&
+    typeof candidate.stats?.streak === 'number' &&
+    typeof candidate.stats?.bestStreak === 'number' &&
+    isAchievementProgress(candidate.achievementProgress) &&
+    isAchievementUnlocks(candidate.achievements) &&
+    isMissionProgressMap(candidate.missions) &&
+    isMissionRewardsGrantedById(candidate.missionRewardsGrantedById) &&
+    isRankedByMode(candidate.rankedByMode) &&
+    (candidate.tutorialProgress === undefined || isTutorialProgress(candidate.tutorialProgress)) &&
+    typeof candidate.settings?.audioEnabled === 'boolean'
+  )
+}
+
+function isTutorialProgress(value: unknown): value is NonNullable<PlayerProfile['tutorialProgress']> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false
+  }
+  const candidate = value as Partial<NonNullable<PlayerProfile['tutorialProgress']>>
+  if (typeof candidate.baseCompleted !== 'boolean') {
+    return false
+  }
+  if (!candidate.completedElementById || typeof candidate.completedElementById !== 'object' || Array.isArray(candidate.completedElementById)) {
+    return false
+  }
+  return Object.entries(candidate.completedElementById).every(([elementId, done]) => {
+    return tutorialElementIds.has(elementId) && done === true
+  })
 }
 
 function isPlayerProfileV9Legacy(value: unknown): value is PlayerProfileV9Legacy {
@@ -1638,6 +2049,15 @@ function isCardCopiesById(value: unknown): value is Record<CardId, number> {
   return entries.every(([cardId, copies]) => cardId.length > 0 && Number.isInteger(copies) && copies >= 1)
 }
 
+function isCardFragmentsById(value: unknown): value is Record<CardId, number> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false
+  }
+
+  const entries = Object.entries(value)
+  return entries.every(([cardId, fragments]) => cardId.length > 0 && Number.isInteger(fragments) && fragments >= 1)
+}
+
 function isPackInventoryByRarity(value: unknown): value is Record<Rarity, number> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return false
@@ -1712,6 +2132,54 @@ function doesOwnershipMatchCopies(
   }
 
   return true
+}
+
+function isMissionRewardsGrantedById(value: unknown): value is PlayerProfile['missionRewardsGrantedById'] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false
+  }
+
+  const candidate = value as Partial<Record<MissionId, unknown>>
+  return missionIds.every((missionId) => {
+    const entry = candidate[missionId]
+    return entry === undefined || entry === true
+  })
+}
+
+function isAchievementRewardsClaimedById(value: unknown): value is PlayerProfile['achievementRewardsClaimedById'] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false
+  }
+
+  return Object.entries(value).every(([achievementId, claimed]) => isAchievementId(achievementId) && claimed === true)
+}
+
+function isAchievementProgress(value: unknown): value is AchievementProgress {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false
+  }
+
+  const candidate = value as Partial<AchievementProgress>
+
+  return (
+    typeof candidate.matchesPlayed === 'number' &&
+    typeof candidate.matchesWon === 'number' &&
+    typeof candidate.currentStreak === 'number' &&
+    typeof candidate.bestStreak === 'number' &&
+    typeof candidate.cardsAcquired === 'number' &&
+    typeof candidate.goldEarned === 'number' &&
+    typeof candidate.packsPurchased === 'number' &&
+    typeof candidate.packsOpened === 'number' &&
+    typeof candidate.specialPacksOpened === 'number' &&
+    typeof candidate.missionsCompleted === 'number' &&
+    typeof candidate.baseTutorialsCompleted === 'number' &&
+    typeof candidate.elementTutorialsCompleted === 'number' &&
+    typeof candidate.rankedMatchesPlayed === 'number' &&
+    typeof candidate.rankedWins === 'number' &&
+    typeof candidate.deckEdits === 'number' &&
+    typeof candidate.shinyPulled === 'number' &&
+    typeof candidate.shinyCrafted === 'number'
+  )
 }
 
 function isDeckSlotId(value: unknown): value is DeckSlotId {

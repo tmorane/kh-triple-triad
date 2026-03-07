@@ -1,4 +1,3 @@
-import { cardPool } from '../cards/cardPool'
 import type { AchievementId, AchievementUnlock, PlayerProfile } from '../types'
 
 export interface AchievementDefinition {
@@ -8,79 +7,54 @@ export interface AchievementDefinition {
   check(profile: PlayerProfile): boolean
 }
 
-const fullCollectionSize = cardPool.length
-
-function playedAtLeast(matches: number) {
-  return (profile: PlayerProfile) => profile.stats.played >= matches
-}
-
-function wonAtLeast(wins: number) {
-  return (profile: PlayerProfile) => profile.stats.won >= wins
-}
-
-function bestStreakAtLeast(streak: number) {
-  return (profile: PlayerProfile) => profile.stats.bestStreak >= streak
-}
-
-function ownsAtLeastCards(totalCards: number) {
-  return (profile: PlayerProfile) => profile.ownedCardIds.length >= totalCards
-}
-
-function hasGoldAtLeast(gold: number) {
-  return (profile: PlayerProfile) => profile.gold >= gold
+function thresholdAtLeast(
+  read: (profile: PlayerProfile) => number,
+  threshold: number,
+): (profile: PlayerProfile) => boolean {
+  return (profile) => read(profile) >= threshold
 }
 
 export const achievementCatalog: AchievementDefinition[] = [
-  { id: 'play_1', title: 'First Steps', condition: 'Play 1 match', check: playedAtLeast(1) },
-  { id: 'play_3', title: 'Warming Up', condition: 'Play 3 matches', check: playedAtLeast(3) },
-  { id: 'play_5', title: 'Field Tested', condition: 'Play 5 matches', check: playedAtLeast(5) },
-  { id: 'play_10', title: 'Regular Duelist', condition: 'Play 10 matches', check: playedAtLeast(10) },
-  { id: 'play_20', title: 'Seasoned Duelist', condition: 'Play 20 matches', check: playedAtLeast(20) },
-  { id: 'play_30', title: 'Arena Regular', condition: 'Play 30 matches', check: playedAtLeast(30) },
-  { id: 'play_50', title: 'Battle Veteran', condition: 'Play 50 matches', check: playedAtLeast(50) },
-  { id: 'play_75', title: 'Endless Challenger', condition: 'Play 75 matches', check: playedAtLeast(75) },
-  { id: 'first_win', title: 'First Victory', condition: 'Win 1 match', check: wonAtLeast(1) },
-  { id: 'tactician_margin_3', title: 'Triple Winner', condition: 'Win 3 matches', check: wonAtLeast(3) },
-  { id: 'wins_5', title: 'Five on the Board', condition: 'Win 5 matches', check: wonAtLeast(5) },
-  { id: 'wins_10', title: 'Double Digits', condition: 'Win 10 matches', check: wonAtLeast(10) },
-  { id: 'wins_20', title: 'Victory Route', condition: 'Win 20 matches', check: wonAtLeast(20) },
-  { id: 'wins_30', title: 'Crown Contender', condition: 'Win 30 matches', check: wonAtLeast(30) },
-  { id: 'wins_45', title: 'Relentless', condition: 'Win 45 matches', check: wonAtLeast(45) },
-  { id: 'wins_60', title: 'Grandmaster Path', condition: 'Win 60 matches', check: wonAtLeast(60) },
-  { id: 'streak_2', title: 'Back-to-Back', condition: 'Reach best streak 2', check: bestStreakAtLeast(2) },
-  { id: 'win_streak_3', title: 'On a Roll', condition: 'Reach best streak 3', check: bestStreakAtLeast(3) },
-  { id: 'streak_4', title: 'No Brakes', condition: 'Reach best streak 4', check: bestStreakAtLeast(4) },
-  { id: 'streak_5', title: 'Hot Hand', condition: 'Reach best streak 5', check: bestStreakAtLeast(5) },
-  { id: 'streak_7', title: 'Unstoppable', condition: 'Reach best streak 7', check: bestStreakAtLeast(7) },
-  { id: 'streak_10', title: 'Perfect Rhythm', condition: 'Reach best streak 10', check: bestStreakAtLeast(10) },
-  { id: 'owned_15', title: 'Collection 15', condition: 'Own 15 cards', check: ownsAtLeastCards(15) },
-  { id: 'owned_30', title: 'Collection 30', condition: 'Own 30 cards', check: ownsAtLeastCards(30) },
-  { id: 'owned_45', title: 'Collection 45', condition: 'Own 45 cards', check: ownsAtLeastCards(45) },
-  { id: 'owned_60', title: 'Collection 60', condition: 'Own 60 cards', check: ownsAtLeastCards(60) },
-  { id: 'owned_75', title: 'Collection 75', condition: 'Own 75 cards', check: ownsAtLeastCards(75) },
-  { id: 'owned_90', title: 'Collection 90', condition: 'Own 90 cards', check: ownsAtLeastCards(90) },
-  { id: 'owned_105', title: 'Collection 105', condition: 'Own 105 cards', check: ownsAtLeastCards(105) },
-  { id: 'owned_120', title: 'Collection 120', condition: 'Own 120 cards', check: ownsAtLeastCards(120) },
-  { id: 'owned_135', title: 'Collection 135', condition: 'Own 135 cards', check: ownsAtLeastCards(135) },
-  {
-    id: 'owned_150',
-    title: `Collection ${fullCollectionSize}`,
-    condition: `Own all ${fullCollectionSize} cards`,
-    check: ownsAtLeastCards(fullCollectionSize),
-  },
-  { id: 'gold_150', title: 'Purse Up', condition: 'Reach 150 gold', check: hasGoldAtLeast(150) },
-  { id: 'gold_200', title: 'Coin Keeper', condition: 'Reach 200 gold', check: hasGoldAtLeast(200) },
-  { id: 'gold_300', title: 'Treasure Scout', condition: 'Reach 300 gold', check: hasGoldAtLeast(300) },
-  { id: 'gold_450', title: 'Treasury Rising', condition: 'Reach 450 gold', check: hasGoldAtLeast(450) },
-  { id: 'gold_600', title: 'Vaulted', condition: 'Reach 600 gold', check: hasGoldAtLeast(600) },
-  { id: 'gold_800', title: 'Golden Flow', condition: 'Reach 800 gold', check: hasGoldAtLeast(800) },
-  { id: 'gold_1000', title: 'Fortune Holder', condition: 'Reach 1000 gold', check: hasGoldAtLeast(1000) },
-  {
-    id: 'rule_scholar',
-    title: 'Rule Scholar',
-    condition: 'Have at least one deck slot with Same + Plus enabled',
-    check: (profile) => profile.deckSlots.some((slot) => slot.rules.same && slot.rules.plus),
-  },
+  { id: 'match_1', title: 'Premier Duel', condition: 'Jouer 1 match', check: thresholdAtLeast((p) => p.achievementProgress.matchesPlayed, 1) },
+  { id: 'match_10', title: 'Habitué de l Arène', condition: 'Jouer 10 matchs', check: thresholdAtLeast((p) => p.achievementProgress.matchesPlayed, 10) },
+  { id: 'match_30', title: 'Combattant Assidu', condition: 'Jouer 30 matchs', check: thresholdAtLeast((p) => p.achievementProgress.matchesPlayed, 30) },
+  { id: 'match_60', title: 'Pilier du Plateau', condition: 'Jouer 60 matchs', check: thresholdAtLeast((p) => p.achievementProgress.matchesPlayed, 60) },
+  { id: 'win_1', title: 'Première Victoire', condition: 'Gagner 1 match', check: thresholdAtLeast((p) => p.achievementProgress.matchesWon, 1) },
+  { id: 'win_10', title: 'Vainqueur Confirmé', condition: 'Gagner 10 matchs', check: thresholdAtLeast((p) => p.achievementProgress.matchesWon, 10) },
+  { id: 'win_30', title: 'Domination Tactique', condition: 'Gagner 30 matchs', check: thresholdAtLeast((p) => p.achievementProgress.matchesWon, 30) },
+  { id: 'win_50', title: 'Légende Locale', condition: 'Gagner 50 matchs', check: thresholdAtLeast((p) => p.achievementProgress.matchesWon, 50) },
+  { id: 'streak_3', title: 'Série Lancée', condition: 'Atteindre une série de 3 victoires', check: thresholdAtLeast((p) => p.achievementProgress.bestStreak, 3) },
+  { id: 'streak_5', title: 'Main Brûlante', condition: 'Atteindre une série de 5 victoires', check: thresholdAtLeast((p) => p.achievementProgress.bestStreak, 5) },
+  { id: 'streak_8', title: 'Inarrêtable', condition: 'Atteindre une série de 8 victoires', check: thresholdAtLeast((p) => p.achievementProgress.bestStreak, 8) },
+  { id: 'cards_10', title: 'Collectionneur Curieux', condition: 'Acquérir 10 copies de cartes', check: thresholdAtLeast((p) => p.achievementProgress.cardsAcquired, 10) },
+  { id: 'cards_25', title: 'Collectionneur Régulier', condition: 'Acquérir 25 copies de cartes', check: thresholdAtLeast((p) => p.achievementProgress.cardsAcquired, 25) },
+  { id: 'cards_50', title: 'Collectionneur Expert', condition: 'Acquérir 50 copies de cartes', check: thresholdAtLeast((p) => p.achievementProgress.cardsAcquired, 50) },
+  { id: 'cards_100', title: 'Archiviste du Deck', condition: 'Acquérir 100 copies de cartes', check: thresholdAtLeast((p) => p.achievementProgress.cardsAcquired, 100) },
+  { id: 'cards_200', title: 'Maître du Pokédex', condition: 'Acquérir 200 copies de cartes', check: thresholdAtLeast((p) => p.achievementProgress.cardsAcquired, 200) },
+  { id: 'gold_250', title: 'Bourse Solide', condition: 'Gagner 250 gold au total', check: thresholdAtLeast((p) => p.achievementProgress.goldEarned, 250) },
+  { id: 'gold_1000', title: 'Trésorier', condition: 'Gagner 1000 gold au total', check: thresholdAtLeast((p) => p.achievementProgress.goldEarned, 1000) },
+  { id: 'gold_2000', title: 'Banquier du Jardin', condition: 'Gagner 2000 gold au total', check: thresholdAtLeast((p) => p.achievementProgress.goldEarned, 2000) },
+  { id: 'missions_1', title: 'Mission Accomplie', condition: 'Terminer 1 mission', check: thresholdAtLeast((p) => p.achievementProgress.missionsCompleted, 1) },
+  { id: 'missions_2', title: 'Agent Efficace', condition: 'Terminer 2 missions', check: thresholdAtLeast((p) => p.achievementProgress.missionsCompleted, 2) },
+  { id: 'missions_3', title: 'Tableau Complet', condition: 'Terminer 3 missions', check: thresholdAtLeast((p) => p.achievementProgress.missionsCompleted, 3) },
+  { id: 'tutorial_base_1', title: 'Fondations Posées', condition: 'Terminer le tuto de base', check: thresholdAtLeast((p) => p.achievementProgress.baseTutorialsCompleted, 1) },
+  { id: 'tutorial_elements_5', title: 'Élève Appliqué', condition: 'Terminer 5 tutos élémentaires', check: thresholdAtLeast((p) => p.achievementProgress.elementTutorialsCompleted, 5) },
+  { id: 'tutorial_elements_15', title: 'Docteur des Types', condition: 'Terminer 15 tutos élémentaires', check: thresholdAtLeast((p) => p.achievementProgress.elementTutorialsCompleted, 15) },
+  { id: 'ranked_play_1', title: 'Entrée Classée', condition: 'Jouer 1 match classé', check: thresholdAtLeast((p) => p.achievementProgress.rankedMatchesPlayed, 1) },
+  { id: 'ranked_play_10', title: 'Routinier Classé', condition: 'Jouer 10 matchs classés', check: thresholdAtLeast((p) => p.achievementProgress.rankedMatchesPlayed, 10) },
+  { id: 'ranked_win_5', title: 'Grimpeur Sérieux', condition: 'Gagner 5 matchs classés', check: thresholdAtLeast((p) => p.achievementProgress.rankedWins, 5) },
+  { id: 'ranked_win_20', title: 'Prédateur du Ladder', condition: 'Gagner 20 matchs classés', check: thresholdAtLeast((p) => p.achievementProgress.rankedWins, 20) },
+  { id: 'pack_buy_1', title: 'Premières Courses', condition: 'Acheter 1 pack', check: thresholdAtLeast((p) => p.achievementProgress.packsPurchased, 1) },
+  { id: 'pack_buy_20', title: 'Client Premium', condition: 'Acheter 20 packs', check: thresholdAtLeast((p) => p.achievementProgress.packsPurchased, 20) },
+  { id: 'pack_open_1', title: 'Ouverture Officielle', condition: 'Ouvrir 1 pack', check: thresholdAtLeast((p) => p.achievementProgress.packsOpened, 1) },
+  { id: 'pack_open_20', title: 'Déballage Intensif', condition: 'Ouvrir 20 packs', check: thresholdAtLeast((p) => p.achievementProgress.packsOpened, 20) },
+  { id: 'special_open_1', title: 'Booster Spécial', condition: 'Ouvrir 1 pack spécial', check: thresholdAtLeast((p) => p.achievementProgress.specialPacksOpened, 1) },
+  { id: 'special_open_10', title: 'Collection Spéciale', condition: 'Ouvrir 10 packs spéciaux', check: thresholdAtLeast((p) => p.achievementProgress.specialPacksOpened, 10) },
+  { id: 'deck_edit_10', title: 'Architecte de Deck', condition: 'Effectuer 10 modifications de deck', check: thresholdAtLeast((p) => p.achievementProgress.deckEdits, 10) },
+  { id: 'deck_edit_40', title: 'Ingénieur de Meta', condition: 'Effectuer 40 modifications de deck', check: thresholdAtLeast((p) => p.achievementProgress.deckEdits, 40) },
+  { id: 'shiny_pull_1', title: 'Éclat Chanceux', condition: 'Obtenir 1 carte shiny en ouverture', check: thresholdAtLeast((p) => p.achievementProgress.shinyPulled, 1) },
+  { id: 'shiny_craft_1', title: 'Artisan Shiny', condition: 'Crafter 1 carte shiny', check: thresholdAtLeast((p) => p.achievementProgress.shinyCrafted, 1) },
+  { id: 'shiny_craft_5', title: 'Forgeron Arc-en-Ciel', condition: 'Crafter 5 cartes shiny', check: thresholdAtLeast((p) => p.achievementProgress.shinyCrafted, 5) },
 ]
 
 const achievementById = Object.fromEntries(achievementCatalog.map((achievement) => [achievement.id, achievement])) as Record<

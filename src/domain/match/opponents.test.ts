@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test } from 'bun:test'
 import { cardPool, getCard } from '../cards/cardPool'
 import { createDefaultProfile } from '../progression/profile'
 import type { OpponentLevel } from './opponents'
@@ -22,10 +22,8 @@ function makeProfileAtTier(
   const profile = createDefaultProfile()
   profile.rankedByMode['3x3'].tier = tierId
   profile.rankedByMode['4x4'].tier = tierId
-  profile.rankedByMode['3x3'].division =
-    tierId === 'master' || tierId === 'grandmaster' || tierId === 'challenger' ? null : division
-  profile.rankedByMode['4x4'].division =
-    tierId === 'master' || tierId === 'grandmaster' || tierId === 'challenger' ? null : division
+  profile.rankedByMode['3x3'].division = tierId === 'challenger' ? null : division
+  profile.rankedByMode['4x4'].division = tierId === 'challenger' ? null : division
   return profile
 }
 
@@ -42,10 +40,7 @@ describe('opponents', () => {
       { tierId: 'silver', level: 3 },
       { tierId: 'gold', level: 4 },
       { tierId: 'platinum', level: 5 },
-      { tierId: 'emerald', level: 6 },
-      { tierId: 'diamond', level: 7 },
-      { tierId: 'master', level: 8 },
-      { tierId: 'grandmaster', level: 8 },
+      { tierId: 'diamond', level: 6 },
       { tierId: 'challenger', level: 8 },
     ]
 
@@ -73,7 +68,7 @@ describe('opponents', () => {
     const opponent = buildCpuOpponentForLevel(8, playerDeck, 3030)
 
     expect(opponent.level).toBe(8)
-    expect(opponent.tierId).toBe('master')
+    expect(opponent.tierId).toBe('challenger')
     expect(opponent.aiProfile).toBe('expert')
     expect(opponent.scoreRange).toEqual({ min: 150, max: 178 })
     expect(opponent.deck).toHaveLength(5)
@@ -88,7 +83,7 @@ describe('opponents', () => {
     const opponentL10 = buildCpuOpponentForLevel(10, playerDeck, 5050)
 
     expect(opponentL9.level).toBe(9)
-    expect(opponentL9.tierId).toBe('grandmaster')
+    expect(opponentL9.tierId).toBe('challenger')
     expect(opponentL9.aiProfile).toBe('expert')
     expect(opponentL9.scoreRange).toEqual({ min: 156, max: 168 })
     expect(opponentL9.winGoldBonus).toBe(32)
@@ -121,21 +116,16 @@ describe('opponents', () => {
     expect(getCpuOpponentPreview(profileI, playerDeck).scoreRange).toEqual({ min: 78, max: 96 })
   })
 
-  test('applies ranked deck score bonus across apex tiers even at locked L8', () => {
+  test('applies ranked deck score bonus for challenger at locked L8', () => {
     const playerDeck = createDefaultProfile().deckSlots[0].cards
-    const masterProfile = makeProfileAtTier('master')
-    const grandmasterProfile = makeProfileAtTier('grandmaster')
     const challengerProfile = makeProfileAtTier('challenger')
 
-    expect(getCpuOpponentPreview(masterProfile, playerDeck).scoreRange).toEqual({ min: 150, max: 178 })
-    expect(getCpuOpponentPreview(grandmasterProfile, playerDeck).scoreRange).toEqual({ min: 153, max: 181 })
     expect(getCpuOpponentPreview(challengerProfile, playerDeck).scoreRange).toEqual({ min: 156, max: 184 })
   })
 
   test('exposes ranked deck bonus for UI from player profile rank state', () => {
     expect(getRankedDeckScoreBonusForProfile(makeProfileAtTier('iron', 'IV'), '3x3')).toBe(0)
     expect(getRankedDeckScoreBonusForProfile(makeProfileAtTier('diamond', 'I'), '3x3')).toBe(6)
-    expect(getRankedDeckScoreBonusForProfile(makeProfileAtTier('grandmaster'), '3x3')).toBe(3)
     expect(getRankedDeckScoreBonusForProfile(makeProfileAtTier('challenger'), '3x3')).toBe(6)
   })
 
@@ -144,7 +134,7 @@ describe('opponents', () => {
     const preview = getCpuOpponentPreviewForLevel(6, playerDeck)
 
     expect(preview.level).toBe(6)
-    expect(preview.tierId).toBe('emerald')
+    expect(preview.tierId).toBe('diamond')
     expect(preview.aiProfile).toBe('expert')
     expect(preview.scoreRange).toEqual({ min: 104, max: 128 })
     expect(preview.winGoldBonus).toBe(20)
@@ -156,7 +146,7 @@ describe('opponents', () => {
     const info = getOpponentLevelInfo(7)
 
     expect(info.level).toBe(7)
-    expect(info.tierId).toBe('diamond')
+    expect(info.tierId).toBe('challenger')
     expect(info.aiProfile).toBe('expert')
     expect(info.scoreRange).toEqual({ min: 132, max: 158 })
     expect(info.winGoldBonus).toBe(24)
@@ -178,7 +168,7 @@ describe('opponents', () => {
   })
 
   test('is deterministic for identical inputs and seed', () => {
-    const profile = makeProfileAtTier('emerald')
+    const profile = makeProfileAtTier('diamond')
     const playerDeck = ['c41', 'c42', 'c43', 'c44', 'c45']
 
     const a = buildCpuOpponent(profile, playerDeck, 123456)

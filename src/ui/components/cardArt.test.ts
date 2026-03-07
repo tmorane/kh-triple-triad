@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test } from 'bun:test'
 import { getCardArtCandidates } from './cardArt'
 
 describe('getCardArtCandidates', () => {

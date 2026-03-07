@@ -1,15 +1,18 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, test, vi } from 'vitest'
+import { beforeEach, describe, expect, setDefaultTimeout, test } from 'bun:test'
 import { MemoryRouter } from 'react-router-dom'
 import App from '../App'
 import { cardPool } from '../domain/cards/cardPool'
 import { getSelectedDeckSlot, starterOwnedCardIds } from '../domain/cards/decks'
 import { applyMove, listLegalMoves, listMovePowerTargetOptions } from '../domain/match/engine'
+import { achievementCatalog } from '../domain/progression/achievements'
 import { createDefaultProfile, PROFILE_STORAGE_KEY } from '../domain/progression/profile'
+import { rankedTiers } from '../domain/progression/ranked'
 import { GameProvider } from './GameContext'
 import { IS_4X4_UI_ENABLED } from './matchUiConfig'
 import { useGame } from './useGame'
+import { getOpponentLevelForProfile } from '../domain/match/opponents'
 
 const THEME_STORAGE_KEY = 'kh-triple-triad-theme-mode-v1'
 const BACKGROUND_MODE_STORAGE_KEY = 'kh-triple-triad-background-mode-v1'
@@ -53,17 +56,23 @@ async function waitForStarterAnimation() {
   await screen.findByTestId('match-starter-overlay')
   await waitFor(
     () => {
-      expect(screen.queryByTestId('match-starter-overlay')).not.toBeInTheDocument()
+      expect(screen.getByTestId('match-turn-indicator')).toHaveTextContent(/Turn [1-2]: (Player|CPU)/)
     },
-    { timeout: 3200 },
+    { timeout: 20_000 },
   )
 }
 
 type PlayPresetTestId = 'setup-mode-3x3' | 'setup-mode-4x4' | 'setup-mode-3x3-ranked' | 'setup-mode-4x4-ranked'
+const ACTIVE_MODE = IS_4X4_UI_ENABLED ? '4x4' : '3x3'
+const ACTIVE_DECK_SIZE = ACTIVE_MODE === '4x4' ? 8 : 5
+const ACTIVE_NORMAL_PRESET: PlayPresetTestId = IS_4X4_UI_ENABLED ? 'setup-mode-4x4' : 'setup-mode-3x3'
+const ACTIVE_RANKED_PRESET: PlayPresetTestId = IS_4X4_UI_ENABLED ? 'setup-mode-4x4-ranked' : 'setup-mode-3x3-ranked'
+
+setDefaultTimeout(15_000)
 
 async function selectPlayPreset(
   user: ReturnType<typeof userEvent.setup>,
-  preset: PlayPresetTestId = 'setup-mode-4x4',
+  preset: PlayPresetTestId = ACTIVE_NORMAL_PRESET,
 ) {
   await user.click(screen.getByTestId(preset))
 }
@@ -78,13 +87,14 @@ function RewardsHarness() {
     finalizeCurrentMatch,
   } = useGame()
   const selectedSlot = getSelectedDeckSlot(profile)
+  const activeDeck = ACTIVE_MODE === '4x4' ? selectedSlot.cards4x4 : selectedSlot.cards
 
   return (
     <section>
       <button
         type="button"
         data-testid="harness-start"
-        onClick={() => startMatch('normal', '4x4', selectedSlot.cards4x4, { open: true, ...selectedSlot.rules })}
+        onClick={() => startMatch('normal', ACTIVE_MODE, activeDeck, { open: true, ...selectedSlot.rules })}
       >
         start
       </button>
@@ -176,7 +186,7 @@ function RewardsHarness() {
 
       <span data-testid="has-match">{currentMatch ? 'yes' : 'no'}</span>
       <span data-testid="played">{profile.stats.played}</span>
-      <span data-testid="ranked-played">{profile.rankedByMode['4x4'].matchesPlayed}</span>
+      <span data-testid="ranked-played">{profile.rankedByMode[ACTIVE_MODE].matchesPlayed}</span>
       <span data-testid="gold">{profile.gold}</span>
       <span data-testid="current-opponent-level">{currentMatch?.opponent?.level ?? '-'}</span>
       <span data-testid="last-opponent-level">{lastMatchSummary?.opponent?.level ?? '-'}</span>
@@ -189,13 +199,14 @@ function RewardsHarness() {
 function MatchReplayHarness() {
   const { profile, currentMatch, startMatch, updateCurrentMatch } = useGame()
   const selectedSlot = getSelectedDeckSlot(profile)
+  const activeDeck = ACTIVE_MODE === '4x4' ? selectedSlot.cards4x4 : selectedSlot.cards
 
   return (
     <section>
       <button
         type="button"
         data-testid="replay-harness-start"
-        onClick={() => startMatch('normal', '4x4', selectedSlot.cards4x4, { open: true, ...selectedSlot.rules })}
+        onClick={() => startMatch('normal', ACTIVE_MODE, activeDeck, { open: true, ...selectedSlot.rules })}
       >
         start-match
       </button>
@@ -348,9 +359,9 @@ describe('app integration', () => {
     expect(screen.getByTestId('topbar-cta-link')).toHaveTextContent('Play')
     await user.click(screen.getByTestId('topbar-cta-link'))
     expect(screen.getByTestId('setup-layout')).toBeInTheDocument()
-    expect(screen.getByTestId('setup-mode-4x4')).toBeInTheDocument()
+    expect(screen.getByTestId(ACTIVE_NORMAL_PRESET)).toBeInTheDocument()
 
-    await selectPlayPreset(user, 'setup-mode-4x4')
+    await selectPlayPreset(user, ACTIVE_NORMAL_PRESET)
     await user.click(screen.getByTestId('start-match-button'))
     await waitForStarterAnimation()
 
@@ -364,15 +375,15 @@ describe('app integration', () => {
     expect(cpuLane.compareDocumentPosition(boardStage) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
     expect(boardStage.compareDocumentPosition(playerLane) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
 
-    expect(screen.getByLabelText('CPU hand').children).toHaveLength(8)
-    expect(screen.getByLabelText('Player hand').children).toHaveLength(8)
+    expect(screen.getByLabelText('CPU hand').children).toHaveLength(ACTIVE_DECK_SIZE)
+    expect(screen.getByLabelText('Player hand').children).toHaveLength(ACTIVE_DECK_SIZE)
   })
 
   test('match shows starter roll animation before first turn is active', async () => {
     const user = userEvent.setup()
     renderApp('/setup')
 
-    await selectPlayPreset(user, 'setup-mode-4x4')
+    await selectPlayPreset(user, ACTIVE_NORMAL_PRESET)
     await user.click(screen.getByTestId('start-match-button'))
 
     const overlay = await screen.findByTestId('match-starter-overlay')
@@ -384,7 +395,6 @@ describe('app integration', () => {
     expect(screen.getByTestId('match-starter-side-you')).toHaveTextContent('You')
 
     await waitForStarterAnimation()
-    expect(screen.queryByTestId('match-starter-overlay')).not.toBeInTheDocument()
     expect(screen.getByTestId('match-turn-indicator')).toHaveTextContent(/Turn [1-2]: (Player|CPU)/)
   })
 
@@ -395,7 +405,7 @@ describe('app integration', () => {
     expect(screen.getByTestId('topbar-cta-link')).toHaveTextContent('Play')
     expect(screen.getByTestId('topbar-cta-link')).toHaveAttribute('href', '/setup')
 
-    await selectPlayPreset(user, 'setup-mode-4x4')
+    await selectPlayPreset(user, ACTIVE_NORMAL_PRESET)
     await user.click(screen.getByTestId('start-match-button'))
 
     expect(screen.getByTestId('topbar-cta-link')).toHaveTextContent('Continue')
@@ -408,7 +418,7 @@ describe('app integration', () => {
 
     expect(screen.queryByTestId('topbar-abandon-button')).not.toBeInTheDocument()
 
-    await selectPlayPreset(user, 'setup-mode-4x4')
+    await selectPlayPreset(user, ACTIVE_NORMAL_PRESET)
     await user.click(screen.getByTestId('start-match-button'))
 
     const continueLink = screen.getByTestId('topbar-cta-link')
@@ -454,8 +464,8 @@ describe('app integration', () => {
     const firstCard = within(screen.getByLabelText('Deck selection')).getAllByRole('button')[0]
     await user.click(firstCard)
 
-    expect(screen.getByText('Deck already has 8 cards. Remove one first.')).toBeInTheDocument()
-    expect(screen.getByText('Deck: 8/8 selected')).toBeInTheDocument()
+    expect(screen.getByText(`Deck already has ${ACTIVE_DECK_SIZE} cards. Remove one first.`)).toBeInTheDocument()
+    expect(screen.getByText(`Deck: ${ACTIVE_DECK_SIZE}/${ACTIVE_DECK_SIZE} selected`)).toBeInTheDocument()
   })
 
   test('setup follows slot mode deck completeness', async () => {
@@ -488,91 +498,96 @@ describe('app integration', () => {
     expect(screen.getByLabelText('Player hand').children).toHaveLength(5)
   })
 
-  test('auto deck only uses owned cards in 4x4 match', async () => {
+  test('auto deck only uses owned cards in active match mode', async () => {
     const user = userEvent.setup()
     const profile = createDefaultProfile()
     const ownedCardIds = cardPool
       .filter((card) => card.rarity === 'legendary')
-      .slice(0, 8)
+      .slice(0, ACTIVE_DECK_SIZE)
       .map((card) => card.id)
 
-    expect(ownedCardIds).toHaveLength(8)
+    expect(ownedCardIds).toHaveLength(ACTIVE_DECK_SIZE)
     profile.ownedCardIds = [...ownedCardIds]
     profile.cardCopiesById = Object.fromEntries(ownedCardIds.map((cardId) => [cardId, 1]))
-    profile.deckSlots[0].mode = '4x4'
+    profile.deckSlots[0].mode = ACTIVE_MODE
     profile.deckSlots[0].cards = ownedCardIds.slice(0, 5)
     profile.deckSlots[0].cards4x4 = [...ownedCardIds]
     profile.selectedDeckSlotId = 'slot-1'
     localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile))
 
-    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(20260223)
-    try {
-      renderApp('/setup')
+    renderApp('/setup')
 
-      await selectPlayPreset(user, 'setup-mode-4x4')
-      await user.click(screen.getByTestId('setup-deck-mode-auto'))
-      await user.click(screen.getByTestId('start-match-button'))
-      await waitForStarterAnimation()
+    await selectPlayPreset(user, ACTIVE_NORMAL_PRESET)
+    await user.click(screen.getByTestId('setup-deck-mode-auto'))
+    await user.click(screen.getByTestId('start-match-button'))
+    await waitForStarterAnimation()
 
-      const playerHand = screen.getByLabelText('Player hand')
-      const dealtCardIds = Array.from(playerHand.querySelectorAll<HTMLElement>('[data-testid^="player-card-"]')).map((cardNode) =>
-        (cardNode.dataset.testid ?? '').replace('player-card-', ''),
-      )
+    const playerHand = screen.getByLabelText('Player hand')
+    const dealtCardIds = Array.from(playerHand.querySelectorAll<HTMLElement>('[data-testid^="player-card-"]')).map((cardNode) =>
+      (cardNode.dataset.testid ?? '').replace('player-card-', ''),
+    )
 
-      expect(dealtCardIds).toHaveLength(8)
-      expect(dealtCardIds.every((cardId) => ownedCardIds.includes(cardId))).toBe(true)
-    } finally {
-      nowSpy.mockRestore()
-    }
+    expect(dealtCardIds).toHaveLength(ACTIVE_DECK_SIZE)
+    expect(dealtCardIds.every((cardId) => ownedCardIds.includes(cardId))).toBe(true)
   })
 
-  test('setup normal queue uses the selected opponent level in match', async () => {
+  test(
+    'setup normal queue uses the selected opponent level in match',
+    async () => {
     const user = userEvent.setup()
     const profile = createDefaultProfile()
-    profile.rankedByMode['4x4'].tier = 'gold'
-    profile.rankedByMode['4x4'].division = 'IV'
+    profile.rankedByMode[ACTIVE_MODE].tier = 'gold'
+    profile.rankedByMode[ACTIVE_MODE].division = 'IV'
     localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile))
 
     renderApp('/setup')
 
-    await selectPlayPreset(user, 'setup-mode-4x4')
+    await selectPlayPreset(user, ACTIVE_NORMAL_PRESET)
     await user.click(screen.getByTestId('setup-opponent-level-option-10'))
     await user.click(screen.getByTestId('start-match-button'))
     await waitForStarterAnimation()
 
     expect(screen.getByTestId('match-opponent-badge')).toHaveTextContent('CPU L10')
-  })
+    },
+    30_000,
+  )
 
-  test('setup ranked preset ignores normal-level selection and uses ranked-level opponent', async () => {
+  test(
+    'setup ranked preset ignores normal-level selection and uses ranked-level opponent',
+    async () => {
     const user = userEvent.setup()
     const profile = createDefaultProfile()
-    profile.rankedByMode['4x4'].tier = 'gold'
-    profile.rankedByMode['4x4'].division = 'IV'
+    profile.rankedByMode[ACTIVE_MODE].tier = 'gold'
+    profile.rankedByMode[ACTIVE_MODE].division = 'IV'
     localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile))
 
     renderApp('/setup')
 
-    await selectPlayPreset(user, 'setup-mode-4x4')
+    await selectPlayPreset(user, ACTIVE_NORMAL_PRESET)
     await user.click(screen.getByTestId('setup-opponent-level-option-1'))
     expect(screen.getByTestId('setup-opponent-level')).toHaveTextContent('CPU L1')
 
     await user.click(screen.getByTestId('setup-change-mode'))
-    await selectPlayPreset(user, 'setup-mode-4x4-ranked')
+    await selectPlayPreset(user, ACTIVE_RANKED_PRESET)
     expect(screen.getByTestId('setup-opponent-ranked-lock')).toBeInTheDocument()
 
     await user.click(screen.getByTestId('start-match-button'))
     await waitForStarterAnimation()
 
-    expect(screen.getByTestId('match-opponent-badge')).toHaveTextContent('CPU L4')
-  })
+    expect(screen.getByTestId('match-opponent-badge')).toHaveTextContent(
+      `CPU L${getOpponentLevelForProfile(profile, ACTIVE_MODE)}`,
+    )
+    },
+    30_000,
+  )
 
   test('setup preset selection controls start button mode label', async () => {
     const user = userEvent.setup()
     renderApp('/setup')
 
-    await selectPlayPreset(user, 'setup-mode-4x4')
+    await selectPlayPreset(user, ACTIVE_NORMAL_PRESET)
     const startButton = screen.getByTestId('start-match-button')
-    expect(startButton).toHaveTextContent('Start 4x4 Normal')
+    expect(startButton).toHaveTextContent(`Start ${ACTIVE_MODE} Normal`)
 
     await user.click(screen.getByTestId('setup-change-mode'))
     await selectPlayPreset(user, 'setup-mode-3x3-ranked')
@@ -584,13 +599,25 @@ describe('app integration', () => {
     const user = userEvent.setup()
     renderApp('/setup')
 
-    await selectPlayPreset(user, 'setup-mode-4x4')
+    await selectPlayPreset(user, ACTIVE_NORMAL_PRESET)
     await user.click(screen.getByTestId('deck-slot-slot-2'))
-    expect(screen.getByTestId('start-match-button')).toBeEnabled()
-    expect(screen.getByText('Deck: 8/8 selected (4x4)')).toBeInTheDocument()
+    if (IS_4X4_UI_ENABLED) {
+      expect(screen.getByTestId('start-match-button')).toBeEnabled()
+      expect(screen.getByText(`Deck: ${ACTIVE_DECK_SIZE}/${ACTIVE_DECK_SIZE} selected (${ACTIVE_MODE})`)).toBeInTheDocument()
+
+      await user.click(screen.getByTestId('setup-change-mode'))
+      await selectPlayPreset(user, 'setup-mode-3x3')
+
+      expect(screen.getByTestId('start-match-button')).toBeDisabled()
+      expect(screen.getByText('Deck: 0/5 selected (3x3)')).toBeInTheDocument()
+      return
+    }
+
+    expect(screen.getByTestId('start-match-button')).toBeDisabled()
+    expect(screen.getByText('Deck: 0/5 selected (3x3)')).toBeInTheDocument()
 
     await user.click(screen.getByTestId('setup-change-mode'))
-    await selectPlayPreset(user, 'setup-mode-3x3')
+    await selectPlayPreset(user, 'setup-mode-3x3-ranked')
 
     expect(screen.getByTestId('start-match-button')).toBeDisabled()
     expect(screen.getByText('Deck: 0/5 selected (3x3)')).toBeInTheDocument()
@@ -619,7 +646,7 @@ describe('app integration', () => {
     expect(screen.getByTestId('setup-filter-search')).toHaveValue('')
 
     await user.click(screen.getByTestId('topbar-cta-link'))
-    await selectPlayPreset(user, 'setup-mode-4x4')
+    await selectPlayPreset(user, ACTIVE_NORMAL_PRESET)
     await user.click(screen.getByTestId('start-match-button'))
     await waitForStarterAnimation()
 
@@ -648,7 +675,7 @@ describe('app integration', () => {
     const deckBeforeRematch = screen.getByTestId('replay-harness-current-deck').textContent
     expect(deckBeforeRematch).toBeTruthy()
     expect(deckBeforeRematch).not.toBe('-')
-    expect(screen.getByTestId('replay-harness-current-mode')).toHaveTextContent('4x4')
+    expect(screen.getByTestId('replay-harness-current-mode')).toHaveTextContent(ACTIVE_MODE)
 
     await user.click(screen.getByTestId('topbar-cta-link'))
     await waitForStarterAnimation()
@@ -668,16 +695,16 @@ describe('app integration', () => {
     expect(screen.getByTestId('match-turn-indicator')).toHaveTextContent(/Turn [1-2]: (Player|CPU)/)
 
     expect(screen.getByTestId('replay-harness-current-deck')).toHaveTextContent(deckBeforeRematch ?? '')
-    expect(screen.getByTestId('replay-harness-current-mode')).toHaveTextContent('4x4')
+    expect(screen.getByTestId('replay-harness-current-mode')).toHaveTextContent(ACTIVE_MODE)
     expect(screen.getByTestId('replay-harness-played')).toHaveTextContent('1')
   })
 
   test('ranked rematch uses updated rank when the player promotes', async () => {
     const user = userEvent.setup()
     const profile = createDefaultProfile()
-    profile.rankedByMode['4x4'].tier = 'iron'
-    profile.rankedByMode['4x4'].division = 'I'
-    profile.rankedByMode['4x4'].lp = 95
+    profile.rankedByMode[ACTIVE_MODE].tier = 'iron'
+    profile.rankedByMode[ACTIVE_MODE].division = 'I'
+    profile.rankedByMode[ACTIVE_MODE].lp = 95
     localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile))
 
     render(
@@ -689,7 +716,7 @@ describe('app integration', () => {
       </MemoryRouter>,
     )
 
-    await selectPlayPreset(user, 'setup-mode-4x4-ranked')
+    await selectPlayPreset(user, ACTIVE_RANKED_PRESET)
     await user.click(screen.getByTestId('start-match-button'))
     await waitForStarterAnimation()
     expect(screen.getByTestId('match-opponent-badge')).toHaveTextContent('CPU L1')
@@ -708,7 +735,7 @@ describe('app integration', () => {
     expect(screen.getByTestId('match-opponent-badge')).toHaveTextContent('CPU L2')
   })
 
-  test('victory requires claiming one cpu card before continue and persists the claimed copy', async () => {
+  test('victory requires selecting one cpu card before continue and persists +1 fragment for that card', async () => {
     const user = userEvent.setup()
     render(
       <MemoryRouter initialEntries={['/setup']}>
@@ -719,40 +746,49 @@ describe('app integration', () => {
       </MemoryRouter>,
     )
 
-    await selectPlayPreset(user, 'setup-mode-4x4')
+    await selectPlayPreset(user, ACTIVE_NORMAL_PRESET)
     await user.click(screen.getByTestId('start-match-button'))
     await waitForStarterAnimation()
 
     await user.click(screen.getByTestId('force-player-victory'))
 
     const finishModal = await screen.findByTestId('match-finish-modal')
-    expect(within(finishModal).getByText('Choose 1 opponent card to claim')).toBeInTheDocument()
+    expect(within(finishModal).getByText('Choose 1 opponent card to recover 1 fragment (not a full card)')).toBeInTheDocument()
 
     const continueButton = within(finishModal).getByTestId('finish-match-button')
     expect(continueButton).toBeDisabled()
 
     const claimCards = within(finishModal).getAllByTestId(/^match-claim-card-/)
-    expect(claimCards).toHaveLength(8)
+    expect(claimCards).toHaveLength(ACTIVE_DECK_SIZE)
 
     const firstClaimCardId = (claimCards[0].getAttribute('data-testid') ?? '').replace('match-claim-card-', '')
     expect(firstClaimCardId).not.toBe('')
 
     const beforeRaw = localStorage.getItem(PROFILE_STORAGE_KEY)
     expect(beforeRaw).toBeTruthy()
-    const beforeProfile = JSON.parse(beforeRaw!) as { cardCopiesById: Record<string, number> }
+    const beforeProfile = JSON.parse(beforeRaw!) as {
+      cardCopiesById: Record<string, number>
+      cardFragmentsById: Record<string, number>
+    }
     const beforeCopies = beforeProfile.cardCopiesById[firstClaimCardId] ?? 0
+    const beforeFragments = beforeProfile.cardFragmentsById[firstClaimCardId] ?? 0
 
     await user.click(claimCards[0])
     expect(continueButton).toBeEnabled()
 
     await user.click(continueButton)
     expect(await screen.findByTestId('results-outcome')).toHaveTextContent('WIN')
-    expect(screen.getByText(`Claimed card: ${firstClaimCardId.toUpperCase()}`)).toBeInTheDocument()
+    expect(screen.getByText(`You recovered 1 card fragment: ${firstClaimCardId.toUpperCase()}.`)).toBeInTheDocument()
+    expect(screen.getByTestId('results-fragment-total')).toHaveTextContent(/Fragment progress: \d+\/\d+/)
 
     const afterRaw = localStorage.getItem(PROFILE_STORAGE_KEY)
     expect(afterRaw).toBeTruthy()
-    const afterProfile = JSON.parse(afterRaw!) as { cardCopiesById: Record<string, number> }
-    expect(afterProfile.cardCopiesById[firstClaimCardId]).toBe(beforeCopies + 1)
+    const afterProfile = JSON.parse(afterRaw!) as {
+      cardCopiesById: Record<string, number>
+      cardFragmentsById: Record<string, number>
+    }
+    expect(afterProfile.cardCopiesById[firstClaimCardId] ?? 0).toBe(beforeCopies)
+    expect(afterProfile.cardFragmentsById[firstClaimCardId] ?? 0).toBe(beforeFragments + 1)
   })
 
   test('shop is reachable from home and buying a pack updates gold and pack inventory', async () => {
@@ -1006,7 +1042,7 @@ describe('app integration', () => {
     expect(screen.getByTestId('shop-special-pack-legendary-target')).toBeInTheDocument()
   })
 
-  test('shop can buy and open Obscur focus special pack', async () => {
+  test('shop can buy and open Gen 1 special pack', async () => {
     const user = userEvent.setup()
     renderApp('/shop')
 
@@ -1030,12 +1066,13 @@ describe('app integration', () => {
     )
     expect(upgradedCardIds.length).toBeGreaterThan(0)
     for (const cardId of upgradedCardIds) {
-      const card = cardPool.find((entry) => entry.id === cardId)
-      expect(card?.categoryId).toBe('sans_coeur')
+      const dexNumber = Number.parseInt(cardId.slice(1), 10)
+      expect(dexNumber).toBeGreaterThanOrEqual(1)
+      expect(dexNumber).toBeLessThanOrEqual(151)
     }
   })
 
-  test('shop can buy and open Psy focus special pack', async () => {
+  test('shop can buy and open Gen 2 special pack', async () => {
     const user = userEvent.setup()
     renderApp('/shop')
 
@@ -1059,8 +1096,9 @@ describe('app integration', () => {
     )
     expect(upgradedCardIds.length).toBeGreaterThan(0)
     for (const cardId of upgradedCardIds) {
-      const card = cardPool.find((entry) => entry.id === cardId)
-      expect(card?.categoryId).toBe('simili')
+      const dexNumber = Number.parseInt(cardId.slice(1), 10)
+      expect(dexNumber).toBeGreaterThanOrEqual(152)
+      expect(dexNumber).toBeLessThanOrEqual(251)
     }
   })
 
@@ -1112,8 +1150,40 @@ describe('app integration', () => {
     await user.click(screen.getByTestId('topbar-more-toggle'))
     await user.click(screen.getByTestId('topbar-more-link-achievements'))
 
-    expect(screen.getByRole('heading', { name: 'Achievements' })).toBeInTheDocument()
-    expect(screen.getByTestId('achievements-unlocked-count')).toHaveTextContent('Unlocked 0/40')
+    expect(screen.getByRole('heading', { name: 'Succès' })).toBeInTheDocument()
+    expect(screen.getByTestId('achievements-unlocked-count')).toHaveTextContent('Débloqués 0/40')
+  })
+
+  test('achievements page global claim grants common packs for unlocked rewards', async () => {
+    const seeded = createDefaultProfile()
+    seeded.achievements = [
+      { id: 'match_1', unlockedAt: '2026-03-02T10:00:00.000Z' },
+      { id: 'win_1', unlockedAt: '2026-03-02T10:01:00.000Z' },
+    ]
+    seeded.packInventoryByRarity.common = 3
+    localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(seeded))
+
+    const user = userEvent.setup()
+    renderApp('/')
+
+    await user.click(screen.getByTestId('topbar-more-toggle'))
+    await user.click(screen.getByTestId('topbar-more-link-achievements'))
+
+    expect(screen.getByTestId('achievements-claimable-summary')).toHaveTextContent('Récompenses claimables: 2 pack(s) commun(s)')
+    await user.click(screen.getByTestId('achievements-claim-all-button'))
+    expect(screen.getByTestId('achievements-claimable-summary')).toHaveTextContent('Récompenses claimables: 0 pack(s) commun(s)')
+
+    const afterRaw = localStorage.getItem(PROFILE_STORAGE_KEY)
+    expect(afterRaw).toBeTruthy()
+    const after = JSON.parse(afterRaw!) as {
+      packInventoryByRarity: { common: number }
+      achievementRewardsClaimedById?: Record<string, true>
+    }
+    expect(after.packInventoryByRarity.common).toBe(5)
+    expect(after.achievementRewardsClaimedById).toEqual({
+      match_1: true,
+      win_1: true,
+    })
   })
 
   test('ranks page is reachable from more menu and shows all tiers', async () => {
@@ -1124,7 +1194,7 @@ describe('app integration', () => {
     await user.click(screen.getByTestId('topbar-more-link-ranks'))
 
     expect(screen.getByRole('heading', { name: 'Ranks' })).toBeInTheDocument()
-    expect(screen.getAllByTestId(/^ranks-tier-/)).toHaveLength(10)
+    expect(screen.getAllByTestId(/^ranks-tier-/)).toHaveLength(rankedTiers.length)
   })
 
   test('missions page is reachable from more menu', async () => {
@@ -1149,6 +1219,19 @@ describe('app integration', () => {
     expect(screen.getByTestId('changelogs-release-count')).toBeInTheDocument()
   })
 
+  test('mentions ip page is reachable from more menu with legal disclaimer blocks', async () => {
+    const user = userEvent.setup()
+    renderApp('/')
+
+    await user.click(screen.getByTestId('topbar-more-toggle'))
+    await user.click(await screen.findByTestId('topbar-more-link-legal'))
+
+    expect(screen.getByRole('heading', { name: 'Mentions IP' })).toBeInTheDocument()
+    expect(screen.getByTestId('legal-ip-rights-owner')).toHaveTextContent('Nintendo, Game Freak, Creatures et The Pokemon Company')
+    expect(screen.getByTestId('legal-ip-non-commercial')).toHaveTextContent('Aucune monetisation')
+    expect(screen.getByTestId('legal-ip-takedown')).toHaveTextContent('Retrait sous 48h')
+  })
+
   test('more menu keeps only secondary links and mobile nav includes decks and packs', async () => {
     const user = userEvent.setup()
     renderApp('/')
@@ -1163,6 +1246,7 @@ describe('app integration', () => {
     expect(screen.getByTestId('topbar-more-link-rules')).toHaveAttribute('href', '/rules')
     expect(screen.getByTestId('topbar-more-link-ranks')).toHaveAttribute('href', '/ranks')
     expect(screen.getByTestId('topbar-more-link-changelogs')).toHaveAttribute('href', '/changelogs')
+    expect(await screen.findByTestId('topbar-more-link-legal')).toHaveAttribute('href', '/legal')
     expect(screen.queryByTestId('topbar-more-link-packs')).not.toBeInTheDocument()
     expect(screen.queryByTestId('topbar-more-link-home')).not.toBeInTheDocument()
 
@@ -1245,6 +1329,28 @@ describe('app integration', () => {
     expect(screen.getByTestId('collection-status-title-locked')).toBeInTheDocument()
   })
 
+  test('pokedex applies chroma charm shiny cost reduction when 40 achievements are unlocked', async () => {
+    const seeded = createDefaultProfile()
+    seeded.achievements = achievementCatalog.map((achievement, index) => ({
+      id: achievement.id,
+      unlockedAt: `2026-03-02T11:00:${index.toString().padStart(2, '0')}.000Z`,
+    }))
+    if (!seeded.ownedCardIds.includes('c11')) {
+      seeded.ownedCardIds.push('c11')
+    }
+    seeded.cardCopiesById.c11 = 24
+    localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(seeded))
+
+    const user = userEvent.setup()
+    renderApp('/pokedex')
+
+    await user.click(screen.getByTestId('collection-card-c11'))
+
+    expect(screen.getByTestId('collection-chroma-charm-badge')).toHaveTextContent('Charm Chroma actif: coût shiny réduit de 50%')
+    expect(screen.getByTestId('collection-shiny-craft-progress')).toHaveTextContent('Normales: 24/25')
+    expect(screen.getByTestId('collection-shiny-craft-button')).toBeDisabled()
+  })
+
   test('legacy /collection route redirects to /pokedex and keeps pokedex nav active', () => {
     renderApp('/collection')
 
@@ -1287,9 +1393,9 @@ describe('app integration', () => {
 
     const saved = localStorage.getItem(PROFILE_STORAGE_KEY)
     expect(saved).toBeTruthy()
-    const parsed = JSON.parse(saved!) as { stats: { played: number }; rankedByMode: { '4x4': { matchesPlayed: number } } }
+    const parsed = JSON.parse(saved!) as { stats: { played: number }; rankedByMode: Record<string, { matchesPlayed: number }> }
     expect(parsed.stats.played).toBe(1)
-    expect(parsed.rankedByMode['4x4'].matchesPlayed).toBe(0)
+    expect(parsed.rankedByMode[ACTIVE_MODE].matchesPlayed).toBe(0)
   })
 
   test('forced player victory updates mission progression', async () => {

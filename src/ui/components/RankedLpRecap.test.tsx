@@ -1,5 +1,5 @@
 import { act, render, screen } from '@testing-library/react'
-import { describe, expect, test, vi } from 'vitest'
+import { describe, expect, test, vi } from 'bun:test'
 import type { RankedMatchResultSummary } from '../../domain/progression/ranked'
 import { RankedLpRecap } from './RankedLpRecap'
 
@@ -67,7 +67,7 @@ describe('RankedLpRecap', () => {
   test('renders next tier emblem and before/after labels', () => {
     render(<RankedLpRecap mode="4x4" update={makeUpdate()} animated={false} context="results" testIdPrefix="ranked" />)
 
-    expect(screen.getByTestId('ranked-emblem')).toHaveAttribute('src', '/ranks/iron.svg')
+    expect(screen.getByTestId('ranked-emblem')).toHaveAttribute('src', '/ranks/iron.png')
     expect(screen.getByTestId('ranked-before')).toHaveTextContent('Before: Iron IV • 95 LP')
     expect(screen.getByTestId('ranked-after')).toHaveTextContent('After: Iron III • 15 LP')
   })

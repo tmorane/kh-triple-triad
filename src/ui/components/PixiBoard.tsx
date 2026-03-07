@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type SyntheticEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type SyntheticEvent } from 'react'
 import type { Texture } from 'pixi.js'
 import { getCard } from '../../domain/cards/cardPool'
-import type { Actor, CardId } from '../../domain/types'
-import type { MatchEffectsViewModel } from '../../domain/match/effectsViewModel'
+import type { Actor, CardElementId, CardId } from '../../domain/types'
+import type { DisplayCardStats, EffectIndicator, MatchEffectsViewModel } from '../../domain/match/effectsViewModel'
+import type { MoveFlipEvent } from '../../domain/match/types'
 import { getCardArtCandidates } from './cardArt'
 import { getElementLogoMeta } from './elementLogos'
 
@@ -16,11 +17,20 @@ export type BoardArenaVariant = 'v1' | 'v2'
 interface PixiBoardProps {
   board: Array<BoardSlot | null>
   highlightedCells: number[]
+  tutorialGuidedCells?: number[]
   transientGroundCells?: number[]
+  transientFireTargetCells?: number[]
+  transientFireCastCells?: number[]
   transientFloodTargetCells?: number[]
   transientFloodCastCells?: number[]
+  transientFreezeTargetCells?: number[]
+  transientFreezeCastCells?: number[]
+  transientFreezeBlockedCells?: number[]
   transientWaterPenaltyCells?: number[]
   transientClashCells?: number[]
+  flipEvents?: MoveFlipEvent[]
+  flipEventVersion?: number
+  targetableCells?: number[]
   previewPlacementCell?: number | null
   focusedCell?: number | null
   interactive: boolean
@@ -36,12 +46,17 @@ const defaultBoardInset = 30
 const defaultBoardGap = 10
 const neutralBoardInset = 78
 const neutralBoardGap = 4
+const GROUND_BOARD_EFFECT_TEXTURE_SRC = '/ui/match/board-effects/Sol.png'
+const PLANTE_BOARD_EFFECT_TEXTURE_SRC = '/ui/match/board-effects/plante-territory.png'
 const WATER_BOARD_EFFECT_TEXTURE_SRC = '/ui/match/board-effects/water.png'
+const ICE_BOARD_EFFECT_TEXTURE_SRC = '/ui/match/board-effects/glace.png'
 
 type BoardLayout = {
   inset: number
   gap: number
 }
+
+type PlanteTerritoryLinkOrientation = 'horizontal' | 'vertical'
 
 type PlacedCardVisualLayout = {
   plateInset: number
@@ -248,6 +263,47 @@ function getBoardDimension(cellCount: number): number {
   return dimension > 0 ? dimension : 1
 }
 
+function collectPlanteTerritoryActiveCells(params: {
+  board: Array<BoardSlot | null>
+  boardCardIndicators?: MatchEffectsViewModel['boardCardIndicators']
+}): Set<number> {
+  const activeCells = new Set<number>()
+  params.board.forEach((slot, index) => {
+    if (!slot) {
+      return
+    }
+    const hasPlantePackBuff = params.boardCardIndicators?.[index]?.some((indicator) => indicator.key === 'card-plante-pack') ?? false
+    if (hasPlantePackBuff) {
+      activeCells.add(index)
+    }
+  })
+  return activeCells
+}
+
+function hasPlanteTerritoryLink(params: {
+  activeCells: Set<number>
+  index: number
+  boardDimension: number
+  orientation: PlanteTerritoryLinkOrientation
+}): boolean {
+  if (!params.activeCells.has(params.index)) {
+    return false
+  }
+  const row = Math.floor(params.index / params.boardDimension)
+  const col = params.index % params.boardDimension
+  if (params.orientation === 'horizontal') {
+    if (col >= params.boardDimension - 1) {
+      return false
+    }
+    return params.activeCells.has(params.index + 1)
+  }
+
+  if (row >= params.boardDimension - 1) {
+    return false
+  }
+  return params.activeCells.has(params.index + params.boardDimension)
+}
+
 function cloneBoardSnapshot(board: Array<BoardSlot | null>): Array<BoardSlot | null> {
   return board.map((slot) => (slot ? { ...slot } : null))
 }
@@ -267,8 +323,27 @@ function getCardSigil(name: string): string {
 }
 
 const cardArtTextureCache = new Map<string, Promise<Texture | null>>()
-const neutralBoardTextureUrl = `${import.meta.env.BASE_URL}ui/match/boards/neutral-board.png`
+const viteBaseUrl =
+  typeof import.meta !== 'undefined' && typeof import.meta.env !== 'undefined' && typeof import.meta.env.BASE_URL === 'string'
+    ? import.meta.env.BASE_URL
+    : '/'
+const neutralBoardTextureUrl = `${viteBaseUrl}ui/match/boards/neutral-board.png`
 let neutralBoardTexturePromise: Promise<Texture | null> | null = null
+
+type BoardStatChangeLine = {
+  key: string
+  elementId?: CardElementId
+  iconText?: string
+  summary: string
+  tone: EffectIndicator['tone']
+  durationText?: string
+}
+
+type HoverAnchor = {
+  xPercent: number
+  yPercent: number
+  placeBelow: boolean
+}
 
 async function loadCardArtTexture(cardName: string, loadTexture: (url: string) => Promise<Texture>): Promise<Texture | null> {
   const cachedTexturePromise = cardArtTextureCache.get(cardName)
@@ -339,14 +414,262 @@ function handleFallbackCardArtError(event: SyntheticEvent<HTMLImageElement>) {
   }
 }
 
+function formatTurnLabel(turns: number): string {
+  return `${turns} tour${turns > 1 ? 's' : ''}`
+}
+
+function extractTurnCount(text: string): number | null {
+  const match = text.match(/(\d+)\s*tour/i)
+  if (!match) {
+    return null
+  }
+
+  const turns = Number.parseInt(match[1], 10)
+  if (!Number.isFinite(turns) || turns <= 0) {
+    return null
+  }
+
+  return turns
+}
+
+function extractSignedAmount(...texts: string[]): string | null {
+  for (const text of texts) {
+    const match = text.match(/([+-]\d+)/)
+    if (match) {
+      return match[1]
+    }
+  }
+  return null
+}
+
+function inferIndicatorDurationText(indicator: EffectIndicator): string | undefined {
+  const turnsFromTooltip = extractTurnCount(indicator.tooltip)
+  if (turnsFromTooltip) {
+    return formatTurnLabel(turnsFromTooltip)
+  }
+
+  const turnsFromLabel = extractTurnCount(indicator.label)
+  if (turnsFromLabel) {
+    return formatTurnLabel(turnsFromLabel)
+  }
+
+  const tooltipLower = indicator.tooltip.toLowerCase()
+  if (indicator.key.includes('volatile') || tooltipLower.includes('temporaire')) {
+    return '1 tour'
+  }
+
+  return undefined
+}
+
+function mapIndicatorToStatChangeLine(indicator: EffectIndicator): BoardStatChangeLine | null {
+  const signedAmount = extractSignedAmount(indicator.valueText ?? '', indicator.label, indicator.tooltip)
+  const durationText = inferIndicatorDurationText(indicator)
+
+  switch (indicator.key) {
+    case 'card-burn':
+    case 'card-volatile':
+    case 'card-ground-volatile':
+    case 'card-poison-first-combat':
+      return {
+        key: indicator.key,
+        elementId: indicator.key === 'card-burn' ? 'feu' : indicator.key === 'card-volatile' ? 'vol' : indicator.key === 'card-ground-volatile' ? 'sol' : 'poison',
+        iconText: indicator.icon,
+        summary: '-1 ALL',
+        tone: indicator.tone,
+        durationText,
+      }
+    case 'card-plante-pack':
+    case 'card-insect-stack':
+      return signedAmount
+        ? {
+            key: indicator.key,
+            elementId: indicator.key === 'card-plante-pack' ? 'plante' : 'insecte',
+            iconText: indicator.icon,
+            summary: `${signedAmount} ALL`,
+            tone: indicator.tone,
+            durationText,
+          }
+        : null
+    case 'card-dragon-transform':
+      return {
+        key: indicator.key,
+        elementId: 'dragon',
+        iconText: indicator.icon,
+        summary: '+2 / -1',
+        tone: indicator.tone,
+      }
+    default:
+      break
+  }
+
+  const tooltipLower = indicator.tooltip.toLowerCase()
+  if (tooltipLower.includes('toutes les stats') && signedAmount) {
+    return {
+      key: indicator.key,
+      iconText: indicator.icon,
+      summary: `${signedAmount} ALL`,
+      tone: indicator.tone,
+      durationText,
+    }
+  }
+  if (tooltipLower.includes('plus haute stat') && signedAmount) {
+    return {
+      key: indicator.key,
+      iconText: indicator.icon,
+      summary: `${signedAmount} MAX`,
+      tone: indicator.tone,
+      durationText,
+    }
+  }
+
+  return null
+}
+
+function formatSignedDelta(delta: number): string {
+  if (delta > 0) {
+    return `+${delta}`
+  }
+  return `${delta}`
+}
+
+function buildNetStatChangeLine(displayStats: DisplayCardStats): BoardStatChangeLine | null {
+  const deltas = [displayStats.top.delta, displayStats.right.delta, displayStats.bottom.delta, displayStats.left.delta]
+  if (deltas.every((delta) => delta === 0)) {
+    return null
+  }
+
+  const nonZeroDeltas = deltas.filter((delta) => delta !== 0)
+  if (nonZeroDeltas.length > 0 && nonZeroDeltas.every((delta) => delta === nonZeroDeltas[0])) {
+    const uniformDelta = nonZeroDeltas[0]
+    return {
+      key: 'net-all',
+      iconText: uniformDelta > 0 ? '▲' : '▼',
+      summary: `${formatSignedDelta(uniformDelta)} ALL`,
+      tone: uniformDelta > 0 ? 'buff' : 'debuff',
+    }
+  }
+
+  const directionalSummary = `T${formatSignedDelta(displayStats.top.delta)} R${formatSignedDelta(displayStats.right.delta)} B${formatSignedDelta(
+    displayStats.bottom.delta,
+  )} L${formatSignedDelta(displayStats.left.delta)}`
+  const hasBuff = deltas.some((delta) => delta > 0)
+  const hasDebuff = deltas.some((delta) => delta < 0)
+  const tone: EffectIndicator['tone'] = hasBuff && hasDebuff ? 'info' : hasBuff ? 'buff' : 'debuff'
+  return {
+    key: 'net-directional',
+    iconText: 'Δ',
+    summary: directionalSummary,
+    tone,
+  }
+}
+
+function buildBoardStatChangeLines(params: {
+  boardIndicators: EffectIndicator[]
+  displayStats?: DisplayCardStats
+  isGroundDebuffed: boolean
+  isWaterPenalty: boolean
+}): BoardStatChangeLine[] {
+  const lines: BoardStatChangeLine[] = []
+  const seenKeys = new Set<string>()
+  const addLine = (line: BoardStatChangeLine | null) => {
+    if (!line || seenKeys.has(line.key)) {
+      return
+    }
+    seenKeys.add(line.key)
+    lines.push(line)
+  }
+
+  for (const indicator of params.boardIndicators) {
+    addLine(mapIndicatorToStatChangeLine(indicator))
+  }
+
+  if (params.isGroundDebuffed) {
+    addLine({
+      key: 'transient-ground-debuff',
+      elementId: 'sol',
+      iconText: 'SOL',
+      summary: '-1 ALL',
+      tone: 'debuff',
+      durationText: '1 tour',
+    })
+  }
+
+  if (params.isWaterPenalty) {
+    addLine({
+      key: 'transient-water-penalty',
+      elementId: 'eau',
+      iconText: 'EAU',
+      summary: '-2 MAX',
+      tone: 'debuff',
+      durationText: '1 tour',
+    })
+  }
+
+  if (params.displayStats && lines.length === 0) {
+    addLine(buildNetStatChangeLine(params.displayStats))
+  }
+
+  return lines
+}
+
+function resolvePointerCellIndex(params: {
+  event: ReactPointerEvent<HTMLDivElement>
+  boardDimension: number
+  boardCellCount: number
+  boardLayout: BoardLayout
+  cellSize: number
+}): number | null {
+  const rect = params.event.currentTarget.getBoundingClientRect()
+  if (rect.width <= 0 || rect.height <= 0) {
+    return null
+  }
+
+  const x = ((params.event.clientX - rect.left) / rect.width) * boardSize
+  const y = ((params.event.clientY - rect.top) / rect.height) * boardSize
+  const relativeX = x - params.boardLayout.inset
+  const relativeY = y - params.boardLayout.inset
+  if (relativeX < 0 || relativeY < 0) {
+    return null
+  }
+
+  const stride = params.cellSize + params.boardLayout.gap
+  const col = Math.floor(relativeX / stride)
+  const row = Math.floor(relativeY / stride)
+  if (row < 0 || col < 0 || row >= params.boardDimension || col >= params.boardDimension) {
+    return null
+  }
+
+  const innerX = relativeX - col * stride
+  const innerY = relativeY - row * stride
+  if (innerX < 0 || innerY < 0 || innerX >= params.cellSize || innerY >= params.cellSize) {
+    return null
+  }
+
+  const index = row * params.boardDimension + col
+  return index >= 0 && index < params.boardCellCount ? index : null
+}
+
+function clampPercent(value: number): number {
+  return Math.min(92, Math.max(8, value))
+}
+
 export function PixiBoard({
   board,
   highlightedCells,
+  tutorialGuidedCells = [],
   transientGroundCells = [],
+  transientFireTargetCells = [],
+  transientFireCastCells = [],
   transientFloodTargetCells = [],
   transientFloodCastCells = [],
+  transientFreezeTargetCells = [],
+  transientFreezeCastCells = [],
+  transientFreezeBlockedCells = [],
   transientWaterPenaltyCells = [],
   transientClashCells = [],
+  flipEvents = [],
+  flipEventVersion = 0,
+  targetableCells = [],
   previewPlacementCell = null,
   focusedCell = null,
   interactive,
@@ -362,8 +685,12 @@ export function PixiBoard({
   const tickerCleanupRef = useRef<(() => void) | null>(null)
   const onCellClickRef = useRef(onCellClick)
   const lastAnimatedBoardSignatureRef = useRef<string | null>(null)
+  const lastAnimatedFlipEventVersionRef = useRef<number>(-1)
   const [appReadyVersion, setAppReadyVersion] = useState(0)
-  const shouldUseFallback = import.meta.env.MODE === 'test'
+  const [hoveredCellIndex, setHoveredCellIndex] = useState<number | null>(null)
+  const [hoverAnchor, setHoverAnchor] = useState<HoverAnchor | null>(null)
+  const mode = typeof import.meta !== 'undefined' && typeof import.meta.env !== 'undefined' ? import.meta.env.MODE : undefined
+  const shouldUseFallback = typeof mode === 'string' ? mode === 'test' : true
 
   const prefersReducedMotion = useMemo(() => {
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
@@ -387,14 +714,39 @@ export function PixiBoard({
   )
 
   const highlightedSet = useMemo(() => new Set(highlightedCells), [highlightedCells])
+  const tutorialGuidedSet = useMemo(() => new Set(tutorialGuidedCells), [tutorialGuidedCells])
   const transientGroundSet = useMemo(() => new Set(transientGroundCells), [transientGroundCells])
+  const transientFireTargetSet = useMemo(() => new Set(transientFireTargetCells), [transientFireTargetCells])
+  const transientFireCastSet = useMemo(() => new Set(transientFireCastCells), [transientFireCastCells])
   const transientFloodTargetSet = useMemo(() => new Set(transientFloodTargetCells), [transientFloodTargetCells])
   const transientFloodCastSet = useMemo(() => new Set(transientFloodCastCells), [transientFloodCastCells])
+  const transientFreezeTargetSet = useMemo(() => new Set(transientFreezeTargetCells), [transientFreezeTargetCells])
+  const transientFreezeCastSet = useMemo(() => new Set(transientFreezeCastCells), [transientFreezeCastCells])
+  const transientFreezeBlockedSet = useMemo(() => new Set(transientFreezeBlockedCells), [transientFreezeBlockedCells])
   const transientWaterPenaltySet = useMemo(() => new Set(transientWaterPenaltyCells), [transientWaterPenaltyCells])
   const transientClashSet = useMemo(() => new Set(transientClashCells), [transientClashCells])
+  const targetableSet = useMemo(() => new Set(targetableCells), [targetableCells])
+  const planteTerritoryActiveSet = useMemo(
+    () =>
+      collectPlanteTerritoryActiveCells({
+        board,
+        boardCardIndicators: effectsView?.boardCardIndicators,
+      }),
+    [board, effectsView?.boardCardIndicators],
+  )
+  const flipEventByCell = useMemo(() => {
+    const byCell = new Map<number, MoveFlipEvent>()
+    for (const event of flipEvents) {
+      byCell.set(event.cell, event)
+    }
+    return byCell
+  }, [flipEvents])
   const arenaPalette = useMemo(() => ARENA_PALETTES[arenaVariant], [arenaVariant])
+  const planteLogo = useMemo(() => getElementLogoMeta('plante'), [])
   const poisonLogo = useMemo(() => getElementLogoMeta('poison'), [])
+  const fireLogo = useMemo(() => getElementLogoMeta('feu'), [])
   const waterLogo = useMemo(() => getElementLogoMeta('eau'), [])
+  const iceLogo = useMemo(() => getElementLogoMeta('glace'), [])
   const recentPlacedSet = useMemo(() => {
     const previousBoard = previousBoardRef.current
     if (!previousBoard) {
@@ -410,10 +762,55 @@ export function PixiBoard({
 
     return recentCells
   }, [board])
+  const recentFlippedSet = useMemo(() => {
+    const previousBoard = previousBoardRef.current
+    if (!previousBoard) {
+      return new Set<number>()
+    }
+
+    const flippedCells = new Set<number>()
+    board.forEach((slot, index) => {
+      const previousSlot = previousBoard[index]
+      if (!slot || !previousSlot) {
+        return
+      }
+      if (slot.cardId !== previousSlot.cardId) {
+        return
+      }
+      if (slot.owner !== previousSlot.owner) {
+        flippedCells.add(index)
+      }
+    })
+
+    return flippedCells
+  }, [board])
+  const hoveredSlot = hoveredCellIndex !== null ? board[hoveredCellIndex] : null
+  const hoveredCardName = hoveredSlot ? getCard(hoveredSlot.cardId).name : null
+  const hoveredStatChangeLines = useMemo(() => {
+    if (hoveredCellIndex === null || !hoveredSlot) {
+      return [] as BoardStatChangeLine[]
+    }
+    return buildBoardStatChangeLines({
+      boardIndicators: effectsView?.boardCardIndicators[hoveredCellIndex] ?? [],
+      displayStats: effectsView?.displayStatsByCell[hoveredCellIndex],
+      isGroundDebuffed: transientGroundSet.has(hoveredCellIndex),
+      isWaterPenalty: transientWaterPenaltySet.has(hoveredCellIndex),
+    })
+  }, [effectsView, hoveredCellIndex, hoveredSlot, transientGroundSet, transientWaterPenaltySet])
 
   useEffect(() => {
     previousBoardRef.current = cloneBoardSnapshot(board)
   }, [board])
+
+  useEffect(() => {
+    if (hoveredCellIndex === null) {
+      return
+    }
+    if (hoveredCellIndex >= board.length || board[hoveredCellIndex] === null) {
+      setHoveredCellIndex(null)
+      setHoverAnchor(null)
+    }
+  }, [board, hoveredCellIndex])
 
   useEffect(() => {
     onCellClickRef.current = onCellClick
@@ -505,10 +902,22 @@ export function PixiBoard({
         return
       }
       const shouldUseNeutralBoardArt = neutralBoardArtEnabled
+      const fireTexture = fireLogo
+        ? await Assets.load<Texture>(fireLogo.imageSrc).catch(() => null)
+        : null
+      const planteTexture = planteLogo
+        ? await Assets.load<Texture>(planteLogo.imageSrc).catch(() => null)
+        : null
       const waterTexture = waterLogo
         ? await Assets.load<Texture>(waterLogo.imageSrc).catch(() => null)
         : null
+      const iceTexture = iceLogo
+        ? await Assets.load<Texture>(iceLogo.imageSrc).catch(() => null)
+        : null
+      const groundBoardEffectTexture = await Assets.load<Texture>(GROUND_BOARD_EFFECT_TEXTURE_SRC).catch(() => null)
+      const planteBoardEffectTexture = await Assets.load<Texture>(PLANTE_BOARD_EFFECT_TEXTURE_SRC).catch(() => null)
       const waterBoardEffectTexture = await Assets.load<Texture>(WATER_BOARD_EFFECT_TEXTURE_SRC).catch(() => null)
+      const iceBoardEffectTexture = await Assets.load<Texture>(ICE_BOARD_EFFECT_TEXTURE_SRC).catch(() => null)
       const neutralBoardTexture = shouldUseNeutralBoardArt
         ? await loadNeutralBoardTexture((url) => Assets.load<Texture>(url))
         : null
@@ -615,13 +1024,28 @@ export function PixiBoard({
       const pulseOverlays: PixiGraphics[] = []
       const placementFlashes: Array<{ sprite: PixiGraphics; elapsedMs: number }> = []
       const placementBursts: Array<{ container: PixiContainer; elapsedMs: number }> = []
+      const flipFlashes: Array<{ sprite: PixiGraphics; elapsedMs: number; delayMs: number; peakAlpha: number }> = []
+      const flipBursts: Array<{
+        container: PixiContainer
+        elapsedMs: number
+        delayMs: number
+        axis: MoveFlipEvent['axis']
+        baseY: number
+      }> = []
       const groundDebuffCellsToRender: Array<{ x: number; y: number; hasCard: boolean }> = []
+      const fireTargetCellsToRender: Array<{ x: number; y: number }> = []
+      const fireCastCellsToRender: Array<{ x: number; y: number }> = []
       const floodTargetCellsToRender: Array<{ x: number; y: number }> = []
       const floodCastCellsToRender: Array<{ x: number; y: number }> = []
+      const freezeTargetCellsToRender: Array<{ x: number; y: number }> = []
+      const freezeCastCellsToRender: Array<{ x: number; y: number }> = []
+      const freezeBlockedCellsToRender: Array<{ x: number; y: number }> = []
       const waterPenaltyCellsToRender: Array<{ x: number; y: number }> = []
       const clashCellsToRender: Array<{ x: number; y: number }> = []
       const boardSignature = getBoardSignature(board)
       const shouldAnimateRecentPlacements = lastAnimatedBoardSignatureRef.current !== boardSignature
+      const shouldAnimateExplicitFlips = flipEvents.length > 0 && lastAnimatedFlipEventVersionRef.current !== flipEventVersion
+      const shouldAnimateRecentFlips = !shouldAnimateExplicitFlips && shouldAnimateRecentPlacements
 
       board.forEach((slot, index) => {
         const row = Math.floor(index / boardDimension)
@@ -633,14 +1057,30 @@ export function PixiBoard({
         const boardEffectIndicators = effectsView?.boardCardIndicators[index] ?? []
         const displayStats = effectsView?.displayStatsByCell[index]
         const isFloodedCell = cellEffectIndicators.some((indicator) => indicator.key === 'cell-flooded')
-        const isFrozenCell = cellEffectIndicators.some((indicator) => indicator.key === 'cell-frozen')
+        const frozenCellIndicator = cellEffectIndicators.find((indicator) => indicator.key === 'cell-frozen')
+        const isFrozenCell = Boolean(frozenCellIndicator)
+        const frozenTurnsCounter = frozenCellIndicator?.valueText ?? null
         const isPoisonedBoardCard = boardEffectIndicators.some((indicator) => indicator.key === 'card-poison-first-combat')
+        const hasPlantePackBuff = planteTerritoryActiveSet.has(index)
+        const hasPersistentGroundDebuff = boardEffectIndicators.some((indicator) => indicator.key === 'card-ground-volatile')
         const isGroundDebuffedCell = transientGroundSet.has(index)
+        const isFireTargetCell = transientFireTargetSet.has(index)
+        const isFireCastCell = transientFireCastSet.has(index)
         const isFloodTargetCell = transientFloodTargetSet.has(index) && slot === null
         const isFloodCastCell = transientFloodCastSet.has(index)
+        const isFreezeTargetCell = transientFreezeTargetSet.has(index) && slot === null
+        const isFreezeCastCell = transientFreezeCastSet.has(index)
+        const isFreezeBlockedCell = transientFreezeBlockedSet.has(index)
         const isWaterPenaltyCell = transientWaterPenaltySet.has(index)
         const isClashCell = transientClashSet.has(index)
         const isHighlightedEmpty = highlightedSet.has(index) && slot === null
+        const isTutorialGuidedEmpty = tutorialGuidedSet.has(index) && slot === null
+        const explicitFlipEvent = flipEventByCell.get(index)
+        const resolvedFlipEvent: MoveFlipEvent | null =
+          explicitFlipEvent ??
+          (recentFlippedSet.has(index) && slot
+            ? { cell: index, kind: 'flipped', axis: 'horizontal', phase: 'primary' }
+            : null)
         const cell = new Graphics()
         const ownerColor =
           slot?.owner === 'player'
@@ -662,8 +1102,8 @@ export function PixiBoard({
         cell.fill({ color: fillColor, alpha: cellFillAlpha })
         cell.stroke({ width: 2, color: edgeColor, alpha: cellEdgeAlpha })
 
-        const isClickable = interactive && slot === null
-        const isKeyboardTarget = focusedCell === index && slot === null
+        const isClickable = interactive && (slot === null || targetableSet.has(index))
+        const isKeyboardTarget = focusedCell === index && (slot === null || targetableSet.has(index))
         cell.eventMode = isClickable ? 'static' : 'none'
         if (isClickable) {
           cell.cursor = 'pointer'
@@ -672,17 +1112,167 @@ export function PixiBoard({
 
         app.stage.addChild(cell)
 
+        if (slot && hasPlantePackBuff) {
+          const planteLinkOverlap = Math.max(4, cellSize * 0.07)
+          const planteLinkThickness = Math.max(9, cellSize * 0.14)
+          const planteLinkSpan = boardLayout.gap + planteLinkOverlap * 2
+
+          if (hasPlanteTerritoryLink({ activeCells: planteTerritoryActiveSet, index, boardDimension, orientation: 'horizontal' })) {
+            const connectorX = x + cellSize - planteLinkOverlap
+            const connectorY = y + cellSize / 2 - planteLinkThickness / 2
+
+            const horizontalConnector = new Graphics()
+            horizontalConnector.roundRect(connectorX, connectorY, planteLinkSpan, planteLinkThickness, planteLinkThickness)
+            horizontalConnector.fill({ color: 0x2f9350, alpha: 0.34 })
+            horizontalConnector.stroke({ width: 1.4, color: 0xb6f4c7, alpha: 0.72 })
+            app.stage.addChild(horizontalConnector)
+
+            if (planteBoardEffectTexture) {
+              const connectorMask = new Graphics()
+              connectorMask.roundRect(connectorX + 1, connectorY + 1, planteLinkSpan - 2, planteLinkThickness - 2, planteLinkThickness)
+              connectorMask.fill({ color: 0xffffff })
+
+              const connectorTexture = new Sprite(planteBoardEffectTexture)
+              connectorTexture.x = connectorX + 1
+              connectorTexture.y = connectorY + 1
+              connectorTexture.width = planteLinkSpan - 2
+              connectorTexture.height = planteLinkThickness - 2
+              connectorTexture.alpha = 0.42
+              connectorTexture.mask = connectorMask
+
+              app.stage.addChild(connectorTexture)
+              app.stage.addChild(connectorMask)
+            }
+          }
+
+          if (hasPlanteTerritoryLink({ activeCells: planteTerritoryActiveSet, index, boardDimension, orientation: 'vertical' })) {
+            const connectorX = x + cellSize / 2 - planteLinkThickness / 2
+            const connectorY = y + cellSize - planteLinkOverlap
+
+            const verticalConnector = new Graphics()
+            verticalConnector.roundRect(connectorX, connectorY, planteLinkThickness, planteLinkSpan, planteLinkThickness)
+            verticalConnector.fill({ color: 0x2f9350, alpha: 0.34 })
+            verticalConnector.stroke({ width: 1.4, color: 0xb6f4c7, alpha: 0.72 })
+            app.stage.addChild(verticalConnector)
+
+            if (planteBoardEffectTexture) {
+              const connectorMask = new Graphics()
+              connectorMask.roundRect(connectorX + 1, connectorY + 1, planteLinkThickness - 2, planteLinkSpan - 2, planteLinkThickness)
+              connectorMask.fill({ color: 0xffffff })
+
+              const connectorTexture = new Sprite(planteBoardEffectTexture)
+              connectorTexture.x = connectorX + 1
+              connectorTexture.y = connectorY + 1
+              connectorTexture.width = planteLinkThickness - 2
+              connectorTexture.height = planteLinkSpan - 2
+              connectorTexture.alpha = 0.42
+              connectorTexture.mask = connectorMask
+
+              app.stage.addChild(connectorTexture)
+              app.stage.addChild(connectorMask)
+            }
+          }
+
+          const planteAura = new Graphics()
+          planteAura.roundRect(x + 2, y + 2, cellSize - 4, cellSize - 4, 11)
+          planteAura.fill({ color: 0x2d8d4f, alpha: 0.16 })
+          planteAura.stroke({ width: 2, color: 0x93e6ad, alpha: 0.64 })
+          app.stage.addChild(planteAura)
+
+          if (planteBoardEffectTexture) {
+            const planteTerritoryMask = new Graphics()
+            planteTerritoryMask.roundRect(x + 4, y + 4, cellSize - 8, cellSize - 8, 10)
+            planteTerritoryMask.fill({ color: 0xffffff })
+
+            const planteTerritoryTexture = new Sprite(planteBoardEffectTexture)
+            planteTerritoryTexture.x = x + 4
+            planteTerritoryTexture.y = y + 4
+            planteTerritoryTexture.width = cellSize - 8
+            planteTerritoryTexture.height = cellSize - 8
+            planteTerritoryTexture.alpha = 0.36
+            planteTerritoryTexture.mask = planteTerritoryMask
+
+            app.stage.addChild(planteTerritoryTexture)
+            app.stage.addChild(planteTerritoryMask)
+          }
+
+          const planteInnerGlow = new Graphics()
+          planteInnerGlow.roundRect(x + 8, y + 8, cellSize - 16, cellSize - 16, 9)
+          planteInnerGlow.stroke({ width: 1.4, color: 0x66ca88, alpha: 0.52 })
+          app.stage.addChild(planteInnerGlow)
+
+          if (planteTexture) {
+            const leafTopLeft = new Sprite(planteTexture)
+            leafTopLeft.anchor.set(0.5)
+            leafTopLeft.width = Math.max(14, cellSize * 0.14)
+            leafTopLeft.height = Math.max(14, cellSize * 0.14)
+            leafTopLeft.x = x + 14
+            leafTopLeft.y = y + 14
+            leafTopLeft.alpha = 0.7
+            app.stage.addChild(leafTopLeft)
+
+            const leafBottomRight = new Sprite(planteTexture)
+            leafBottomRight.anchor.set(0.5)
+            leafBottomRight.width = Math.max(14, cellSize * 0.14)
+            leafBottomRight.height = Math.max(14, cellSize * 0.14)
+            leafBottomRight.x = x + cellSize - 14
+            leafBottomRight.y = y + cellSize - 14
+            leafBottomRight.alpha = 0.7
+            app.stage.addChild(leafBottomRight)
+          }
+        }
+
+        if (hasPersistentGroundDebuff) {
+          const persistentGroundOverlay = new Graphics()
+          persistentGroundOverlay.roundRect(x + 3, y + 3, cellSize - 6, cellSize - 6, 10)
+          persistentGroundOverlay.fill({ color: 0x7a4d21, alpha: slot ? 0.2 : 0.14 })
+          persistentGroundOverlay.stroke({ width: 1.6, color: 0xf3cc8a, alpha: 0.62 })
+          app.stage.addChild(persistentGroundOverlay)
+
+          if (groundBoardEffectTexture) {
+            const persistentGroundTextureMask = new Graphics()
+            persistentGroundTextureMask.roundRect(x + 4, y + 4, cellSize - 8, cellSize - 8, 10)
+            persistentGroundTextureMask.fill({ color: 0xffffff })
+
+            const persistentGroundTexture = new Sprite(groundBoardEffectTexture)
+            persistentGroundTexture.x = x + 4
+            persistentGroundTexture.y = y + 4
+            persistentGroundTexture.width = cellSize - 8
+            persistentGroundTexture.height = cellSize - 8
+            persistentGroundTexture.alpha = slot ? 0.24 : 0.18
+            persistentGroundTexture.mask = persistentGroundTextureMask
+
+            app.stage.addChild(persistentGroundTexture)
+            app.stage.addChild(persistentGroundTextureMask)
+          }
+        }
+
         if (isGroundDebuffedCell) {
           groundDebuffCellsToRender.push({ x, y, hasCard: slot !== null })
         }
+        if (isFireTargetCell) {
+          fireTargetCellsToRender.push({ x, y })
+        }
+        if (isFireCastCell) {
+          fireCastCellsToRender.push({ x, y })
+        }
         if (isFloodTargetCell) {
           floodTargetCellsToRender.push({ x, y })
+        }
+        if (isFreezeTargetCell) {
+          freezeTargetCellsToRender.push({ x, y })
         }
         if (isClashCell) {
           clashCellsToRender.push({ x, y })
         }
         if (isFloodCastCell) {
           floodCastCellsToRender.push({ x, y })
+        }
+        if (isFreezeCastCell) {
+          freezeCastCellsToRender.push({ x, y })
+        }
+        if (isFreezeBlockedCell) {
+          freezeBlockedCellsToRender.push({ x, y })
         }
         if (isWaterPenaltyCell) {
           waterPenaltyCellsToRender.push({ x, y })
@@ -698,7 +1288,7 @@ export function PixiBoard({
           app.stage.addChild(cellInner)
 
           if (isFloodedCell || isFrozenCell) {
-            if (isFloodedCell && waterBoardEffectTexture) {
+            if (isFloodedCell && waterBoardEffectTexture && !isFrozenCell) {
               const floodedTextureMask = new Graphics()
               floodedTextureMask.roundRect(x + 4, y + 4, cellSize - 8, cellSize - 8, 10)
               floodedTextureMask.fill({ color: 0xffffff })
@@ -716,25 +1306,75 @@ export function PixiBoard({
             }
 
             if (isFrozenCell) {
-              const hazardOverlay = new Graphics()
-              hazardOverlay.roundRect(x + 4, y + 4, cellSize - 8, cellSize - 8, 10)
-              hazardOverlay.fill({ color: 0xc3ecff, alpha: 0.07 })
-              hazardOverlay.stroke({ width: 2, color: 0x8ce6ff, alpha: 0.46 })
-              app.stage.addChild(hazardOverlay)
+              if (iceBoardEffectTexture) {
+                const frozenTextureMask = new Graphics()
+                frozenTextureMask.roundRect(x + 4, y + 4, cellSize - 8, cellSize - 8, 10)
+                frozenTextureMask.fill({ color: 0xffffff })
 
-              const hazardText = new Text({
-                text: '❄️',
-                style: {
-                  fill: 0xe8f8ff,
-                  fontSize: 18,
-                  fontFamily: 'Rajdhani, sans-serif',
-                  fontWeight: '700',
-                },
-              })
-              hazardText.anchor.set(0.5)
-              hazardText.x = x + cellSize / 2
-              hazardText.y = y + cellSize / 2
-              app.stage.addChild(hazardText)
+                const frozenTexture = new Sprite(iceBoardEffectTexture)
+                frozenTexture.x = x + 4
+                frozenTexture.y = y + 4
+                frozenTexture.width = cellSize - 8
+                frozenTexture.height = cellSize - 8
+                frozenTexture.alpha = 0.62
+                frozenTexture.mask = frozenTextureMask
+
+                app.stage.addChild(frozenTexture)
+                app.stage.addChild(frozenTextureMask)
+              }
+
+              if (iceTexture) {
+                const hazardIceLogo = new Sprite(iceTexture)
+                hazardIceLogo.anchor.set(0.5)
+                hazardIceLogo.width = Math.max(16, cellSize * 0.2)
+                hazardIceLogo.height = Math.max(16, cellSize * 0.2)
+                hazardIceLogo.x = x + cellSize / 2
+                hazardIceLogo.y = y + cellSize / 2
+                hazardIceLogo.alpha = 0.95
+                app.stage.addChild(hazardIceLogo)
+              } else {
+                const hazardText = new Text({
+                  text: 'GLACE',
+                  style: {
+                    fill: 0xeefbff,
+                    fontSize: 11,
+                    fontFamily: 'Rajdhani, sans-serif',
+                    fontWeight: '800',
+                    letterSpacing: 0.8,
+                  },
+                })
+                hazardText.anchor.set(0.5)
+                hazardText.x = x + cellSize / 2
+                hazardText.y = y + cellSize / 2
+                app.stage.addChild(hazardText)
+              }
+
+              if (frozenTurnsCounter) {
+                const counterRadius = Math.max(8, cellSize * 0.095)
+                const counterX = x + cellSize - counterRadius - 6
+                const counterY = y + counterRadius + 6
+
+                const counterChip = new Graphics()
+                counterChip.circle(counterX, counterY, counterRadius)
+                counterChip.fill({ color: 0x5c88a3, alpha: 0.9 })
+                counterChip.stroke({ width: 1.5, color: 0xe6f7ff, alpha: 0.9 })
+                app.stage.addChild(counterChip)
+
+                const counterText = new Text({
+                  text: frozenTurnsCounter,
+                  style: {
+                    fill: 0xecfaff,
+                    fontSize: Math.max(10, cellSize * 0.12),
+                    fontFamily: 'Orbitron, sans-serif',
+                    fontWeight: '700',
+                    align: 'center',
+                  },
+                })
+                counterText.anchor.set(0.5)
+                counterText.x = counterX
+                counterText.y = counterY + 0.5
+                app.stage.addChild(counterText)
+              }
             } else if (waterTexture) {
               const hazardWaterLogo = new Sprite(waterTexture)
               hazardWaterLogo.anchor.set(0.5)
@@ -776,9 +1416,27 @@ export function PixiBoard({
           overlay.roundRect(x + 2, y + 2, cellSize - 4, cellSize - 4, 10)
           overlay.fill({
             color: prefersReducedMotion ? arenaPalette.highlightOverlayFillReduced : arenaPalette.highlightOverlayFill,
-            alpha: prefersReducedMotion ? (usingNeutralBoardArt ? 0.06 : 0.08) : usingNeutralBoardArt ? 0.04 : 0.06,
+            alpha: isTutorialGuidedEmpty
+              ? prefersReducedMotion
+                ? usingNeutralBoardArt
+                  ? 0.12
+                  : 0.16
+                : usingNeutralBoardArt
+                  ? 0.12
+                  : 0.18
+              : prefersReducedMotion
+                ? usingNeutralBoardArt
+                  ? 0.06
+                  : 0.08
+                : usingNeutralBoardArt
+                  ? 0.04
+                  : 0.06,
           })
-          overlay.stroke({ width: 2, color: arenaPalette.highlightOverlayStroke, alpha: usingNeutralBoardArt ? 0.34 : 0.42 })
+          overlay.stroke({
+            width: isTutorialGuidedEmpty ? 3 : 2,
+            color: arenaPalette.highlightOverlayStroke,
+            alpha: isTutorialGuidedEmpty ? (usingNeutralBoardArt ? 0.78 : 0.88) : usingNeutralBoardArt ? 0.34 : 0.42,
+          })
           app.stage.addChild(overlay)
           pulseOverlays.push(overlay)
 
@@ -816,6 +1474,30 @@ export function PixiBoard({
             app.stage.addChild(marker)
             pulseOverlays.push(marker)
           }
+
+          if (isTutorialGuidedEmpty) {
+            const guidedBadge = new Graphics()
+            guidedBadge.roundRect(x + 6, y + 6, Math.max(28, cellSize * 0.3), Math.max(14, cellSize * 0.15), 6)
+            guidedBadge.fill({ color: 0x143357, alpha: 0.9 })
+            guidedBadge.stroke({ width: 1.6, color: 0xd4ecff, alpha: 0.92 })
+            app.stage.addChild(guidedBadge)
+
+            const guidedLabel = new Text({
+              text: 'ICI',
+              style: {
+                fill: 0xf0f8ff,
+                fontSize: Math.max(9, cellSize * 0.11),
+                fontFamily: 'Rajdhani, sans-serif',
+                fontWeight: '800',
+                letterSpacing: 0.8,
+                align: 'center',
+              },
+            })
+            guidedLabel.anchor.set(0.5)
+            guidedLabel.x = x + 6 + Math.max(28, cellSize * 0.3) / 2
+            guidedLabel.y = y + 6 + Math.max(14, cellSize * 0.15) / 2 + 0.5
+            app.stage.addChild(guidedLabel)
+          }
         }
 
         if (shouldAnimateRecentPlacements && recentPlacedSet.has(index)) {
@@ -828,7 +1510,6 @@ export function PixiBoard({
           app.stage.addChild(flash)
           placementFlashes.push({ sprite: flash, elapsedMs: 0 })
         }
-
         if (slot) {
           const card = getCard(slot.cardId)
           const sigil = getCardSigil(card.name)
@@ -993,7 +1674,9 @@ export function PixiBoard({
             cardContainer.addChild(chipText)
           })
 
-          const renderedBoardIndicators = boardEffectIndicators.filter((indicator) => indicator.key !== 'card-poison-first-combat')
+          const renderedBoardIndicators = boardEffectIndicators.filter(
+            (indicator) => indicator.key !== 'card-poison-first-combat' && indicator.key !== 'card-ground-volatile',
+          )
           let rightSideIndicatorOffset = 0
 
           if (isGroundDebuffedCell) {
@@ -1058,6 +1741,7 @@ export function PixiBoard({
           }
 
           renderedBoardIndicators.slice(0, 2).forEach((indicator, indicatorIndex) => {
+            const indicatorX = cellSize - 18 - (indicatorIndex + rightSideIndicatorOffset) * 15
             const effectText = new Text({
               text: indicator.icon,
               style: {
@@ -1068,15 +1752,46 @@ export function PixiBoard({
               },
             })
             effectText.anchor.set(0.5)
-            effectText.x = cellSize - 18 - (indicatorIndex + rightSideIndicatorOffset) * 15
+            effectText.x = indicatorX
             effectText.y = 36
             cardContainer.addChild(effectText)
           })
+
+          const flipEventForAnimation =
+            shouldAnimateExplicitFlips && explicitFlipEvent
+              ? explicitFlipEvent
+              : shouldAnimateRecentFlips && resolvedFlipEvent
+                ? resolvedFlipEvent
+                : null
 
           if (shouldAnimateRecentPlacements && recentPlacedSet.has(index) && !prefersReducedMotion) {
             cardContainer.scale.set(0.72)
             cardContainer.alpha = 0.36
             placementBursts.push({ container: cardContainer, elapsedMs: 0 })
+          } else if (!prefersReducedMotion && flipEventForAnimation) {
+            const flipDelayMs = flipEventForAnimation.phase === 'combo' ? 500 : 200
+            const flipFlashColor = slot.owner === 'player' ? arenaPalette.ownerEdgePlayer : arenaPalette.ownerEdgeCpu
+
+            const flipFlash = new Graphics()
+            flipFlash.roundRect(x + 1, y + 1, cellSize - 2, cellSize - 2, 11)
+            flipFlash.fill({ color: flipFlashColor, alpha: 0.2 })
+            flipFlash.stroke({ width: 3, color: flipFlashColor, alpha: 0.82 })
+            flipFlash.alpha = 0
+            app.stage.addChild(flipFlash)
+
+            flipFlashes.push({
+              sprite: flipFlash,
+              elapsedMs: 0,
+              delayMs: flipDelayMs,
+              peakAlpha: flipEventForAnimation.phase === 'combo' ? 0.44 : 0.56,
+            })
+            flipBursts.push({
+              container: cardContainer,
+              elapsedMs: 0,
+              delayMs: flipDelayMs,
+              axis: flipEventForAnimation.axis,
+              baseY: y + cellSize / 2,
+            })
           }
 
           app.stage.addChild(cardContainer)
@@ -1089,6 +1804,23 @@ export function PixiBoard({
         groundOverlay.fill({ color: 0x8a6026, alpha: hasCard ? 0.22 : 0.12 })
         groundOverlay.stroke({ width: 2, color: 0xf4cb7f, alpha: 0.58 })
         app.stage.addChild(groundOverlay)
+
+        if (groundBoardEffectTexture) {
+          const groundTextureMask = new Graphics()
+          groundTextureMask.roundRect(x + 4, y + 4, cellSize - 8, cellSize - 8, 10)
+          groundTextureMask.fill({ color: 0xffffff })
+
+          const groundTexture = new Sprite(groundBoardEffectTexture)
+          groundTexture.x = x + 4
+          groundTexture.y = y + 4
+          groundTexture.width = cellSize - 8
+          groundTexture.height = cellSize - 8
+          groundTexture.alpha = hasCard ? 0.34 : 0.24
+          groundTexture.mask = groundTextureMask
+
+          app.stage.addChild(groundTexture)
+          app.stage.addChild(groundTextureMask)
+        }
 
         const groundBadge = new Graphics()
         const badgeWidth = Math.max(34, cellSize * 0.42)
@@ -1129,6 +1861,100 @@ export function PixiBoard({
         debuffScopeText.x = x + cellSize / 2
         debuffScopeText.y = y + cellSize / 2 + 8 + (hasCard ? 2 : 0)
         app.stage.addChild(debuffScopeText)
+      })
+
+      fireTargetCellsToRender.forEach(({ x, y }) => {
+        const fireTargetOverlay = new Graphics()
+        fireTargetOverlay.roundRect(x + 2, y + 2, cellSize - 4, cellSize - 4, 10)
+        fireTargetOverlay.fill({ color: 0xa03734, alpha: 0.2 })
+        fireTargetOverlay.stroke({ width: 2, color: 0xffc29f, alpha: 0.88 })
+        app.stage.addChild(fireTargetOverlay)
+        pulseOverlays.push(fireTargetOverlay)
+
+        const fireTargetBadge = new Graphics()
+        fireTargetBadge.circle(x + cellSize / 2, y + cellSize / 2 - 5, Math.max(13, cellSize * 0.17))
+        fireTargetBadge.fill({ color: 0x8f2d2d, alpha: 0.84 })
+        fireTargetBadge.stroke({ width: 1.5, color: 0xffd0a8, alpha: 0.85 })
+        app.stage.addChild(fireTargetBadge)
+
+        if (fireTexture) {
+          const fireTargetLogo = new Sprite(fireTexture)
+          fireTargetLogo.anchor.set(0.5)
+          fireTargetLogo.width = Math.max(18, cellSize * 0.2)
+          fireTargetLogo.height = Math.max(18, cellSize * 0.2)
+          fireTargetLogo.x = x + cellSize / 2
+          fireTargetLogo.y = y + cellSize / 2 - 5
+          app.stage.addChild(fireTargetLogo)
+        } else {
+          const fireTargetText = new Text({
+            text: 'FEU',
+            style: {
+              fill: 0xfff0dd,
+              fontSize: 11,
+              fontFamily: 'Rajdhani, sans-serif',
+              fontWeight: '800',
+              letterSpacing: 0.9,
+            },
+          })
+          fireTargetText.anchor.set(0.5)
+          fireTargetText.x = x + cellSize / 2
+          fireTargetText.y = y + cellSize / 2 - 5
+          app.stage.addChild(fireTargetText)
+        }
+
+        const fireTargetLabel = new Text({
+          text: 'CIBLE BRULURE',
+          style: {
+            fill: 0xffecd7,
+            fontSize: 8.4,
+            fontFamily: 'Rajdhani, sans-serif',
+            fontWeight: '800',
+            letterSpacing: 0.72,
+          },
+        })
+        fireTargetLabel.anchor.set(0.5)
+        fireTargetLabel.x = x + cellSize / 2
+        fireTargetLabel.y = y + cellSize / 2 + 15
+        app.stage.addChild(fireTargetLabel)
+      })
+
+      fireCastCellsToRender.forEach(({ x, y }) => {
+        const fireCastOverlay = new Graphics()
+        fireCastOverlay.roundRect(x + 2, y + 2, cellSize - 4, cellSize - 4, 10)
+        fireCastOverlay.fill({ color: 0xac3d32, alpha: 0.24 })
+        fireCastOverlay.stroke({ width: 2, color: 0xffd1a7, alpha: 0.84 })
+        app.stage.addChild(fireCastOverlay)
+
+        const fireCastBadge = new Graphics()
+        fireCastBadge.roundRect(x + cellSize * 0.2, y + cellSize * 0.43, cellSize * 0.6, cellSize * 0.2, 999)
+        fireCastBadge.fill({ color: 0x7a2623, alpha: 0.84 })
+        fireCastBadge.stroke({ width: 1.4, color: 0xffd2a9, alpha: 0.86 })
+        app.stage.addChild(fireCastBadge)
+
+        if (fireTexture) {
+          const fireCastLogo = new Sprite(fireTexture)
+          fireCastLogo.anchor.set(0.5)
+          fireCastLogo.width = Math.max(15, cellSize * 0.17)
+          fireCastLogo.height = Math.max(15, cellSize * 0.17)
+          fireCastLogo.x = x + cellSize / 2 - 15
+          fireCastLogo.y = y + cellSize / 2 + 1
+          app.stage.addChild(fireCastLogo)
+        }
+
+        const fireCastLabel = new Text({
+          text: 'BRULURE',
+          style: {
+            fill: 0xffebd8,
+            fontSize: 10.8,
+            fontFamily: 'Rajdhani, sans-serif',
+            fontWeight: '800',
+            letterSpacing: 0.62,
+          },
+        })
+        fireCastLabel.anchor.set(0.5)
+        fireCastLabel.x = x + cellSize / 2 + 7
+        fireCastLabel.y = y + cellSize / 2 + 1
+        app.stage.addChild(fireCastLabel)
       })
 
       floodTargetCellsToRender.forEach(({ x, y }) => {
@@ -1244,6 +2070,116 @@ export function PixiBoard({
         floodCastLabel.x = x + cellSize / 2
         floodCastLabel.y = y + cellSize / 2 + 16
         app.stage.addChild(floodCastLabel)
+      })
+
+      freezeTargetCellsToRender.forEach(({ x, y }) => {
+        const freezeTargetOverlay = new Graphics()
+        freezeTargetOverlay.roundRect(x + 2, y + 2, cellSize - 4, cellSize - 4, 10)
+        freezeTargetOverlay.fill({ color: 0xc4efff, alpha: 0.1 })
+        freezeTargetOverlay.stroke({ width: 2, color: 0xe8fbff, alpha: 0.72 })
+        app.stage.addChild(freezeTargetOverlay)
+        pulseOverlays.push(freezeTargetOverlay)
+
+        if (iceTexture) {
+          const freezeTargetLogo = new Sprite(iceTexture)
+          freezeTargetLogo.anchor.set(0.5)
+          freezeTargetLogo.width = Math.max(18, cellSize * 0.2)
+          freezeTargetLogo.height = Math.max(18, cellSize * 0.2)
+          freezeTargetLogo.x = x + cellSize / 2
+          freezeTargetLogo.y = y + cellSize / 2
+          freezeTargetLogo.alpha = 0.95
+          app.stage.addChild(freezeTargetLogo)
+        } else {
+          const freezeTargetText = new Text({
+            text: 'GLACE',
+            style: {
+              fill: 0xf0fcff,
+              fontSize: 10.5,
+              fontFamily: 'Rajdhani, sans-serif',
+              fontWeight: '800',
+              letterSpacing: 0.8,
+            },
+          })
+          freezeTargetText.anchor.set(0.5)
+          freezeTargetText.x = x + cellSize / 2
+          freezeTargetText.y = y + cellSize / 2
+          app.stage.addChild(freezeTargetText)
+        }
+      })
+
+      freezeCastCellsToRender.forEach(({ x, y }) => {
+        const freezeCastOverlay = new Graphics()
+        freezeCastOverlay.roundRect(x + 2, y + 2, cellSize - 4, cellSize - 4, 10)
+        freezeCastOverlay.fill({ color: 0xbdeaff, alpha: 0.15 })
+        freezeCastOverlay.stroke({ width: 2.2, color: 0xe6f9ff, alpha: 0.86 })
+        app.stage.addChild(freezeCastOverlay)
+
+        const freezeCastAccent = new Graphics()
+        freezeCastAccent.circle(x + cellSize / 2, y + cellSize / 2, Math.max(14, cellSize * 0.19))
+        freezeCastAccent.stroke({ width: 2, color: 0xc9f4ff, alpha: 0.7 })
+        app.stage.addChild(freezeCastAccent)
+        pulseOverlays.push(freezeCastAccent)
+
+        if (iceTexture) {
+          const freezeCastLogo = new Sprite(iceTexture)
+          freezeCastLogo.anchor.set(0.5)
+          freezeCastLogo.width = Math.max(19, cellSize * 0.22)
+          freezeCastLogo.height = Math.max(19, cellSize * 0.22)
+          freezeCastLogo.x = x + cellSize / 2
+          freezeCastLogo.y = y + cellSize / 2
+          freezeCastLogo.alpha = 0.96
+          app.stage.addChild(freezeCastLogo)
+        } else {
+          const freezeCastText = new Text({
+            text: 'GLACE',
+            style: {
+              fill: 0xf2fdff,
+              fontSize: 11.5,
+              fontFamily: 'Rajdhani, sans-serif',
+              fontWeight: '800',
+              letterSpacing: 0.85,
+            },
+          })
+          freezeCastText.anchor.set(0.5)
+          freezeCastText.x = x + cellSize / 2
+          freezeCastText.y = y + cellSize / 2
+          app.stage.addChild(freezeCastText)
+        }
+      })
+
+      freezeBlockedCellsToRender.forEach(({ x, y }) => {
+        const freezeBlockedOverlay = new Graphics()
+        freezeBlockedOverlay.roundRect(x + 2, y + 2, cellSize - 4, cellSize - 4, 10)
+        freezeBlockedOverlay.fill({ color: 0xd6f4ff, alpha: 0.18 })
+        freezeBlockedOverlay.stroke({ width: 2.2, color: 0xffffff, alpha: 0.92 })
+        app.stage.addChild(freezeBlockedOverlay)
+        pulseOverlays.push(freezeBlockedOverlay)
+
+        const freezeBlockedLabel = new Text({
+          text: 'BLOQUEE',
+          style: {
+            fill: 0xeefbff,
+            fontSize: 10.5,
+            fontFamily: 'Rajdhani, sans-serif',
+            fontWeight: '800',
+            letterSpacing: 0.9,
+          },
+        })
+        freezeBlockedLabel.anchor.set(0.5)
+        freezeBlockedLabel.x = x + cellSize / 2
+        freezeBlockedLabel.y = y + cellSize / 2 + 16
+        app.stage.addChild(freezeBlockedLabel)
+
+        if (iceTexture) {
+          const freezeBlockedLogo = new Sprite(iceTexture)
+          freezeBlockedLogo.anchor.set(0.5)
+          freezeBlockedLogo.width = Math.max(17, cellSize * 0.2)
+          freezeBlockedLogo.height = Math.max(17, cellSize * 0.2)
+          freezeBlockedLogo.x = x + cellSize / 2
+          freezeBlockedLogo.y = y + cellSize / 2 - 4
+          freezeBlockedLogo.alpha = 0.96
+          app.stage.addChild(freezeBlockedLogo)
+        }
       })
 
       waterPenaltyCellsToRender.forEach(({ x, y }) => {
@@ -1389,6 +2325,60 @@ export function PixiBoard({
               placementFlashes.splice(index, 1)
             }
           }
+
+          for (let index = flipBursts.length - 1; index >= 0; index -= 1) {
+            const burst = flipBursts[index]
+            burst.elapsedMs += app.ticker.deltaMS
+            const localElapsedMs = burst.elapsedMs - burst.delayMs
+            if (localElapsedMs < 0) {
+              continue
+            }
+            const progress = Math.min(1, localElapsedMs / 1200)
+            const spinTurns = 3
+            const fullTurnOscillation = Math.cos(progress * Math.PI * 2 * spinTurns)
+            const liftPhase = Math.sin(progress * Math.PI)
+            const zoom = 1 + liftPhase * 0.42
+            const signedTurn = Math.sign(fullTurnOscillation === 0 ? 1 : fullTurnOscillation)
+            const edgeThickness = Math.max(0.08, Math.abs(fullTurnOscillation))
+            const axisScale = signedTurn * edgeThickness * zoom
+            const landingProgress = progress > 0.8 ? (progress - 0.8) / 0.2 : 0
+            const landingWave = progress > 0.8 ? Math.sin(Math.min(1, landingProgress) * Math.PI) : 0
+            const squash = 1 - landingWave * 0.12
+            const stretch = 1 + landingWave * 0.09
+            const scaleX = burst.axis === 'vertical' ? zoom * stretch : axisScale * squash
+            const scaleY = burst.axis === 'vertical' ? axisScale * squash : zoom * stretch
+            const lift = liftPhase * 34 - landingWave * 8
+            const airAlphaBoost = Math.max(0, Math.sin(progress * Math.PI * spinTurns))
+
+            burst.container.scale.set(scaleX, scaleY)
+            burst.container.y = burst.baseY - lift
+            burst.container.alpha = Math.min(1, 0.78 + liftPhase * 0.18 + airAlphaBoost * 0.08)
+
+            if (progress >= 1) {
+              burst.container.scale.set(1)
+              burst.container.y = burst.baseY
+              burst.container.alpha = 1
+              flipBursts.splice(index, 1)
+            }
+          }
+
+          for (let index = flipFlashes.length - 1; index >= 0; index -= 1) {
+            const flash = flipFlashes[index]
+            flash.elapsedMs += app.ticker.deltaMS
+            const localElapsedMs = flash.elapsedMs - flash.delayMs
+            if (localElapsedMs < 0) {
+              continue
+            }
+            const progress = Math.min(1, localElapsedMs / 1200)
+            const burst = Math.sin(progress * Math.PI)
+            const strobe = Math.max(0, Math.sin(progress * Math.PI * 6))
+            flash.sprite.alpha = flash.peakAlpha * burst * (0.72 + strobe * 0.28)
+            if (progress >= 1) {
+              app.stage.removeChild(flash.sprite)
+              flash.sprite.destroy()
+              flipFlashes.splice(index, 1)
+            }
+          }
         }
         app.ticker.add(animate)
       }
@@ -1398,6 +2388,9 @@ export function PixiBoard({
         }
       }
       lastAnimatedBoardSignatureRef.current = boardSignature
+      if (shouldAnimateExplicitFlips) {
+        lastAnimatedFlipEventVersionRef.current = flipEventVersion
+      }
     }
 
     void render()
@@ -1415,27 +2408,185 @@ export function PixiBoard({
     boardLayout.inset,
     cellSize,
     effectsView,
+    flipEventVersion,
+    flipEvents.length,
     focusedCell,
+    flipEventByCell,
     highlightedSet,
+    tutorialGuidedSet,
     interactive,
+    planteLogo,
+    planteTerritoryActiveSet,
     poisonLogo,
+    fireLogo,
+    iceLogo,
     waterLogo,
     prefersReducedMotion,
     placedCardVisualLayout.artInset,
     placedCardVisualLayout.artScaleInset,
     placedCardVisualLayout.crestInsetFactor,
     placedCardVisualLayout.plateInset,
+    recentFlippedSet,
     recentPlacedSet,
     shouldUseFallback,
     status,
     transientClashSet,
+    transientFireCastSet,
+    transientFireTargetSet,
+    transientFreezeBlockedSet,
+    transientFreezeCastSet,
+    transientFreezeTargetSet,
     transientFloodTargetSet,
     transientFloodCastSet,
     transientGroundSet,
     transientWaterPenaltySet,
+    targetableSet,
     turnActor,
     neutralBoardArtEnabled,
   ])
+
+  const clearHoveredCell = () => {
+    setHoveredCellIndex(null)
+    setHoverAnchor(null)
+  }
+
+  const handlePixiPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const resolvedCellIndex = resolvePointerCellIndex({
+      event,
+      boardDimension,
+      boardCellCount: board.length,
+      boardLayout,
+      cellSize,
+    })
+    if (resolvedCellIndex === null || board[resolvedCellIndex] === null) {
+      setHoveredCellIndex(null)
+      setHoverAnchor(null)
+      return
+    }
+
+    const row = Math.floor(resolvedCellIndex / boardDimension)
+    const col = resolvedCellIndex % boardDimension
+    const centerX = boardLayout.inset + col * (cellSize + boardLayout.gap) + cellSize / 2
+    const centerY = boardLayout.inset + row * (cellSize + boardLayout.gap) + cellSize / 2
+
+    setHoveredCellIndex(resolvedCellIndex)
+    setHoverAnchor({
+      xPercent: clampPercent((centerX / boardSize) * 100),
+      yPercent: clampPercent((centerY / boardSize) * 100),
+      placeBelow: row === 0,
+    })
+  }
+
+  const handleFallbackPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const eventTarget = event.target
+    if (!(eventTarget instanceof HTMLElement)) {
+      setHoveredCellIndex(null)
+      setHoverAnchor(null)
+      return
+    }
+    const cellButton = eventTarget.closest<HTMLButtonElement>('button[data-cell-index]')
+    if (!cellButton) {
+      setHoveredCellIndex(null)
+      setHoverAnchor(null)
+      return
+    }
+    const cellIndex = Number.parseInt(cellButton.dataset.cellIndex ?? '', 10)
+    if (!Number.isFinite(cellIndex) || cellIndex < 0 || cellIndex >= board.length || board[cellIndex] === null) {
+      setHoveredCellIndex(null)
+      setHoverAnchor(null)
+      return
+    }
+
+    const boardRect = event.currentTarget.getBoundingClientRect()
+    const cellRect = cellButton.getBoundingClientRect()
+    if (boardRect.width > 0 && boardRect.height > 0) {
+      const centerX = ((cellRect.left + cellRect.width / 2 - boardRect.left) / boardRect.width) * 100
+      const centerY = ((cellRect.top + cellRect.height / 2 - boardRect.top) / boardRect.height) * 100
+      const row = Math.floor(cellIndex / boardDimension)
+      setHoverAnchor({
+        xPercent: clampPercent(centerX),
+        yPercent: clampPercent(centerY),
+        placeBelow: row === 0,
+      })
+    }
+
+    setHoveredCellIndex(cellIndex)
+  }
+
+  const applyFallbackHoverAnchorFromButton = (button: HTMLButtonElement, cellIndex: number) => {
+    const boardElement = button.closest<HTMLDivElement>('.fallback-board')
+    if (!boardElement) {
+      return
+    }
+
+    const boardRect = boardElement.getBoundingClientRect()
+    const row = Math.floor(cellIndex / boardDimension)
+    const col = cellIndex % boardDimension
+
+    if (boardRect.width <= 0 || boardRect.height <= 0) {
+      setHoverAnchor({
+        xPercent: clampPercent(((col + 0.5) / boardDimension) * 100),
+        yPercent: clampPercent(((row + 0.5) / boardDimension) * 100),
+        placeBelow: row === 0,
+      })
+      return
+    }
+
+    const cellRect = button.getBoundingClientRect()
+    const centerX = ((cellRect.left + cellRect.width / 2 - boardRect.left) / boardRect.width) * 100
+    const centerY = ((cellRect.top + cellRect.height / 2 - boardRect.top) / boardRect.height) * 100
+
+    setHoverAnchor({
+      xPercent: clampPercent(centerX),
+      yPercent: clampPercent(centerY),
+      placeBelow: row === 0,
+    })
+  }
+
+  const hoverPanel =
+    hoveredSlot && hoveredStatChangeLines.length > 0 && hoverAnchor ? (
+      <div
+        className={`board-cell-hover-stats ${
+          hoverAnchor.placeBelow ? 'board-cell-hover-stats--below' : 'board-cell-hover-stats--above'
+        }`}
+        style={{ left: `${hoverAnchor.xPercent}%`, top: `${hoverAnchor.yPercent}%` }}
+        role="status"
+        data-testid="board-cell-hover-stats"
+      >
+        <p className="board-cell-hover-stats__title">{hoveredCardName}</p>
+        <ul className="board-cell-hover-stats__list">
+          {hoveredStatChangeLines.map((line) => {
+            const logoMeta = line.elementId ? getElementLogoMeta(line.elementId) : null
+            return (
+              <li key={line.key} className={`board-cell-hover-stats__line board-cell-hover-stats__line--${line.tone}`}>
+                {logoMeta ? (
+                  <img
+                    className="board-cell-hover-stats__icon-logo"
+                    src={logoMeta.imageSrc}
+                    alt=""
+                    width={16}
+                    height={16}
+                    loading="lazy"
+                    decoding="async"
+                  />
+                ) : (
+                  <span className="board-cell-hover-stats__icon" aria-hidden="true">
+                    {line.iconText ?? '•'}
+                  </span>
+                )}
+                <span className="board-cell-hover-stats__summary">{line.summary}</span>
+                {line.durationText ? (
+                  <span className="board-cell-hover-stats__duration">
+                    <span aria-hidden="true">⏳</span>
+                    <span>{line.durationText}</span>
+                  </span>
+                ) : null}
+              </li>
+            )
+          })}
+        </ul>
+      </div>
+    ) : null
 
   if (shouldUseFallback) {
     const hasNeutralBoardArt = boardDimension === 3
@@ -1450,70 +2601,154 @@ export function PixiBoard({
       .join(' ')
 
     return (
-      <div
-        className={boardClasses}
-        role="grid"
-        aria-label="Match board"
-        style={{ '--fallback-grid-cols': `${boardDimension}` } as CSSProperties}
-      >
-        {board.map((slot, index) => {
+      <div className="pixi-board-shell">
+        <div
+          className={boardClasses}
+          role="grid"
+          aria-label="Match board"
+          style={{ '--fallback-grid-cols': `${boardDimension}` } as CSSProperties}
+          onPointerMove={handleFallbackPointerMove}
+          onPointerLeave={clearHoveredCell}
+        >
+          {board.map((slot, index) => {
           const card = slot ? getCard(slot.cardId) : null
           const artCandidates = card ? getCardArtCandidates(card.name) : []
           const artSrc = artCandidates[0] ?? null
           const displayStats = effectsView?.displayStatsByCell[index]
           const cellIndicators = effectsView?.cellIndicators[index] ?? []
           const boardIndicators = effectsView?.boardCardIndicators[index] ?? []
+          const hasPlantePackBuff = boardIndicators.some((indicator) => indicator.key === 'card-plante-pack')
+          const hasPlanteLinkRight =
+            hasPlantePackBuff && hasPlanteTerritoryLink({ activeCells: planteTerritoryActiveSet, index, boardDimension, orientation: 'horizontal' })
+          const hasPlanteLinkDown =
+            hasPlantePackBuff && hasPlanteTerritoryLink({ activeCells: planteTerritoryActiveSet, index, boardDimension, orientation: 'vertical' })
+          const hasPersistentGroundDebuff = boardIndicators.some((indicator) => indicator.key === 'card-ground-volatile')
           const isPoisonedBoardCard = boardIndicators.some((indicator) => indicator.key === 'card-poison-first-combat')
           const activeIndicators = slot ? boardIndicators : cellIndicators
-          const secondaryIndicators = activeIndicators.filter((indicator) => indicator.key !== 'card-poison-first-combat')
+          const secondaryIndicators = activeIndicators.filter(
+            (indicator) => indicator.key !== 'card-poison-first-combat' && indicator.key !== 'card-ground-volatile',
+          )
           const isGroundDebuffedCell = transientGroundSet.has(index)
+          const isFireTargetCell = transientFireTargetSet.has(index)
+          const isFireCastCell = transientFireCastSet.has(index)
           const isFloodTargetCell = transientFloodTargetSet.has(index) && slot === null
           const isFloodCastCell = transientFloodCastSet.has(index)
+          const isFreezeTargetCell = transientFreezeTargetSet.has(index) && slot === null
+          const isFreezeCastCell = transientFreezeCastSet.has(index)
+          const isFreezeBlockedCell = transientFreezeBlockedSet.has(index)
           const isWaterPenaltyCell = transientWaterPenaltySet.has(index)
           const isClashCell = transientClashSet.has(index)
           const isPreviewPlacementCell = previewPlacementCell === index
           const cellTitle = [
             ...activeIndicators.map((indicator) => indicator.tooltip),
             ...(isGroundDebuffedCell ? ['Sol: -1 sur toutes les stats pour ce combat.'] : []),
+            ...(isFireTargetCell ? ['Feu: choisissez la carte ennemie a bruler.'] : []),
+            ...(isFireCastCell ? ['Feu: brulure appliquee.'] : []),
             ...(isFloodTargetCell ? ['Eau: choisissez la case inondée (-2 sur la stat la plus haute).'] : []),
             ...(isFloodCastCell ? ['Eau: case inondée (-2 sur la stat la plus haute).'] : []),
+            ...(isFreezeTargetCell ? ['Glace: choisissez la case gelée.'] : []),
+            ...(isFreezeCastCell ? ['Glace: case gelée.'] : []),
+            ...(isFreezeBlockedCell ? ['Glace: case bloquée pour ce tour.'] : []),
             ...(isWaterPenaltyCell ? ['Eau: -2 sur la plus haute stat.'] : []),
             ...(isClashCell ? ['Duel en cours.'] : []),
           ].join(' • ')
           const isFloodedCell = cellIndicators.some((indicator) => indicator.key === 'cell-flooded')
-          const isFrozenCell = cellIndicators.some((indicator) => indicator.key === 'cell-frozen')
-          const isClickable = interactive && slot === null
+          const frozenCellIndicator = cellIndicators.find((indicator) => indicator.key === 'cell-frozen')
+          const isFrozenCell = Boolean(frozenCellIndicator)
+          const frozenTurnsCounter = frozenCellIndicator?.valueText ?? null
+          const explicitFlipEvent = flipEventByCell.get(index)
+          const resolvedFlipEvent: MoveFlipEvent | null =
+            explicitFlipEvent ??
+            (recentFlippedSet.has(index) && slot
+              ? { cell: index, kind: 'flipped', axis: 'horizontal', phase: 'primary' }
+              : null)
+          const flipDirection = resolvedFlipEvent?.axis === 'vertical' ? 'vertical' : resolvedFlipEvent ? 'horizontal' : undefined
+          const isClickable = interactive && (slot === null || targetableSet.has(index))
           const classes = [
             'fallback-cell',
             slot?.owner ?? 'empty',
             isFloodedCell ? 'fallback-cell--flooded' : '',
             isFrozenCell ? 'fallback-cell--frozen' : '',
+            hasPlantePackBuff ? 'fallback-cell--plante-pack-active' : '',
+            hasPlanteLinkRight ? 'fallback-cell--plante-link-right' : '',
+            hasPlanteLinkDown ? 'fallback-cell--plante-link-down' : '',
             isPoisonedBoardCard ? 'fallback-cell--poisoned' : '',
+            hasPersistentGroundDebuff ? 'fallback-cell--ground-active' : '',
             isGroundDebuffedCell ? 'fallback-cell--ground-debuffed' : '',
+            isFireTargetCell ? 'fallback-cell--fire-target' : '',
+            isFireCastCell ? 'fallback-cell--fire-cast' : '',
             isFloodTargetCell ? 'fallback-cell--flood-target' : '',
             isFloodCastCell ? 'fallback-cell--flood-cast' : '',
+            isFreezeTargetCell ? 'fallback-cell--freeze-target' : '',
+            isFreezeCastCell ? 'fallback-cell--freeze-cast' : '',
+            isFreezeBlockedCell ? 'fallback-cell--freeze-blocked' : '',
             isWaterPenaltyCell ? 'fallback-cell--water-penalty' : '',
             isClashCell ? 'fallback-cell--clash' : '',
             isPreviewPlacementCell ? 'fallback-cell--ground-preview-placement' : '',
-            focusedCell === index && slot === null ? 'is-keyboard-target' : '',
+            focusedCell === index && (slot === null || targetableSet.has(index)) ? 'is-keyboard-target' : '',
             highlightedSet.has(index) ? 'highlighted is-highlighted' : '',
+            tutorialGuidedSet.has(index) ? 'is-tutorial-guided' : '',
             recentPlacedSet.has(index) ? 'is-recent-placement' : '',
           ]
             .filter(Boolean)
             .join(' ')
+          const cellKey = explicitFlipEvent && flipEvents.length > 0 ? `${index}-flip-${flipEventVersion}` : `${index}`
 
-          return (
-            <button
-              key={index}
-              type="button"
-              role="gridcell"
-              className={classes}
-              onClick={() => onCellClick(index)}
-              disabled={!isClickable}
-              data-testid={`board-cell-${index}`}
-              aria-label={`Cell ${index}`}
-              title={cellTitle || undefined}
-            >
+            return (
+              <button
+                key={cellKey}
+                type="button"
+                role="gridcell"
+                className={classes}
+                onClick={() => onCellClick(index)}
+                onPointerEnter={(event) => {
+                  if (!slot) {
+                    clearHoveredCell()
+                    return
+                  }
+                  setHoveredCellIndex(index)
+                  applyFallbackHoverAnchorFromButton(event.currentTarget, index)
+                }}
+                onMouseOver={(event) => {
+                  if (!slot) {
+                    clearHoveredCell()
+                    return
+                  }
+                  setHoveredCellIndex(index)
+                  applyFallbackHoverAnchorFromButton(event.currentTarget, index)
+                }}
+                onPointerLeave={() => {
+                  if (hoveredCellIndex === index) {
+                    clearHoveredCell()
+                  }
+                }}
+                onMouseOut={() => {
+                  if (hoveredCellIndex === index) {
+                    clearHoveredCell()
+                  }
+                }}
+                onFocus={(event) => {
+                  if (!slot) {
+                    clearHoveredCell()
+                    return
+                  }
+                  setHoveredCellIndex(index)
+                  applyFallbackHoverAnchorFromButton(event.currentTarget, index)
+                }}
+                onBlur={() => {
+                  if (hoveredCellIndex === index) {
+                    clearHoveredCell()
+                  }
+                }}
+                disabled={!isClickable}
+                data-testid={`board-cell-${index}`}
+                data-cell-index={index}
+                aria-label={`Cell ${index}`}
+                title={cellTitle || undefined}
+                data-player={slot?.owner === 'player' ? 'blue' : slot?.owner === 'cpu' ? 'red' : undefined}
+                data-state={resolvedFlipEvent?.kind}
+                data-flip-direction={flipDirection}
+              >
               {card ? (
                 <>
                   <span
@@ -1571,10 +2806,57 @@ export function PixiBoard({
                   data-testid={`board-cell-${index}-poison-badge`}
                 />
               ) : null}
+              {tutorialGuidedSet.has(index) && slot === null ? (
+                <span className="fallback-cell__tutorial-guided-badge" aria-hidden="true" data-testid={`board-cell-${index}-tutorial-guided`}>
+                  ICI
+                </span>
+              ) : null}
               {isGroundDebuffedCell ? (
                 <span className="fallback-cell__ground-pop" aria-hidden="true" data-testid={`board-cell-${index}-ground-pop`}>
                   <span className="fallback-cell__ground-pop-value">-1</span>
                   <span className="fallback-cell__ground-pop-label">ALL</span>
+                </span>
+              ) : null}
+              {isFireCastCell ? (
+                <span className="fallback-cell__fire-cast-badge" aria-hidden="true" data-testid={`board-cell-${index}-fire-cast-badge`}>
+                  {fireLogo ? (
+                    <img
+                      className="fallback-cell__fire-effect-logo fallback-cell__fire-effect-logo--cast"
+                      src={fireLogo.imageSrc}
+                      alt=""
+                      width={18}
+                      height={18}
+                      loading="lazy"
+                      decoding="async"
+                      data-testid={`board-cell-${index}-fire-cast-logo`}
+                    />
+                  ) : (
+                    <span className="fallback-cell__fire-effect-label">FEU</span>
+                  )}
+                  <span className="fallback-cell__fire-effect-label">BRULURE</span>
+                </span>
+              ) : null}
+              {isFireTargetCell ? (
+                <span
+                  className="fallback-cell__fire-target-badge"
+                  aria-hidden="true"
+                  data-testid={`board-cell-${index}-fire-target-badge`}
+                >
+                  {fireLogo ? (
+                    <img
+                      className="fallback-cell__fire-effect-logo fallback-cell__fire-effect-logo--target"
+                      src={fireLogo.imageSrc}
+                      alt=""
+                      width={16}
+                      height={16}
+                      loading="lazy"
+                      decoding="async"
+                      data-testid={`board-cell-${index}-fire-target-logo`}
+                    />
+                  ) : (
+                    <span className="fallback-cell__fire-effect-label">FEU</span>
+                  )}
+                  <span className="fallback-cell__fire-effect-label">CIBLE BRULURE</span>
                 </span>
               ) : null}
               {isFloodCastCell ? (
@@ -1619,6 +2901,72 @@ export function PixiBoard({
                   <span className="fallback-cell__water-effect-label">CIBLE -2 MAX</span>
                 </span>
               ) : null}
+              {isFreezeCastCell ? (
+                <span className="fallback-cell__freeze-cast-badge" aria-hidden="true" data-testid={`board-cell-${index}-freeze-cast-badge`}>
+                  {iceLogo ? (
+                    <img
+                      className="fallback-cell__ice-effect-logo fallback-cell__ice-effect-logo--cast"
+                      src={iceLogo.imageSrc}
+                      alt=""
+                      width={18}
+                      height={18}
+                      loading="lazy"
+                      decoding="async"
+                      data-testid={`board-cell-${index}-freeze-cast-logo`}
+                    />
+                  ) : (
+                    <span className="fallback-cell__ice-effect-label">GLACE</span>
+                  )}
+                </span>
+              ) : null}
+              {isFreezeTargetCell ? (
+                <span
+                  className="fallback-cell__freeze-target-badge"
+                  aria-hidden="true"
+                  data-testid={`board-cell-${index}-freeze-target-badge`}
+                >
+                  {iceLogo ? (
+                    <img
+                      className="fallback-cell__ice-effect-logo fallback-cell__ice-effect-logo--target"
+                      src={iceLogo.imageSrc}
+                      alt=""
+                      width={16}
+                      height={16}
+                      loading="lazy"
+                      decoding="async"
+                      data-testid={`board-cell-${index}-freeze-target-logo`}
+                    />
+                  ) : (
+                    <span className="fallback-cell__ice-effect-label">GLACE</span>
+                  )}
+                </span>
+              ) : null}
+              {isFreezeBlockedCell ? (
+                <span
+                  className="fallback-cell__freeze-blocked-badge"
+                  aria-hidden="true"
+                  data-testid={`board-cell-${index}-freeze-blocked-badge`}
+                >
+                  {iceLogo ? (
+                    <img
+                      className="fallback-cell__ice-effect-logo fallback-cell__ice-effect-logo--blocked"
+                      src={iceLogo.imageSrc}
+                      alt=""
+                      width={14}
+                      height={14}
+                      loading="lazy"
+                      decoding="async"
+                      data-testid={`board-cell-${index}-freeze-blocked-logo`}
+                    />
+                  ) : null}
+                  <span className="fallback-cell__ice-effect-label">BLOQUEE</span>
+                </span>
+              ) : null}
+              {isFrozenCell && frozenTurnsCounter ? (
+                <span className="fallback-cell__frozen-counter" aria-hidden="true" data-testid={`board-cell-${index}-frozen-counter`}>
+                  {frozenTurnsCounter}
+                </span>
+              ) : null}
               {isWaterPenaltyCell ? (
                 <span
                   className="fallback-cell__water-penalty-badge"
@@ -1651,24 +2999,49 @@ export function PixiBoard({
                 <span className="fallback-cell__effect-chips" aria-hidden="true">
                   {isGroundDebuffedCell ? (
                     <span className="effect-chip effect-chip--ground" data-testid={`board-cell-${index}-ground-badge`}>
-                      🪨 -1 ALL
+                      <img
+                        className="fallback-cell__ground-effect-logo"
+                        src={GROUND_BOARD_EFFECT_TEXTURE_SRC}
+                        alt=""
+                        width={14}
+                        height={14}
+                        loading="lazy"
+                        decoding="async"
+                        data-testid={`board-cell-${index}-ground-badge-logo`}
+                      />
+                      <span>-1 ALL</span>
                     </span>
                   ) : null}
                   {secondaryIndicators
                     .slice(0, 2)
                     .map((indicator) => (
-                    <span key={indicator.key} className={`effect-chip effect-chip--${indicator.tone}`}>
+                    <span
+                      key={indicator.key}
+                      className={`effect-chip effect-chip--${indicator.tone}`}
+                    >
                       {indicator.icon}
                     </span>
                     ))}
                 </span>
               ) : null}
-            </button>
-          )
-        })}
+              </button>
+            )
+          })}
+        </div>
+        {hoverPanel}
       </div>
     )
   }
 
-  return <div ref={hostRef} className={resolvePixiBoardClassName(neutralBoardArtEnabled)} />
+  return (
+    <div className="pixi-board-shell">
+      <div
+        ref={hostRef}
+        className={resolvePixiBoardClassName(neutralBoardArtEnabled)}
+        onPointerMove={handlePixiPointerMove}
+        onPointerLeave={clearHoveredCell}
+      />
+      {hoverPanel}
+    </div>
+  )
 }

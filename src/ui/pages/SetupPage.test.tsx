@@ -1,6 +1,6 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, test } from 'vitest'
+import { beforeEach, describe, expect, test } from 'bun:test'
 import { MemoryRouter } from 'react-router-dom'
 import { GameProvider } from '../../app/GameContext'
 import { cardPool } from '../../domain/cards/cardPool'
@@ -50,6 +50,8 @@ describe('SetupPage (Play lobby)', () => {
     renderSetup()
 
     expect(screen.queryByRole('heading', { name: 'Play' })).not.toBeInTheDocument()
+    expect(screen.getByTestId('setup-mode-stage')).toBeInTheDocument()
+    expect(screen.queryByTestId('setup-mode-background')).not.toBeInTheDocument()
     expect(screen.getByTestId('setup-preset-grid')).toBeInTheDocument()
     expect(screen.getByTestId('setup-mode-3x3')).toBeInTheDocument()
     expect(screen.getByTestId('setup-mode-3x3-ranked')).toBeInTheDocument()
@@ -72,6 +74,8 @@ describe('SetupPage (Play lobby)', () => {
     expect(within(selectedModeHead).getByTestId('setup-change-mode')).toBeInTheDocument()
     expect(within(selectedLeftStack).getByLabelText('Deck slots')).toBeInTheDocument()
     expect(screen.getByTestId('setup-deck-mode-manual')).toBeInTheDocument()
+    expect(screen.getByTestId('setup-rule-open-visible')).toBeInTheDocument()
+    expect(screen.getByTestId('setup-rule-open-hidden')).toBeInTheDocument()
     expect(screen.getByTestId('setup-opponent-level-option-1')).toBeInTheDocument()
     expect(screen.getByTestId('setup-opponent-level-option-10')).toBeInTheDocument()
     expect(screen.getByTestId('setup-new-challenger')).toBeInTheDocument()

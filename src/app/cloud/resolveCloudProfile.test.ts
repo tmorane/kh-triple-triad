@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test } from 'bun:test'
 import { createDefaultProfile } from '../../domain/progression/profile'
 import { resolveProfileForCloudSession } from './resolveCloudProfile'
 

@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import type { ComponentProps } from 'react'
 import { MemoryRouter } from 'react-router-dom'
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test } from 'bun:test'
 import { GameContext } from '../../app/GameContext'
 import { createDefaultProfile } from '../../domain/progression/profile'
 import { MissionsPage } from './MissionsPage'
@@ -125,5 +125,16 @@ describe('MissionsPage', () => {
 
     expect(screen.getByTestId('missions-status-m2_combo_practitioner')).toHaveTextContent('Claimed')
     expect(screen.getByTestId('missions-summary')).toHaveTextContent('1/3 completed')
+  })
+
+  test('shows reward history note when mission reward was already granted before reset', () => {
+    const profile = createDefaultProfile()
+    profile.missionRewardsGrantedById.m1_type_specialist = true
+
+    renderMissions({ profile })
+
+    expect(screen.getByTestId('missions-reward-history-m1_type_specialist')).toHaveTextContent(
+      'Reward already granted before reset.',
+    )
   })
 })

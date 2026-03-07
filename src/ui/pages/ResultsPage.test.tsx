@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ComponentProps } from 'react'
 import { MemoryRouter } from 'react-router-dom'
-import { describe, expect, test, vi } from 'vitest'
+import { describe, expect, test, vi } from 'bun:test'
 import { GameContext } from '../../app/GameContext'
 import { createDefaultProfile } from '../../domain/progression/profile'
 import type { TowerRelicRewardOffer } from '../../domain/tower/types'
@@ -22,6 +22,9 @@ function renderResults(value: GameContextValue) {
 
 function buildContext(queue: 'normal' | 'ranked' | 'tower'): GameContextValue {
   const profile = createDefaultProfile()
+  if (queue !== 'tower') {
+    profile.cardFragmentsById.c41 = 1
+  }
   const towerRelics = {
     golden_pass: 0,
     initiative_core: 0,
@@ -331,7 +334,7 @@ describe('ResultsPage ranked section', () => {
 
     expect(screen.getByText('Queue: Ranked')).toBeInTheDocument()
     expect(screen.getByTestId('results-ranked-recap')).toBeInTheDocument()
-    expect(screen.getByTestId('results-ranked-emblem')).toHaveAttribute('src', '/ranks/iron.svg')
+    expect(screen.getByTestId('results-ranked-emblem')).toHaveAttribute('src', '/ranks/iron.png')
     expect(screen.getByTestId('results-ranked-delta')).toHaveTextContent('+20 LP')
     expect(screen.getByTestId('results-ranked-progress')).toHaveAttribute('role', 'progressbar')
   })
@@ -364,15 +367,16 @@ describe('ResultsPage claimed card summary', () => {
   test('shows claimed card details when one card was captured', () => {
     renderResults(buildContext('normal'))
 
-    expect(screen.getByText('Claimed Card')).toBeInTheDocument()
-    expect(screen.getByText('Claimed card: C41')).toBeInTheDocument()
+    expect(screen.getByText('Card Fragment')).toBeInTheDocument()
+    expect(screen.getByText('You recovered 1 card fragment: C41.')).toBeInTheDocument()
+    expect(screen.getByTestId('results-fragment-total')).toHaveTextContent('Fragment progress: 1/3')
   })
 
   test('shows no-claim message when no card is awarded', () => {
     renderResults(buildContextWithoutClaimedCard())
 
-    expect(screen.getByText('Claimed Card')).toBeInTheDocument()
-    expect(screen.getByText('No card claimed this match.')).toBeInTheDocument()
+    expect(screen.getByText('Card Fragment')).toBeInTheDocument()
+    expect(screen.getByText('No fragment gained this match.')).toBeInTheDocument()
   })
 })
 
@@ -382,7 +386,7 @@ describe('ResultsPage tower flow', () => {
 
     expect(screen.getByText('Queue: Tower')).toBeInTheDocument()
     expect(screen.getByTestId('results-tower-summary')).toBeInTheDocument()
-    expect(screen.getByText('Tower mode does not grant claimed cards.')).toBeInTheDocument()
+    expect(screen.getByText('Tower mode does not grant card fragments.')).toBeInTheDocument()
     expect(screen.getByTestId('results-tower-floor')).toHaveTextContent('Floor 3')
   })
 

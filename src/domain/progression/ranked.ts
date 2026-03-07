@@ -29,10 +29,7 @@ export const rankedTiers: ReadonlyArray<{ id: RankedTierId; name: string; hasDiv
   { id: 'silver', name: 'Silver', hasDivisions: true },
   { id: 'gold', name: 'Gold', hasDivisions: true },
   { id: 'platinum', name: 'Platinum', hasDivisions: true },
-  { id: 'emerald', name: 'Emerald', hasDivisions: true },
   { id: 'diamond', name: 'Diamond', hasDivisions: true },
-  { id: 'master', name: 'Master', hasDivisions: false },
-  { id: 'grandmaster', name: 'Grandmaster', hasDivisions: false },
   { id: 'challenger', name: 'Challenger', hasDivisions: false },
 ]
 

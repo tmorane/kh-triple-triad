@@ -1,26 +1,75 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import type { ComponentProps } from 'react'
 import { MemoryRouter } from 'react-router-dom'
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test, vi } from 'bun:test'
+import { GameContext } from '../../app/GameContext'
+import { createDefaultProfile } from '../../domain/progression/profile'
 import { RulesPage } from './RulesPage'
 
-function renderRulesPage() {
+type GameContextValue = NonNullable<ComponentProps<typeof GameContext.Provider>['value']>
+
+function buildContextValue(overrides: Partial<GameContextValue> = {}): GameContextValue {
+  const profile = createDefaultProfile()
+
+  return {
+    profile,
+    storedProfiles: {
+      activeProfileId: 'profile-1',
+      profiles: [{ id: 'profile-1', playerName: profile.playerName, gold: profile.gold, played: 0, wins: 0, isActive: true }],
+    },
+    currentMatch: null,
+    lastMatchSummary: null,
+    startMatch: vi.fn(),
+    selectDeckSlot: vi.fn(),
+    renamePlayer: vi.fn(),
+    setAudioEnabled: vi.fn(),
+    renameDeckSlot: vi.fn(),
+    toggleDeckSlotCard: vi.fn(),
+    setDeckSlotMode: vi.fn(),
+    setDeckSlotRules: vi.fn(),
+    updateCurrentMatch: vi.fn(),
+    finalizeCurrentMatch: vi.fn(() => {
+      throw new Error('Not implemented in test.')
+    }),
+    clearLastMatchSummary: vi.fn(),
+    purchaseShopPack: vi.fn(() => {
+      throw new Error('Not implemented in test.')
+    }),
+    openOwnedPack: vi.fn(() => {
+      throw new Error('Not implemented in test.')
+    }),
+    buySpecialPack: vi.fn(() => {
+      throw new Error('Not implemented in test.')
+    }),
+    addTestGold: vi.fn(),
+    createStoredProfile: vi.fn(() => ({ valid: true })),
+    switchStoredProfile: vi.fn(),
+    deleteStoredProfile: vi.fn(() => ({ valid: true })),
+    resetProfile: vi.fn(),
+    ...overrides,
+  }
+}
+
+function renderRulesPage(contextOverrides: Partial<GameContextValue> = {}) {
+  const contextValue = buildContextValue(contextOverrides)
   return render(
     <MemoryRouter>
-      <RulesPage />
+      <GameContext.Provider value={contextValue}>
+        <RulesPage />
+      </GameContext.Provider>
     </MemoryRouter>,
   )
 }
 
 describe('RulesPage', () => {
-  test('shows core Open/Same/Plus rules and element effects via icon hover', async () => {
+  test('shows Open/Hidden rule and element effects via icon hover', async () => {
     renderRulesPage()
     const user = userEvent.setup()
 
     expect(screen.getByRole('heading', { name: 'Rules' })).toBeInTheDocument()
-    expect(screen.getByText('Open:')).toBeInTheDocument()
-    expect(screen.getByText('Same:')).toBeInTheDocument()
-    expect(screen.getByText('Plus:')).toBeInTheDocument()
+    expect(screen.getByText(/Turn it on to see the CPU hand/i)).toBeInTheDocument()
+    expect(screen.getByText(/Turn it off to keep the CPU hand hidden/i)).toBeInTheDocument()
 
     expect(screen.getByRole('heading', { name: 'Element effects' })).toBeInTheDocument()
 
@@ -36,11 +85,11 @@ describe('RulesPage', () => {
 
     await user.hover(feuIcon)
     expect(effectText).toHaveTextContent('Feu:')
-    expect(effectText).toHaveTextContent('Brulure 2 tours')
+    expect(effectText).toHaveTextContent('brûle un ennemi adjacent')
 
     await user.hover(eauIcon)
     expect(effectText).toHaveTextContent('Eau:')
-    expect(effectText).toHaveTextContent('inonde une case vide')
+    expect(effectText).toHaveTextContent('inonde 1 case vide')
 
     await user.unhover(eauIcon)
     expect(effectText).toHaveTextContent('Survole une icone pour voir l effet.')
@@ -119,5 +168,55 @@ describe('RulesPage', () => {
     await user.click(screen.getByRole('button', { name: 'Relancer' }))
     expect(screen.getByTestId('rules-tutorial-progress')).toHaveTextContent('Etape 1/15')
     expect(screen.getByTestId('rules-tutorial-step-label')).toHaveTextContent('Normal')
+  })
+
+  test('locks match element tutorials until base tutorial is completed', () => {
+    const profile = createDefaultProfile()
+    profile.tutorialProgress = {
+      baseCompleted: false,
+      completedElementById: {},
+    }
+
+    renderRulesPage({ profile })
+
+    expect(screen.getByTestId('rules-match-tutorial-start-base')).toBeEnabled()
+    expect(screen.getByTestId('rules-match-tutorial-start-element-feu')).toBeDisabled()
+  })
+
+  test('starts base match tutorial from rules page', async () => {
+    const startMatch = vi.fn()
+    renderRulesPage({ startMatch })
+    const user = userEvent.setup()
+
+    await user.click(screen.getByTestId('rules-match-tutorial-start-base'))
+
+    expect(startMatch).toHaveBeenCalledWith(
+      'tutorial',
+      '3x3',
+      [],
+      { open: true, same: false, plus: false },
+      expect.objectContaining({ tutorialScenarioId: 'intro-basics' }),
+    )
+  })
+
+  test('starts element match tutorial when base tutorial is completed', async () => {
+    const profile = createDefaultProfile()
+    profile.tutorialProgress = {
+      baseCompleted: true,
+      completedElementById: {},
+    }
+    const startMatch = vi.fn()
+    renderRulesPage({ profile, startMatch })
+    const user = userEvent.setup()
+
+    await user.click(screen.getByTestId('rules-match-tutorial-start-element-feu'))
+
+    expect(startMatch).toHaveBeenCalledWith(
+      'tutorial',
+      '3x3',
+      [],
+      { open: true, same: false, plus: false },
+      expect.objectContaining({ tutorialScenarioId: 'element-feu' }),
+    )
   })
 })

@@ -1,10 +1,10 @@
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test } from 'bun:test'
 import { cardCategoryIds, cardElementIds } from './taxonomy'
 import { cardPool } from './cardPool'
 
 describe('card pool integrity', () => {
   test('contains uniquely identified cards with contiguous stable ids', () => {
-    expect(cardPool.length).toBe(151)
+    expect(cardPool.length).toBe(251)
 
     const ids = cardPool.map((card) => card.id)
     expect(new Set(ids).size).toBe(cardPool.length)
@@ -12,6 +12,23 @@ describe('card pool integrity', () => {
     for (let index = 0; index < ids.length; index += 1) {
       expect(ids[index]).toBe(`c${String(index + 1).padStart(2, '0')}`)
     }
+  })
+
+  test('contains exactly 100 Johto cards appended after Kanto range', () => {
+    const johtoCards = cardPool.filter((card) => {
+      const numericId = Number.parseInt(card.id.slice(1), 10)
+      return Number.isFinite(numericId) && numericId >= 152 && numericId <= 251
+    })
+
+    expect(johtoCards).toHaveLength(100)
+    expect(cardPool.find((card) => card.id === 'c152')).toMatchObject({
+      id: 'c152',
+      name: 'Germignon',
+    })
+    expect(cardPool.find((card) => card.id === 'c251')).toMatchObject({
+      id: 'c251',
+      name: 'Celebi',
+    })
   })
 
   test('contains at least one card in each rarity', () => {
@@ -88,5 +105,34 @@ describe('card pool integrity', () => {
       categoryId: 'simili',
       elementId: 'psy',
     })
+  })
+
+  test('keeps inter-type top-5 stat ceilings within a tighter balance spread', () => {
+    const byElement = new Map<string, typeof cardPool>()
+    for (const card of cardPool) {
+      const current = byElement.get(card.elementId) ?? []
+      current.push(card)
+      byElement.set(card.elementId, current)
+    }
+
+    const top5Totals = [...byElement.entries()]
+      .filter(([, cards]) => cards.length >= 5)
+      .map(([elementId, cards]) => {
+        const top5 = [...cards]
+          .sort((left, right) => {
+            const leftSum = left.top + left.right + left.bottom + left.left
+            const rightSum = right.top + right.right + right.bottom + right.left
+            return rightSum - leftSum
+          })
+          .slice(0, 5)
+        const total = top5.reduce((sum, card) => sum + card.top + card.right + card.bottom + card.left, 0)
+        return { elementId, total }
+      })
+
+    const totals = top5Totals.map((entry) => entry.total)
+    const highest = Math.max(...totals)
+    const lowest = Math.min(...totals)
+
+    expect(highest - lowest).toBeLessThanOrEqual(70)
   })
 })

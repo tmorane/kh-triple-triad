@@ -15,6 +15,7 @@ import { createMatchRuntime, type MatchRuntime } from '../domain/match/runtimeEc
 import type { MatchState } from '../domain/match/types'
 import { createMatch, resolveMatchResult } from '../domain/match/engine'
 import { resolveStartingTurn } from '../domain/match/startingTurn'
+import { resolveTutorialScenario, type TutorialScenarioId, type TutorialStep } from '../domain/match/tutorialScenarios'
 import {
   createResetProfile,
   createStoredProfile as createStoredProfileInStorage,
@@ -28,9 +29,11 @@ import {
 } from '../domain/progression/profile'
 import { createSeededRng } from '../domain/random/seededRng'
 import { evaluateAchievements } from '../domain/progression/achievements'
-import { applyMatchMissions } from '../domain/progression/missions'
+import { claimAllAchievementRewards as applyAchievementRewardsClaimAll } from '../domain/progression/achievementRewards'
+import { applyMatchMissions, claimCompletedMission } from '../domain/progression/missions'
 import { applyMatchRewards, type RewardBreakdown } from '../domain/progression/rewards'
 import { applyRankedMatchResult, type RankedMatchResultSummary } from '../domain/progression/ranked'
+import { craftCardFromFragments as applyCardFragmentCraft } from '../domain/progression/fragments'
 import { craftShinyCard as applyShinyCraft } from '../domain/progression/shiny'
 import { resolveTowerFloorSpec } from '../domain/tower/floorPlan'
 import { resolveTowerRelicEffects } from '../domain/tower/relics'
@@ -53,7 +56,7 @@ import {
   type ShopPackId,
   type ShopPurchaseReceipt,
 } from '../domain/progression/shop'
-import type { CardId, DeckSlotId, MatchMode, MatchQueue, MatchResult, PlayerProfile, RuleSet } from '../domain/types'
+import type { CardElementId, CardId, DeckSlotId, MatchMode, MatchQueue, MatchResult, MissionId, PlayerProfile, RuleSet } from '../domain/types'
 
 interface CurrentMatch {
   state: MatchState
@@ -64,6 +67,13 @@ interface CurrentMatch {
   opponent: CpuOpponent
   rewardMultiplier: number
   usedAutoDeck: boolean
+  tutorial?: {
+    scenarioId: TutorialScenarioId
+    title: string
+    description: string
+    elementId?: CardElementId
+    steps: TutorialStep[]
+  }
   tower?: {
     floor: number
     checkpointFloor: number
@@ -103,7 +113,7 @@ interface GameContextValue {
     mode: MatchMode,
     deck: CardId[],
     rules: RuleSet,
-    options?: { useAutoDeck?: boolean; normalOpponentLevel?: OpponentLevel },
+    options?: { useAutoDeck?: boolean; normalOpponentLevel?: OpponentLevel; tutorialScenarioId?: TutorialScenarioId },
   ): void
   startTowerRun?(): void
   resumeTowerRun?(): void
@@ -118,6 +128,7 @@ interface GameContextValue {
   toggleDeckSlotCard(slotId: DeckSlotId, cardId: CardId, mode: MatchMode): void
   setDeckSlotMode(slotId: DeckSlotId, mode: MatchMode): void
   setDeckSlotRules(slotId: DeckSlotId, rules: { same: boolean; plus: boolean }): void
+  claimMission?(missionId: MissionId): { valid: boolean; reason?: string }
   updateCurrentMatch(state: MatchState): void
   finalizeCurrentMatch(claimedCpuCardId?: CardId): LastMatchSummary
   clearLastMatchSummary(): void
@@ -127,12 +138,14 @@ interface GameContextValue {
   openOwnedPacks?(packId: ShopPackId, quantity: number): OpenedPackBatchResult
   openShinyTestPack?(): OpenedShinyTestPackResult
   buySpecialPack(request: SpecialPackPurchaseRequest): OpenedSpecialPackResult
+  craftCardFromFragments?(cardId: CardId): void
   craftShinyCard?(cardId: CardId): void
   addTestGold(amount: number): void
   createStoredProfile(name: string): { valid: boolean; reason?: string }
   switchStoredProfile(profileId: string): void
   deleteStoredProfile(profileId: string): { valid: boolean; reason?: string }
   resetProfile(): void
+  claimAllAchievementRewards?(): { claimedCount: number; grantedCommonPacks: number }
 }
 
 export const GameContext = createContext<GameContextValue | null>(null)
@@ -142,6 +155,7 @@ function cloneProfile(profile: PlayerProfile): PlayerProfile {
     ...profile,
     ownedCardIds: [...profile.ownedCardIds],
     cardCopiesById: { ...profile.cardCopiesById },
+    cardFragmentsById: { ...profile.cardFragmentsById },
     shinyCardCopiesById: { ...profile.shinyCardCopiesById },
     packInventoryByRarity: { ...profile.packInventoryByRarity },
     deckSlots: profile.deckSlots.map((slot) => ({
@@ -151,12 +165,15 @@ function cloneProfile(profile: PlayerProfile): PlayerProfile {
       rules: { ...slot.rules },
     })) as PlayerProfile['deckSlots'],
     stats: { ...profile.stats },
+    achievementProgress: { ...profile.achievementProgress },
     achievements: [...profile.achievements],
+    achievementRewardsClaimedById: { ...profile.achievementRewardsClaimedById },
     missions: {
       m1_type_specialist: { ...profile.missions.m1_type_specialist },
       m2_combo_practitioner: { ...profile.missions.m2_combo_practitioner },
       m3_corner_tactician: { ...profile.missions.m3_corner_tactician },
     },
+    missionRewardsGrantedById: { ...profile.missionRewardsGrantedById },
     rankedByMode: {
       '3x3': {
         ...profile.rankedByMode['3x3'],
@@ -168,6 +185,12 @@ function cloneProfile(profile: PlayerProfile): PlayerProfile {
       },
     },
     settings: { ...profile.settings },
+    tutorialProgress: profile.tutorialProgress
+      ? {
+          baseCompleted: profile.tutorialProgress.baseCompleted,
+          completedElementById: { ...profile.tutorialProgress.completedElementById },
+        }
+      : undefined,
   }
 }
 
@@ -218,7 +241,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       opponent,
       rewardMultiplier,
       usedAutoDeck,
+      enableElementPowers,
+      strictPowerTargeting,
       tower,
+      tutorial,
     }: {
       queue: MatchQueue
       mode: MatchMode
@@ -230,6 +256,9 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       opponent: CpuOpponent
       rewardMultiplier: number
       usedAutoDeck: boolean
+      enableElementPowers?: boolean
+      strictPowerTargeting?: boolean
+      tutorial?: CurrentMatch['tutorial']
       tower?: CurrentMatch['tower']
     }) => {
       const state = createMatch({
@@ -249,8 +278,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
             secondaryTypeId: null,
           },
         },
-        enableElementPowers: true,
-        strictPowerTargeting: true,
+        enableElementPowers: enableElementPowers ?? true,
+        strictPowerTargeting: strictPowerTargeting ?? true,
       })
 
       const runtime = createMatchRuntime(state)
@@ -264,6 +293,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         opponent,
         rewardMultiplier,
         usedAutoDeck,
+        tutorial,
         tower,
       })
     }
@@ -322,6 +352,38 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         const activeProfile = profileRef.current
         const modeSpec = getModeSpec(mode)
         const useAutoDeck = options?.useAutoDeck ?? false
+        const tutorialScenarioId = options?.tutorialScenarioId
+        if (queue === 'tutorial') {
+          if (!tutorialScenarioId) {
+            throw new Error('Tutorial scenario is required.')
+          }
+          const scenario = resolveTutorialScenario(tutorialScenarioId)
+          const seed = Date.now()
+          const opponent = buildCpuOpponentForLevel(1, scenario.playerDeck, seed, scenario.mode)
+          startPreparedMatch({
+            queue: 'tutorial',
+            mode: scenario.mode,
+            playerDeck: [...scenario.playerDeck],
+            cpuDeck: [...scenario.cpuDeck],
+            rules: { ...scenario.rules },
+            seed,
+            startingTurn: scenario.steps[0]?.actor === 'cpu' ? 'cpu' : 'player',
+            opponent,
+            rewardMultiplier: 0,
+            usedAutoDeck: false,
+            enableElementPowers: scenario.enableElementPowers,
+            strictPowerTargeting: scenario.strictPowerTargeting,
+            tutorial: {
+              scenarioId: scenario.id,
+              title: scenario.title,
+              description: scenario.description,
+              elementId: scenario.elementId,
+              steps: scenario.steps,
+            },
+          })
+          setLastMatchSummary(null)
+          return
+        }
         const requestedNormalOpponentLevel = options?.normalOpponentLevel
         const ownedUniqueCount = new Set(activeProfile.ownedCardIds).size
         if (useAutoDeck && ownedUniqueCount < modeSpec.deckSize) {
@@ -354,18 +416,11 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         const cpuDeck = [...opponent.deck]
         const playerDeck = useAutoDeck ? buildAutoPlayerDeck(opponent.scoreRange, seed + 1, mode, activeProfile.ownedCardIds) : [...deck]
         const rewardMultiplier = useAutoDeck ? 1.5 : 1
-        const effectiveRules: RuleSet =
-          queue === 'ranked'
-            ? {
-                open: true,
-                same: false,
-                plus: false,
-              }
-            : {
-                open: true,
-                same: rules.same,
-                plus: rules.plus,
-              }
+        const effectiveRules: RuleSet = {
+          open: rules.open,
+          same: false,
+          plus: false,
+        }
 
         startPreparedMatch({
           queue,
@@ -495,6 +550,11 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
             return
           }
           slot.name = name.trim()
+          nextProfile.achievementProgress.deckEdits += 1
+          const unlocked = evaluateAchievements(nextProfile)
+          if (unlocked.length > 0) {
+            nextProfile.achievements.push(...unlocked)
+          }
         })
 
         return { valid: true }
@@ -507,9 +567,14 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           }
           if (mode === '4x4') {
             slot.cards4x4 = toggleCardInDeck(slot.cards4x4, cardId, getModeSpec(mode).deckSize)
-            return
+          } else {
+            slot.cards = toggleCardInDeck(slot.cards, cardId, getModeSpec(mode).deckSize)
           }
-          slot.cards = toggleCardInDeck(slot.cards, cardId, getModeSpec(mode).deckSize)
+          nextProfile.achievementProgress.deckEdits += 1
+          const unlocked = evaluateAchievements(nextProfile)
+          if (unlocked.length > 0) {
+            nextProfile.achievements.push(...unlocked)
+          }
         })
       },
       setDeckSlotMode: (slotId, mode) => {
@@ -538,6 +603,15 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           }
         })
       },
+      claimMission: (missionId) => {
+        const claimResult = claimCompletedMission(profileRef.current, missionId, Date.now())
+        if (!claimResult.claimed) {
+          return { valid: false, reason: 'Mission is not ready.' }
+        }
+
+        commitComputedProfile(claimResult.profile)
+        return { valid: true }
+      },
       updateCurrentMatch: (state) => {
         setCurrentMatch((existing) => {
           if (!existing) {
@@ -553,6 +627,64 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         }
 
         const result = resolveMatchResult(currentMatch.state)
+        if (currentMatch.queue === 'tutorial') {
+          const nextProfile = cloneProfile(profile)
+          const tutorialProgress = nextProfile.tutorialProgress ?? { baseCompleted: false, completedElementById: {} }
+          const hadBaseTutorial = tutorialProgress.baseCompleted
+          if (currentMatch.tutorial?.scenarioId === 'intro-basics') {
+            tutorialProgress.baseCompleted = true
+          }
+          if (currentMatch.tutorial?.elementId) {
+            tutorialProgress.completedElementById[currentMatch.tutorial.elementId] = true
+          }
+          nextProfile.tutorialProgress = tutorialProgress
+          if (!hadBaseTutorial && tutorialProgress.baseCompleted) {
+            nextProfile.achievementProgress.baseTutorialsCompleted += 1
+          }
+          nextProfile.achievementProgress.elementTutorialsCompleted = Object.keys(tutorialProgress.completedElementById).length
+
+          const unlocked = evaluateAchievements(nextProfile)
+          if (unlocked.length > 0) {
+            nextProfile.achievements.push(...unlocked)
+          }
+          commitComputedProfile(nextProfile)
+
+          const rewards: RewardBreakdown = {
+            goldAwarded: 0,
+            bonusGoldFromDuplicate: 0,
+            bonusGoldFromDifficulty: 0,
+            bonusGoldFromComboBounty: 0,
+            bonusGoldFromCleanVictory: 0,
+            bonusGoldFromSecondarySynergy: 0,
+            bonusGoldFromCriticalVictory: 0,
+            bonusGoldFromAutoDeck: 0,
+            criticalVictory: false,
+            droppedCardId: null,
+            duplicateConverted: false,
+            newlyUnlockedAchievements: [],
+          }
+
+          const summary: LastMatchSummary = {
+            queue: currentMatch.queue,
+            result,
+            rewards,
+            newlyOwnedCards: [],
+            opponent: {
+              level: currentMatch.opponent.level,
+              aiProfile: currentMatch.opponent.aiProfile,
+              scoreRange: { ...currentMatch.opponent.scoreRange },
+              deckScore: currentMatch.opponent.deckScore,
+              winGoldBonus: currentMatch.opponent.winGoldBonus,
+            },
+            rankedMode: null,
+            rankedUpdate: null,
+          }
+
+          setLastMatchSummary(summary)
+          setCurrentMatch(null)
+          return summary
+        }
+
         const progression = applyMatchRewards(
           profile,
           result,
@@ -570,7 +702,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
             winner: result.winner,
             playerPrimarySynergyActive: false,
             playerSecondarySynergyActive: false,
-            playerSamePlusTriggers: result.metrics?.samePlusTriggersByActor.player ?? 0,
+            playerSamePlusTriggers: result.rules.open ? 0 : 1,
             playerCornerPlays: result.metrics?.cornerPlaysByActor.player ?? 0,
           },
           currentMatch.seed + currentMatch.state.turns + 1,
@@ -585,6 +717,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           const rankedModeForMatch = currentMatch.state.config.mode
           rankedMode = rankedModeForMatch
           rankedUpdate = applyRankedMatchResult(nextProfile.rankedByMode[rankedModeForMatch], result.winner)
+          nextProfile.achievementProgress.rankedMatchesPlayed += 1
+          if (result.winner === 'player') {
+            nextProfile.achievementProgress.rankedWins += 1
+          }
           nextProfile = {
             ...nextProfile,
             rankedByMode: {
@@ -637,6 +773,14 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
               pendingReward: null,
               nextFloor: null,
             }
+          }
+        }
+
+        const unlocked = evaluateAchievements(nextProfile)
+        if (unlocked.length > 0) {
+          nextProfile = {
+            ...nextProfile,
+            achievements: [...nextProfile.achievements, ...unlocked],
           }
         }
 
@@ -705,8 +849,22 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         commitComputedProfile(progression.profile)
         return progression.opened
       },
+      craftCardFromFragments: (cardId) => {
+        const crafted = applyCardFragmentCraft(profile, cardId)
+        crafted.achievementProgress.cardsAcquired += 1
+        const unlocked = evaluateAchievements(crafted)
+        if (unlocked.length > 0) {
+          crafted.achievements.push(...unlocked)
+        }
+        commitComputedProfile(crafted)
+      },
       craftShinyCard: (cardId) => {
         const crafted = applyShinyCraft(profile, cardId)
+        crafted.achievementProgress.shinyCrafted += 1
+        const unlocked = evaluateAchievements(crafted)
+        if (unlocked.length > 0) {
+          crafted.achievements.push(...unlocked)
+        }
         commitComputedProfile(crafted)
       },
       addTestGold: (amount) => {
@@ -758,6 +916,16 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         setProfile(next)
         setCurrentMatch(null)
         setLastMatchSummary(null)
+      },
+      claimAllAchievementRewards: () => {
+        const progression = applyAchievementRewardsClaimAll(profileRef.current)
+        if (progression.grantedCommonPacks > 0) {
+          commitComputedProfile(progression.profile)
+        }
+        return {
+          claimedCount: progression.claimedIds.length,
+          grantedCommonPacks: progression.grantedCommonPacks,
+        }
       },
     }
   }, [

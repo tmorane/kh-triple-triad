@@ -1,11 +1,12 @@
-import { beforeEach, describe, expect, test, vi } from 'vitest'
+import { afterAll, beforeEach, describe, expect, test, vi } from 'bun:test'
 import {
+  __setCloudLadderDependenciesForTests,
+  __setMockLadderEnabledForTests,
   fetchOwnedCardsLadder,
   fetchPeakRankLadder,
   isGlobalLadderEnabled,
   isMockLadderEnabled,
 } from './cloudLadderStore'
-import * as supabaseClient from './supabaseClient'
 
 interface LocalProfileLadderEntryMock {
   id: string
@@ -18,18 +19,9 @@ interface LocalProfileLadderEntryMock {
   updatedAt: string
 }
 
-const { listStoredProfilesForLadderMock } = vi.hoisted(() => ({
-  listStoredProfilesForLadderMock: vi.fn<() => LocalProfileLadderEntryMock[]>(() => []),
-}))
-
-vi.mock('./supabaseClient', () => ({
-  getSupabaseClient: vi.fn(() => null),
-  isCloudAuthEnabled: vi.fn(() => false),
-}))
-
-vi.mock('../../domain/progression/profile', () => ({
-  listStoredProfilesForLadder: listStoredProfilesForLadderMock,
-}))
+const listStoredProfilesForLadderMock = vi.fn<() => LocalProfileLadderEntryMock[]>(() => [])
+const getSupabaseClientMock = vi.fn(() => null)
+const isCloudAuthEnabledMock = vi.fn(() => false)
 
 interface LadderRow {
   user_id: string
@@ -82,11 +74,20 @@ function createClient(rowsBySort: {
 describe('cloudLadderStore mock ladder', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    vi.unstubAllEnvs()
-    vi.stubEnv('VITE_ENABLE_MOCK_LADDER', '')
-    vi.mocked(supabaseClient.isCloudAuthEnabled).mockReturnValue(false)
-    vi.mocked(supabaseClient.getSupabaseClient).mockReturnValue(null)
+    __setMockLadderEnabledForTests(false)
+    isCloudAuthEnabledMock.mockReturnValue(false)
+    getSupabaseClientMock.mockReturnValue(null)
     listStoredProfilesForLadderMock.mockReturnValue([])
+    __setCloudLadderDependenciesForTests({
+      listStoredProfilesForLadder: listStoredProfilesForLadderMock,
+      isCloudAuthEnabled: isCloudAuthEnabledMock,
+      getSupabaseClient: getSupabaseClientMock,
+    })
+  })
+
+  afterAll(() => {
+    __setMockLadderEnabledForTests(null)
+    __setCloudLadderDependenciesForTests(null)
   })
 
   test('enables global ladder when local profiles exist (without cloud and without mock)', () => {
@@ -153,8 +154,8 @@ describe('cloudLadderStore mock ladder', () => {
         updatedAt: '2026-02-20T08:00:00.000Z',
       },
     ])
-    vi.mocked(supabaseClient.isCloudAuthEnabled).mockReturnValue(true)
-    vi.mocked(supabaseClient.getSupabaseClient).mockReturnValue(
+    isCloudAuthEnabledMock.mockReturnValue(true)
+    getSupabaseClientMock.mockReturnValue(
       createClient({
         owned: [
           {
@@ -193,14 +194,14 @@ describe('cloudLadderStore mock ladder', () => {
     expect(peak.some((entry) => entry.playerName === 'LocalHero')).toBe(true)
   })
 
-  test('enables mock/global ladder flags from env', () => {
-    vi.stubEnv('VITE_ENABLE_MOCK_LADDER', 'true')
+  test('enables mock/global ladder flags when mock ladder mode is enabled', () => {
+    __setMockLadderEnabledForTests(true)
     expect(isMockLadderEnabled()).toBe(true)
     expect(isGlobalLadderEnabled()).toBe(true)
   })
 
   test('returns mock ladders when mock is enabled and cloud is disabled', async () => {
-    vi.stubEnv('VITE_ENABLE_MOCK_LADDER', 'true')
+    __setMockLadderEnabledForTests(true)
 
     const owned = await fetchOwnedCardsLadder(50)
     const peak = await fetchPeakRankLadder('4x4', 50)
@@ -212,9 +213,9 @@ describe('cloudLadderStore mock ladder', () => {
   })
 
   test('merges real + mock data with global sort when mock mode is enabled', async () => {
-    vi.stubEnv('VITE_ENABLE_MOCK_LADDER', 'true')
-    vi.mocked(supabaseClient.isCloudAuthEnabled).mockReturnValue(true)
-    vi.mocked(supabaseClient.getSupabaseClient).mockReturnValue(
+    __setMockLadderEnabledForTests(true)
+    isCloudAuthEnabledMock.mockReturnValue(true)
+    getSupabaseClientMock.mockReturnValue(
       createClient({
         owned: [
           {
@@ -256,9 +257,9 @@ describe('cloudLadderStore mock ladder', () => {
   })
 
   test('falls back to mock ladders when cloud query fails and mock mode is enabled', async () => {
-    vi.stubEnv('VITE_ENABLE_MOCK_LADDER', 'true')
-    vi.mocked(supabaseClient.isCloudAuthEnabled).mockReturnValue(true)
-    vi.mocked(supabaseClient.getSupabaseClient).mockReturnValue(
+    __setMockLadderEnabledForTests(true)
+    isCloudAuthEnabledMock.mockReturnValue(true)
+    getSupabaseClientMock.mockReturnValue(
       createClient({
         owned: [],
         peak: [],
@@ -277,9 +278,9 @@ describe('cloudLadderStore mock ladder', () => {
   })
 
   test('applies limit after merge + sort', async () => {
-    vi.stubEnv('VITE_ENABLE_MOCK_LADDER', '1')
-    vi.mocked(supabaseClient.isCloudAuthEnabled).mockReturnValue(true)
-    vi.mocked(supabaseClient.getSupabaseClient).mockReturnValue(
+    __setMockLadderEnabledForTests(true)
+    isCloudAuthEnabledMock.mockReturnValue(true)
+    getSupabaseClientMock.mockReturnValue(
       createClient({
         owned: [
           {

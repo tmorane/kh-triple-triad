@@ -143,11 +143,20 @@ function calculateWorstCaseCpuLeadAfterPlayerTurn(state: MatchState): number {
 
   let worstLead = Number.POSITIVE_INFINITY
   for (const playerMove of playerMoves) {
-    const afterPlayer = applyMoveDetailed(state, playerMove).state
+    let afterPlayer: MatchState
+    try {
+      afterPlayer = applyMoveDetailed(state, playerMove).state
+    } catch {
+      continue
+    }
     const lead = countCpuLead(afterPlayer)
     if (lead < worstLead) {
       worstLead = lead
     }
+  }
+
+  if (!Number.isFinite(worstLead)) {
+    return countCpuLead(state)
   }
 
   return worstLead

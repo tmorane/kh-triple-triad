@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test } from 'bun:test'
 import { getCard } from '../cards/cardPool'
 import type { MatchState } from './types'
 import { buildMatchEffectsViewModel } from './effectsViewModel'
@@ -59,7 +59,7 @@ describe('buildMatchEffectsViewModel', () => {
     }
     state.elementState.mode = 'normal'
     state.elementState.floodedCell = 4
-    state.elementState.frozenCellByActor.player = 2
+    state.elementState.frozenCellByActor.player = { cell: 2, turnsRemaining: 2 }
     state.elementState.poisonedHandByActor.player = ['c42']
 
     const view = buildMatchEffectsViewModel(state)
@@ -81,12 +81,12 @@ describe('buildMatchEffectsViewModel', () => {
       throw new Error('Expected element state.')
     }
     state.elementState.floodedCell = 6
-    state.elementState.frozenCellByActor.player = 5
+    state.elementState.frozenCellByActor.player = { cell: 5, turnsRemaining: 2 }
     state.board[0] = { owner: 'cpu', cardId: 'c02' }
     state.elementState.boardEffectsByCell[0] = {
       permanentDelta: { top: -1, right: -1, bottom: -1, left: -1 },
       burnTicksRemaining: 2,
-      volatileAllStatsMinusOneUntilEndOfOwnerNextTurn: null,
+      allStatsMinusOneStacks: [],
       unflippableUntilEndOfOpponentNextTurn: null,
       swappedHighLowUntilMatchEnd: false,
       rockShieldCharges: 0,
@@ -110,6 +110,34 @@ describe('buildMatchEffectsViewModel', () => {
     expect(stats?.right.trend).toBe('debuff')
   })
 
+  test('shows separate temporary -1 indicators for vol and sol when both stacks are active', () => {
+    const state = makeBaseState()
+    if (!state.elementState) {
+      throw new Error('Expected element state.')
+    }
+    state.board[4] = { owner: 'cpu', cardId: 'c02' }
+    state.elementState.boardEffectsByCell[4] = {
+      permanentDelta: { top: 0, right: 0, bottom: 0, left: 0 },
+      burnTicksRemaining: 0,
+      allStatsMinusOneStacks: [
+        { source: 'vol', actor: 'cpu', untilTurn: 2 },
+        { source: 'sol', actor: 'cpu', untilTurn: 3 },
+      ],
+      unflippableUntilEndOfOpponentNextTurn: null,
+      swappedHighLowUntilMatchEnd: false,
+      rockShieldCharges: 0,
+      poisonFirstCombatPending: false,
+      insectEntryStacks: 0,
+      dragonApplied: false,
+    }
+
+    const view = buildMatchEffectsViewModel(state)
+    const indicators = view.boardCardIndicators[4] ?? []
+
+    expect(indicators.some((item) => item.key === 'card-volatile')).toBe(true)
+    expect(indicators.some((item) => item.key === 'card-ground-volatile')).toBe(true)
+  })
+
   test('shows public hand poison and on-pose power usage marker', () => {
     const state = makeBaseState()
     if (!state.elementState) {
@@ -123,10 +151,11 @@ describe('buildMatchEffectsViewModel', () => {
     const usedPowerIndicators = view.handIndicatorsByActor.player.c17 ?? []
     const poisonedPlayerStats = view.handDisplayStatsByActor.player.c42
     const poisonedCpuStats = view.handDisplayStatsByActor.cpu.c03
+    const poisonedBaseTop = getCard('c42').top
 
     expect(poisonedIndicators.some((item) => item.key === 'hand-poisoned')).toBe(true)
     expect(usedPowerIndicators.some((item) => item.key === 'hand-power-used')).toBe(true)
-    expect(poisonedPlayerStats?.top.value).toBe(2)
+    expect(poisonedPlayerStats?.top.value).toBe(poisonedBaseTop - 1)
     expect(poisonedPlayerStats?.top.trend).toBe('debuff')
     expect(poisonedCpuStats).toBeUndefined()
   })
@@ -134,7 +163,7 @@ describe('buildMatchEffectsViewModel', () => {
   test('shows plante adjacency bonus and keeps combat bonus contextual only', () => {
     const state = makeBaseState()
     state.board[4] = { owner: 'player', cardId: 'c01' }
-    state.board[1] = { owner: 'player', cardId: 'c03' }
+    state.board[1] = { owner: 'player', cardId: 'c20' }
     state.board[2] = { owner: 'player', cardId: 'c26' }
 
     const view = buildMatchEffectsViewModel(state)
@@ -142,16 +171,64 @@ describe('buildMatchEffectsViewModel', () => {
     const combatIndicators = view.boardCardIndicators[2] ?? []
     const planteStats = view.displayStatsByCell[4]
     const combatStats = view.displayStatsByCell[2]
+    const planteBaseTop = getCard('c01').top
+    const combatBaseTop = getCard('c26').top
 
     expect(planteIndicators.some((item) => item.key === 'card-plante-pack')).toBe(true)
     expect(combatIndicators.some((item) => item.key === 'card-combat-attack')).toBe(true)
-    expect(planteStats?.top.value).toBe(3)
+    expect(planteStats?.top.value).toBe(planteBaseTop + 1)
     expect(planteStats?.top.trend).toBe('buff')
-    expect(combatStats?.top.value).toBe(3)
+    expect(combatStats?.top.value).toBe(combatBaseTop)
     expect(combatStats?.top.trend).toBe('neutral')
   })
 
-  test('marks duplicated type slots as used when one card of that type was already played', () => {
+  test('does not show plante pack bonus for a stolen plante card', () => {
+    const state = makeBaseState()
+    if (!state.elementState) {
+      throw new Error('Expected element state.')
+    }
+    state.board[4] = { owner: 'cpu', cardId: 'c01' }
+    state.board[1] = { owner: 'cpu', cardId: 'c20' }
+    state.elementState.boardEffectsByCell[4] = {
+      permanentDelta: { top: 0, right: 0, bottom: 0, left: 0 },
+      burnTicksRemaining: 0,
+      allStatsMinusOneStacks: [],
+      unflippableUntilEndOfOpponentNextTurn: null,
+      swappedHighLowUntilMatchEnd: false,
+      rockShieldCharges: 0,
+      poisonFirstCombatPending: false,
+      insectEntryStacks: 0,
+      dragonApplied: false,
+      planteSourceOwner: 'player',
+    }
+    state.elementState.boardEffectsByCell[1] = {
+      permanentDelta: { top: 0, right: 0, bottom: 0, left: 0 },
+      burnTicksRemaining: 0,
+      allStatsMinusOneStacks: [],
+      unflippableUntilEndOfOpponentNextTurn: null,
+      swappedHighLowUntilMatchEnd: false,
+      rockShieldCharges: 0,
+      poisonFirstCombatPending: false,
+      insectEntryStacks: 0,
+      dragonApplied: false,
+      planteSourceOwner: 'cpu',
+    }
+
+    const view = buildMatchEffectsViewModel(state)
+    const stolenPlanteIndicators = view.boardCardIndicators[4] ?? []
+    const alliedPlanteIndicators = view.boardCardIndicators[1] ?? []
+    const stolenPlanteStats = view.displayStatsByCell[4]
+    const alliedPlanteStats = view.displayStatsByCell[1]
+
+    expect(stolenPlanteIndicators.some((item) => item.key === 'card-plante-pack')).toBe(false)
+    expect(alliedPlanteIndicators.some((item) => item.key === 'card-plante-pack')).toBe(false)
+    expect(stolenPlanteStats?.top.value).toBe(2)
+    expect(stolenPlanteStats?.top.trend).toBe('neutral')
+    expect(alliedPlanteStats?.top.value).toBe(1)
+    expect(alliedPlanteStats?.top.trend).toBe('neutral')
+  })
+
+  test('keeps duplicated type slot active until on-pose power is consumed', () => {
     const state = makeBaseState()
     if (!state.elementState) {
       throw new Error('Expected element state.')
@@ -166,7 +243,24 @@ describe('buildMatchEffectsViewModel', () => {
     expect(playerSlots).toHaveLength(4)
     const waterSlots = playerSlots.filter((slot) => slot.elementId === 'eau')
     expect(waterSlots).toHaveLength(1)
-    expect(waterSlots[0]?.state).toBe('used')
+    expect(waterSlots[0]?.state).toBe('active')
+  })
+
+  test('keeps passive plante type slot active after a plante card is already played', () => {
+    const state = makeBaseState()
+    if (!state.elementState) {
+      throw new Error('Expected element state.')
+    }
+
+    state.config.playerDeck = ['c01', 'c20', 'c17', 'c26', 'c32']
+    state.hands.player = ['c20', 'c17', 'c26', 'c32']
+
+    const view = buildMatchEffectsViewModel(state)
+    const playerSlots = view.laneTypeSlotsByActor.player
+    const planteSlots = playerSlots.filter((slot) => slot.elementId === 'plante')
+
+    expect(planteSlots).toHaveLength(1)
+    expect(planteSlots[0]?.state).toBe('active')
   })
 
   test('marks duplicated type slots as used when on-pose type power is consumed', () => {
@@ -203,5 +297,39 @@ describe('buildMatchEffectsViewModel', () => {
 
     expect(view.laneTypeSlotsByActor.player).toHaveLength(expectedPlayerTypes.size)
     expect(view.laneTypeSlotsByActor.cpu).toHaveLength(expectedCpuTypes.size)
+  })
+
+  test('shows roche shield indicator only when rockShieldCharges is above zero', () => {
+    const state = makeBaseState()
+    if (!state.elementState) {
+      throw new Error('Expected element state.')
+    }
+
+    state.board[4] = { owner: 'player', cardId: 'c32' }
+    state.elementState.boardEffectsByCell[4] = {
+      permanentDelta: { top: 0, right: 0, bottom: 0, left: 0 },
+      burnTicksRemaining: 0,
+      allStatsMinusOneStacks: [],
+      unflippableUntilEndOfOpponentNextTurn: null,
+      swappedHighLowUntilMatchEnd: false,
+      rockShieldCharges: 1,
+      poisonFirstCombatPending: false,
+      insectEntryStacks: 0,
+      dragonApplied: false,
+    }
+
+    const withShieldView = buildMatchEffectsViewModel(state)
+    const withShieldIndicators = withShieldView.boardCardIndicators[4] ?? []
+    const shieldIndicator = withShieldIndicators.find((indicator) => indicator.key === 'card-rock-shield')
+    expect(shieldIndicator?.label).toBe('Bouclier x1')
+
+    state.elementState.boardEffectsByCell[4] = {
+      ...state.elementState.boardEffectsByCell[4]!,
+      rockShieldCharges: 0,
+    }
+
+    const withoutShieldView = buildMatchEffectsViewModel(state)
+    const withoutShieldIndicators = withoutShieldView.boardCardIndicators[4] ?? []
+    expect(withoutShieldIndicators.some((indicator) => indicator.key === 'card-rock-shield')).toBe(false)
   })
 })

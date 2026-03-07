@@ -1,0 +1,84 @@
+{
+  "generatedAt": "2026-03-03T00:09:45.169Z",
+  "counts": {
+    "common": 34,
+    "uncommon": 26,
+    "epic": 13,
+    "rare": 20,
+    "legendary": 7
+  },
+  "sumRanges": {
+    "common": [
+      4,
+      10
+    ],
+    "uncommon": [
+      12,
+      14
+    ],
+    "rare": [
+      18,
+      19
+    ],
+    "epic": [
+      24,
+      25
+    ],
+    "legendary": [
+      31,
+      35
+    ]
+  },
+  "seventhLegendary": {
+    "dex": 248,
+    "name": "Tyranocif"
+  },
+  "first": {
+    "dex": 152,
+    "id": "c152",
+    "name": "Germignon",
+    "bst": 318,
+    "stats": {
+      "atk": 49,
+      "spe": 45,
+      "def": 65,
+      "spa": 49
+    },
+    "stage": 1,
+    "maxStage": 3,
+    "isLegendary": false,
+    "isMythical": false,
+    "elementId": "plante",
+    "categoryId": "humain",
+    "rarity": "common",
+    "targetSum": 8,
+    "top": 2,
+    "right": 2,
+    "bottom": 2,
+    "left": 2
+  },
+  "last": {
+    "dex": 251,
+    "id": "c251",
+    "name": "Celebi",
+    "bst": 600,
+    "stats": {
+      "atk": 100,
+      "spe": 100,
+      "def": 100,
+      "spa": 100
+    },
+    "stage": 1,
+    "maxStage": 1,
+    "isLegendary": false,
+    "isMythical": true,
+    "elementId": "psy",
+    "categoryId": "simili",
+    "rarity": "legendary",
+    "targetSum": 34,
+    "top": 9,
+    "right": 9,
+    "bottom": 8,
+    "left": 8
+  }
+}

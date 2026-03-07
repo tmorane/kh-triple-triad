@@ -1,15 +1,11 @@
-import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest'
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
+import { __setCardPoolOverrideForTests } from '../cards/cardPool'
+import { selectCpuMove } from './ai'
+import { applyMove, applyMoveDetailed, createMatch, resolveDisplaySides } from './engine'
 import type { MatchConfig, Move } from '../types'
 
-let applyMove: typeof import('./engine')['applyMove']
-let applyMoveDetailed: typeof import('./engine')['applyMoveDetailed']
-let createMatch: typeof import('./engine')['createMatch']
-let resolveDisplaySides: typeof import('./engine')['resolveDisplaySides']
-
-beforeAll(async () => {
-  vi.resetModules()
-  vi.doMock('../cards/cardPool', () => {
-    const cardById = {
+beforeAll(() => {
+  const cardById = {
       p_normal: {
         id: 'p_normal',
         name: 'Normal Unit',
@@ -186,9 +182,42 @@ beforeAll(async () => {
         categoryId: 'humain',
         elementId: 'insecte',
       },
+      p_bug_c: {
+        id: 'p_bug_c',
+        name: 'Bug Unit C',
+        top: 3,
+        right: 2,
+        bottom: 3,
+        left: 3,
+        rarity: 'common',
+        categoryId: 'humain',
+        elementId: 'insecte',
+      },
+      p_bug_d: {
+        id: 'p_bug_d',
+        name: 'Bug Unit D',
+        top: 2,
+        right: 3,
+        bottom: 3,
+        left: 3,
+        rarity: 'common',
+        categoryId: 'humain',
+        elementId: 'insecte',
+      },
       p_rock: {
         id: 'p_rock',
         name: 'Rock Unit',
+        top: 3,
+        right: 3,
+        bottom: 3,
+        left: 3,
+        rarity: 'common',
+        categoryId: 'humain',
+        elementId: 'roche',
+      },
+      p_rock_2: {
+        id: 'p_rock_2',
+        name: 'Rock Unit 2',
         top: 3,
         right: 3,
         bottom: 3,
@@ -211,6 +240,17 @@ beforeAll(async () => {
       p_grass: {
         id: 'p_grass',
         name: 'Grass Unit',
+        top: 3,
+        right: 3,
+        bottom: 3,
+        left: 3,
+        rarity: 'common',
+        categoryId: 'humain',
+        elementId: 'plante',
+      },
+      p_grass_2: {
+        id: 'p_grass_2',
+        name: 'Grass Unit 2',
         top: 3,
         right: 3,
         bottom: 3,
@@ -351,27 +391,13 @@ beforeAll(async () => {
         categoryId: 'humain',
         elementId: 'fee',
       },
-    } as const
+  } as const
 
-    return {
-      cardPool: Object.values(cardById),
-      cardById,
-      getCard(cardId: string) {
-        const card = cardById[cardId as keyof typeof cardById]
-        if (!card) {
-          throw new Error(`Unknown card: ${cardId}`)
-        }
-        return card
-      },
-    }
-  })
-
-  ;({ applyMove, applyMoveDetailed, createMatch, resolveDisplaySides } = await import('./engine'))
+  __setCardPoolOverrideForTests(Object.values(cardById))
 })
 
 afterAll(() => {
-  vi.doUnmock('../cards/cardPool')
-  vi.resetModules()
+  __setCardPoolOverrideForTests(null)
 })
 
 function makeConfig(overrides?: Partial<MatchConfig>): MatchConfig {
@@ -406,8 +432,8 @@ describe('match engine element powers', () => {
   test('single normal card does not force normal mode', () => {
     const state = createMatch(makeConfig())
 
-    expect(state.rules.same).toBe(true)
-    expect(state.rules.plus).toBe(true)
+    expect(state.rules.same).toBe(false)
+    expect(state.rules.plus).toBe(false)
   })
 
   test('normal mode disables element targeting requirements', () => {
@@ -450,7 +476,7 @@ describe('match engine element powers', () => {
     ).toThrow('Power target is required for feu.')
   })
 
-  test('fire burn applies two permanent all-stat debuffs on target owner turns', () => {
+  test('fire burn applies one permanent all-stat debuff on target owner turn', () => {
     const state = createMatch(
       makeConfig({
         playerDeck: ['p_fire', 'p_water', 'p_grass', 'p_ghost', 'c_fill_1'],
@@ -474,7 +500,7 @@ describe('match engine element powers', () => {
     expect(afterBurnResolve.board[1]?.owner).toBe('player')
   })
 
-  test('glace blocks the next opponent turn on targeted cell, then unblocks', () => {
+  test('glace blocks targeted cell for the next targeted actor turn', () => {
     const state = createMatch(
       makeConfig({
         strictPowerTargeting: false,
@@ -495,9 +521,47 @@ describe('match engine element powers', () => {
 
     const afterCpu = applyMove(afterIce, { actor: 'cpu', cardId: 'c_fill_1', cell: 0 })
     const afterPlayer = applyMove(afterCpu, { actor: 'player', cardId: 'p_grass', cell: 7 })
-    const afterCpuRetry = applyMove(afterPlayer, { actor: 'cpu', cardId: 'c_fill_2', cell: 4 })
+    const afterCpuSecond = applyMove(afterPlayer, { actor: 'cpu', cardId: 'c_fill_2', cell: 4 })
 
-    expect(afterCpuRetry.board[4]?.owner).toBe('cpu')
+    expect(afterCpuSecond.board[4]?.owner).toBe('cpu')
+    expect(afterCpuSecond.elementState?.frozenCellByActor.cpu).toBeUndefined()
+  })
+
+  test('cpu ai still picks a move when one empty cell is frozen', () => {
+    const state = createMatch(
+      makeConfig({
+        strictPowerTargeting: false,
+        playerDeck: ['p_ice', 'p_grass', 'p_fire', 'p_water', 'p_ghost'],
+        cpuDeck: ['c_fill_1', 'c_fill_2', 'c_fill_3', 'c_fill_4', 'c_guard'],
+      }),
+    )
+
+    const afterIce = applyMove(state, { actor: 'player', cardId: 'p_ice', cell: 8, powerTarget: { targetCell: 4 } })
+
+    const cpuMove = selectCpuMove(afterIce, 'standard')
+
+    expect(cpuMove.actor).toBe('cpu')
+    expect(cpuMove.cell).not.toBe(4)
+    expect(() => applyMove(afterIce, cpuMove)).not.toThrow()
+  })
+
+  test('glace freeze expires after one turn of the targeted actor', () => {
+    const state = createMatch(
+      makeConfig({
+        strictPowerTargeting: false,
+        playerDeck: ['p_ice', 'p_grass', 'p_fire', 'p_water', 'p_ghost'],
+        cpuDeck: ['c_fill_1', 'c_fill_2', 'c_fill_3', 'c_fill_4', 'c_guard'],
+      }),
+    )
+
+    const afterIce = applyMove(state, { actor: 'player', cardId: 'p_ice', cell: 8, powerTarget: { targetCell: 4 } })
+    expect(() => applyMove(afterIce, { actor: 'cpu', cardId: 'c_fill_1', cell: 4 })).toThrow('Cell 4 is frozen for cpu.')
+
+    const afterCpuFirstTurn = applyMove(afterIce, { actor: 'cpu', cardId: 'c_fill_1', cell: 0 })
+    const afterPlayerFirstTurn = applyMove(afterCpuFirstTurn, { actor: 'player', cardId: 'p_grass', cell: 7 })
+    const afterCpuSecondTurn = applyMove(afterPlayerFirstTurn, { actor: 'cpu', cardId: 'c_fill_2', cell: 4 })
+
+    expect(afterCpuSecondTurn.board[4]?.owner).toBe('cpu')
   })
 
   test('electrik shield prevents flips during next opponent turn', () => {
@@ -510,12 +574,13 @@ describe('match engine element powers', () => {
     )
 
     const afterElectric = applyMove(state, { actor: 'player', cardId: 'p_electric', cell: 4 })
-    const afterCpu = applyMove(afterElectric, { actor: 'cpu', cardId: 'c_attacker', cell: 5 })
+    const resolution = applyMoveDetailed(afterElectric, { actor: 'cpu', cardId: 'c_attacker', cell: 5 })
 
-    expect(afterCpu.board[4]?.owner).toBe('player')
+    expect(resolution.state.board[4]?.owner).toBe('player')
+    expect(resolution.flipEvents).toEqual([])
   })
 
-  test('combat gets +2 while attacking', () => {
+  test('combat gets +1 while attacking (and no longer flips at equal value)', () => {
     const state = createMatch(
       makeConfig({
         strictPowerTargeting: false,
@@ -530,7 +595,7 @@ describe('match engine element powers', () => {
       { actor: 'player', cardId: 'p_fight', cell: 4 },
     ])
 
-    expect(result.board[5]?.owner).toBe('player')
+    expect(result.board[5]?.owner).toBe('cpu')
   })
 
   test('spectre can be played on a frozen cell', () => {
@@ -569,7 +634,28 @@ describe('match engine element powers', () => {
     expect(result.board[4]?.owner).toBe('cpu')
   })
 
-  test('eau flood applies -2 to highest stat when a non-spectre card enters the flooded cell', () => {
+  test('roche grants shield only once per actor in the match', () => {
+    const state = createMatch(
+      makeConfig({
+        strictPowerTargeting: false,
+        playerDeck: ['p_rock', 'p_rock_2', 'p_grass', 'p_fire', 'p_water'],
+        cpuDeck: ['c_attacker', 'c_fill_1', 'c_fill_2', 'c_fill_3', 'c_fill_4'],
+      }),
+    )
+
+    const result = play(state, [
+      { actor: 'player', cardId: 'p_rock', cell: 0 },
+      { actor: 'cpu', cardId: 'c_fill_1', cell: 1 },
+      { actor: 'player', cardId: 'p_rock_2', cell: 4 },
+      { actor: 'cpu', cardId: 'c_attacker', cell: 5 },
+    ])
+
+    expect(result.elementState?.boardEffectsByCell[0]?.rockShieldCharges).toBe(1)
+    expect(result.elementState?.boardEffectsByCell[4]?.rockShieldCharges).toBe(0)
+    expect(result.board[4]?.owner).toBe('cpu')
+  })
+
+  test('eau flood applies -3 to highest stat when a non-spectre card enters the flooded cell', () => {
     const state = createMatch(
       makeConfig({
         strictPowerTargeting: false,
@@ -606,7 +692,58 @@ describe('match engine element powers', () => {
     expect(result.board[5]?.owner).toBe('player')
   })
 
-  test('sol applies current-combat debuff to adjacent cards', () => {
+  test('vol applies a double temporary all-stat malus (-2 total)', () => {
+    const state = createMatch(
+      makeConfig({
+        strictPowerTargeting: false,
+        playerDeck: ['p_flying', 'p_grass', 'p_fire', 'p_water', 'p_ghost'],
+        cpuDeck: ['c_guard', 'c_fill_1', 'c_fill_2', 'c_fill_3', 'c_fill_4'],
+      }),
+    )
+
+    const afterSetup = play(state, [
+      { actor: 'player', cardId: 'p_grass', cell: 8 },
+      { actor: 'cpu', cardId: 'c_guard', cell: 5 },
+    ])
+
+    const afterVol = applyMove(afterSetup, { actor: 'player', cardId: 'p_flying', cell: 4, powerTarget: { targetCardCell: 5 } })
+    const stacks = afterVol.elementState?.boardEffectsByCell[5]?.allStatsMinusOneStacks ?? []
+
+    expect(stacks).toEqual([
+      { source: 'vol', actor: 'cpu', untilTurn: 2 },
+      { source: 'vol', actor: 'cpu', untilTurn: 2 },
+    ])
+    expect(resolveDisplaySides(afterVol, 5)).toEqual({
+      top: 1,
+      right: 1,
+      bottom: 4,
+      left: 3,
+    })
+  })
+
+  test('vol can be reused on later placements by the same actor', () => {
+    const state = createMatch(
+      makeConfig({
+        strictPowerTargeting: false,
+        playerDeck: ['p_flying', 'c_fill_2', 'p_grass', 'p_fire', 'p_water'],
+        cpuDeck: ['c_guard', 'c_fill_1', 'c_fill_3', 'c_fill_4', 'c_attacker'],
+      }),
+    )
+
+    const afterFirstVol = play(state, [
+      { actor: 'player', cardId: 'p_grass', cell: 8 },
+      { actor: 'cpu', cardId: 'c_guard', cell: 5 },
+      { actor: 'player', cardId: 'p_flying', cell: 4, powerTarget: { targetCardCell: 5 } },
+      { actor: 'cpu', cardId: 'c_fill_1', cell: 0 },
+      { actor: 'player', cardId: 'c_fill_2', cell: 7, powerTarget: { targetCardCell: 0 } },
+    ])
+
+    const secondTargetStacks = afterFirstVol.elementState?.boardEffectsByCell[0]?.allStatsMinusOneStacks ?? []
+    expect(secondTargetStacks).toHaveLength(2)
+    expect(secondTargetStacks.every((stack) => stack.source === 'vol')).toBe(true)
+  })
+
+  test('sol applies enemy-only -1 all and expires after the target next turn', () => {
     const state = createMatch(
       makeConfig({
         strictPowerTargeting: false,
@@ -616,17 +753,39 @@ describe('match engine element powers', () => {
     )
 
     const afterSetup = play(state, [
-      { actor: 'player', cardId: 'p_grass', cell: 8 },
+      { actor: 'player', cardId: 'p_grass', cell: 3 },
       { actor: 'cpu', cardId: 'c_mid_4', cell: 5 },
     ])
     const resolution = applyMoveDetailed(afterSetup, { actor: 'player', cardId: 'p_ground', cell: 4 })
 
     expect(resolution.groundDebuffedCells).toEqual([5])
+    expect(resolution.state.elementState?.boardEffectsByCell[3]?.allStatsMinusOneStacks).toEqual([])
+    expect(resolution.state.elementState?.boardEffectsByCell[5]?.allStatsMinusOneStacks).toEqual([
+      {
+        source: 'sol',
+        actor: 'cpu',
+        untilTurn: 2,
+      },
+    ])
     expect(resolution.combatCells).toEqual([4, 5])
     expect(resolution.state.board[5]?.owner).toBe('player')
+    expect(resolveDisplaySides(resolution.state, 5)).toEqual({
+      top: 1,
+      right: 1,
+      bottom: 1,
+      left: 3,
+    })
+
+    const afterCpuTurn = applyMove(resolution.state, { actor: 'cpu', cardId: 'c_fill_1', cell: 0 })
+    expect(resolveDisplaySides(afterCpuTurn, 5)).toEqual({
+      top: 1,
+      right: 1,
+      bottom: 1,
+      left: 4,
+    })
   })
 
-  test('sol is not consumed when no adjacent card exists at placement time', () => {
+  test('sol is not consumed when there is no adjacent enemy card', () => {
     const state = createMatch(
       makeConfig({
         strictPowerTargeting: false,
@@ -635,11 +794,144 @@ describe('match engine element powers', () => {
       }),
     )
 
-    const resolution = applyMoveDetailed(state, { actor: 'player', cardId: 'p_ground', cell: 4 })
+    const afterSetup = play(state, [
+      { actor: 'player', cardId: 'p_grass', cell: 3 },
+      { actor: 'cpu', cardId: 'c_fill_1', cell: 0 },
+    ])
+    const resolution = applyMoveDetailed(afterSetup, { actor: 'player', cardId: 'p_ground', cell: 4 })
 
     expect(resolution.groundDebuffedCells).toEqual([])
     expect(resolution.combatCells).toEqual([])
     expect(resolution.state.elementState?.usedOnPoseByActor.player.sol).toBeUndefined()
+    expect(resolution.state.elementState?.boardEffectsByCell[3]?.allStatsMinusOneStacks).toEqual([])
+  })
+
+  test('sol can trigger again on a later placement by the same actor', () => {
+    const state = createMatch(
+      makeConfig({
+        strictPowerTargeting: false,
+        playerDeck: ['p_ground', 'c_guard', 'p_grass', 'p_fire', 'p_water'],
+        cpuDeck: ['c_guard', 'c_fill_1', 'c_fill_2', 'c_fill_3', 'c_fill_4'],
+      }),
+    )
+
+    const afterFirstSol = play(state, [
+      { actor: 'player', cardId: 'p_grass', cell: 0 },
+      { actor: 'cpu', cardId: 'c_guard', cell: 4 },
+      { actor: 'player', cardId: 'p_ground', cell: 8 },
+      { actor: 'cpu', cardId: 'c_fill_1', cell: 1 },
+    ])
+
+    const secondSolResolution = applyMoveDetailed(afterFirstSol, { actor: 'player', cardId: 'c_guard', cell: 5 })
+
+    expect(secondSolResolution.groundDebuffedCells).toEqual([4])
+    expect(secondSolResolution.state.elementState?.boardEffectsByCell[4]?.allStatsMinusOneStacks).toEqual([
+      { source: 'sol', actor: 'cpu', untilTurn: 3 },
+    ])
+  })
+
+  test('sol is consumed after the first successful trigger for the actor', () => {
+    const state = createMatch(
+      makeConfig({
+        strictPowerTargeting: false,
+        playerDeck: ['p_ground', 'c_guard', 'p_grass', 'p_fire', 'p_water'],
+        cpuDeck: ['c_guard', 'c_fill_1', 'c_fill_2', 'c_fill_3', 'c_fill_4'],
+      }),
+    )
+
+    const afterFirstSol = play(state, [
+      { actor: 'player', cardId: 'p_grass', cell: 3 },
+      { actor: 'cpu', cardId: 'c_guard', cell: 4 },
+      { actor: 'player', cardId: 'p_ground', cell: 5 },
+      { actor: 'cpu', cardId: 'c_fill_1', cell: 0 },
+    ])
+
+    const beforeStacks = afterFirstSol.elementState?.boardEffectsByCell[4]?.allStatsMinusOneStacks ?? []
+    const secondSolResolution = applyMoveDetailed(afterFirstSol, { actor: 'player', cardId: 'c_guard', cell: 8 })
+    const afterStacks = secondSolResolution.state.elementState?.boardEffectsByCell[4]?.allStatsMinusOneStacks ?? []
+
+    expect(secondSolResolution.groundDebuffedCells).toEqual([])
+    expect(afterStacks).toEqual(beforeStacks)
+  })
+
+  test('sol stacks with an existing vol debuff to apply -2 all', () => {
+    const state = createMatch(
+      makeConfig({
+        strictPowerTargeting: false,
+        playerDeck: ['p_ground', 'p_grass', 'p_fire', 'p_water', 'p_ghost'],
+        cpuDeck: ['c_guard', 'c_fill_1', 'c_fill_2', 'c_fill_3', 'c_fill_4'],
+      }),
+    )
+
+    const afterSetup = play(state, [
+      { actor: 'player', cardId: 'p_grass', cell: 0 },
+      { actor: 'cpu', cardId: 'c_guard', cell: 5 },
+    ])
+
+    if (!afterSetup.elementState?.boardEffectsByCell[5]) {
+      throw new Error('Expected board effects at cell 5.')
+    }
+    afterSetup.elementState.boardEffectsByCell[5]!.allStatsMinusOneStacks = [
+      {
+        source: 'vol',
+        actor: 'cpu',
+        untilTurn: 2,
+      },
+    ]
+
+    const resolution = applyMoveDetailed(afterSetup, { actor: 'player', cardId: 'p_ground', cell: 4 })
+
+    expect(resolution.groundDebuffedCells).toEqual([5])
+    expect(resolution.state.elementState?.boardEffectsByCell[5]?.allStatsMinusOneStacks).toEqual([
+      { source: 'vol', actor: 'cpu', untilTurn: 2 },
+      { source: 'sol', actor: 'cpu', untilTurn: 2 },
+    ])
+    expect(resolveDisplaySides(resolution.state, 5)).toEqual({
+      top: 1,
+      right: 1,
+      bottom: 4,
+      left: 3,
+    })
+  })
+
+  test('sol keeps at most two all-stat stacks and replaces the shortest one', () => {
+    const state = createMatch(
+      makeConfig({
+        strictPowerTargeting: false,
+        playerDeck: ['p_ground', 'p_grass', 'p_fire', 'p_water', 'p_ghost'],
+        cpuDeck: ['c_guard', 'c_fill_1', 'c_fill_2', 'c_fill_3', 'c_fill_4'],
+      }),
+    )
+
+    const afterSetup = play(state, [
+      { actor: 'player', cardId: 'p_grass', cell: 0 },
+      { actor: 'cpu', cardId: 'c_guard', cell: 5 },
+    ])
+
+    if (!afterSetup.elementState?.boardEffectsByCell[5]) {
+      throw new Error('Expected board effects at cell 5.')
+    }
+    afterSetup.elementState.boardEffectsByCell[5]!.allStatsMinusOneStacks = [
+      { source: 'vol', actor: 'cpu', untilTurn: 1 },
+      { source: 'vol', actor: 'cpu', untilTurn: 4 },
+    ]
+
+    const resolution = applyMoveDetailed(afterSetup, { actor: 'player', cardId: 'p_ground', cell: 4 })
+    const stacks = resolution.state.elementState?.boardEffectsByCell[5]?.allStatsMinusOneStacks ?? []
+
+    expect(stacks).toHaveLength(2)
+    expect(stacks).toEqual(
+      expect.arrayContaining([
+        { source: 'vol', actor: 'cpu', untilTurn: 4 },
+        { source: 'sol', actor: 'cpu', untilTurn: 2 },
+      ]),
+    )
+    expect(resolveDisplaySides(resolution.state, 5)).toEqual({
+      top: 1,
+      right: 1,
+      bottom: 4,
+      left: 3,
+    })
   })
 
   test('insecte gains entry stacks from allied insecte already on board', () => {
@@ -654,6 +946,28 @@ describe('match engine element powers', () => {
     const result = play(state, [
       { actor: 'player', cardId: 'p_bug_a', cell: 3 },
       { actor: 'cpu', cardId: 'c_mid_3', cell: 5 },
+      { actor: 'player', cardId: 'p_bug_b', cell: 4 },
+    ])
+
+    expect(result.board[5]?.owner).toBe('player')
+  })
+
+  test('insecte can stack up to +3 with three allied adjacent insecte', () => {
+    const state = createMatch(
+      makeConfig({
+        strictPowerTargeting: false,
+        playerDeck: ['p_bug_a', 'p_bug_b', 'p_bug_c', 'p_bug_d', 'p_fire'],
+        cpuDeck: ['c_attacker', 'c_fill_1', 'c_fill_2', 'c_fill_3', 'c_fill_4'],
+      }),
+    )
+
+    const result = play(state, [
+      { actor: 'player', cardId: 'p_bug_a', cell: 1 },
+      { actor: 'cpu', cardId: 'c_fill_1', cell: 0 },
+      { actor: 'player', cardId: 'p_bug_c', cell: 3 },
+      { actor: 'cpu', cardId: 'c_fill_2', cell: 2 },
+      { actor: 'player', cardId: 'p_bug_d', cell: 7 },
+      { actor: 'cpu', cardId: 'c_attacker', cell: 5 },
       { actor: 'player', cardId: 'p_bug_b', cell: 4 },
     ])
 
@@ -676,6 +990,52 @@ describe('match engine element powers', () => {
     ])
 
     expect(result.board[5]?.owner).toBe('player')
+  })
+
+  test('plante bonus scales only with adjacent allied plante cards', () => {
+    const state = createMatch(
+      makeConfig({
+        strictPowerTargeting: false,
+        playerDeck: ['p_grass', 'p_grass_2', 'p_fire', 'p_water', 'p_ghost'],
+        cpuDeck: ['c_fill_1', 'c_fill_2', 'c_fill_3', 'c_fill_4', 'c_guard'],
+      }),
+    )
+
+    const afterNonPlanteAdjacent = play(state, [
+      { actor: 'player', cardId: 'p_grass', cell: 4 },
+      { actor: 'cpu', cardId: 'c_fill_1', cell: 0 },
+      { actor: 'player', cardId: 'p_fire', cell: 1 },
+    ])
+    expect(resolveDisplaySides(afterNonPlanteAdjacent, 4)).toEqual({ top: 3, right: 3, bottom: 3, left: 3 })
+
+    const afterPlanteAdjacent = play(afterNonPlanteAdjacent, [
+      { actor: 'cpu', cardId: 'c_fill_2', cell: 2 },
+      { actor: 'player', cardId: 'p_grass_2', cell: 5 },
+    ])
+    expect(resolveDisplaySides(afterPlanteAdjacent, 4)).toEqual({ top: 4, right: 4, bottom: 4, left: 4 })
+  })
+
+  test('stolen plante does not grant passive bonus to the thief', () => {
+    const state = createMatch(
+      makeConfig({
+        strictPowerTargeting: false,
+        playerDeck: ['p_grass', 'p_fire', 'p_water', 'p_ghost', 'p_normal'],
+        cpuDeck: ['c_fill_1', 'c_fill_2', 'c_fill_3', 'c_attacker', 'p_grass_2'],
+      }),
+    )
+
+    const result = play(state, [
+      { actor: 'player', cardId: 'p_grass', cell: 4 },
+      { actor: 'cpu', cardId: 'c_fill_1', cell: 0 },
+      { actor: 'player', cardId: 'p_fire', cell: 1 },
+      { actor: 'cpu', cardId: 'c_attacker', cell: 5 },
+      { actor: 'player', cardId: 'p_water', cell: 6 },
+      { actor: 'cpu', cardId: 'p_grass_2', cell: 3 },
+    ])
+
+    expect(result.board[4]?.owner).toBe('cpu')
+    expect(resolveDisplaySides(result, 4)).toEqual({ top: 3, right: 3, bottom: 3, left: 3 })
+    expect(resolveDisplaySides(result, 3)).toEqual({ top: 3, right: 3, bottom: 3, left: 3 })
   })
 
   test('poison marks an opponent hand card and applies pending poison malus when played', () => {
@@ -745,6 +1105,55 @@ describe('match engine element powers', () => {
 
     expect(effects?.poisonFirstCombatPending).toBe(true)
     expect(displaySides).toEqual({ top: 2, right: 2, bottom: 5, left: 4 })
+  })
+
+  test('spectre ignores active malus stacks and poison pending malus', () => {
+    const state = createMatch(
+      makeConfig({
+        strictPowerTargeting: false,
+        playerDeck: ['p_ghost', 'p_fire', 'p_water', 'p_grass', 'p_normal'],
+        cpuDeck: ['c_fill_1', 'c_fill_2', 'c_fill_3', 'c_fill_4', 'c_guard'],
+      }),
+    )
+
+    const afterSetup = play(state, [
+      { actor: 'player', cardId: 'p_ghost', cell: 4 },
+      { actor: 'cpu', cardId: 'c_fill_1', cell: 0 },
+    ])
+
+    if (!afterSetup.elementState?.boardEffectsByCell[4]) {
+      throw new Error('Expected board effects at cell 4.')
+    }
+    afterSetup.elementState.boardEffectsByCell[4]!.allStatsMinusOneStacks = [
+      { source: 'vol', actor: 'cpu', untilTurn: 99 },
+      { source: 'sol', actor: 'cpu', untilTurn: 99 },
+    ]
+    afterSetup.elementState.boardEffectsByCell[4]!.poisonFirstCombatPending = true
+
+    expect(resolveDisplaySides(afterSetup, 4)).toEqual({
+      top: 4,
+      right: 5,
+      bottom: 4,
+      left: 4,
+    })
+  })
+
+  test('normal cards gain +1 all stats in normal mode', () => {
+    const state = createMatch(
+      makeConfig({
+        strictPowerTargeting: false,
+        playerDeck: ['p_normal', 'p_normal_2', 'p_normal_3', 'p_normal_4', 'p_normal_5'],
+        cpuDeck: ['c_guard', 'c_fill_1', 'c_fill_2', 'c_fill_3', 'c_fill_4'],
+      }),
+    )
+
+    const afterPlayer = applyMove(state, { actor: 'player', cardId: 'p_normal', cell: 4 })
+    expect(resolveDisplaySides(afterPlayer, 4)).toEqual({
+      top: 3,
+      right: 3,
+      bottom: 3,
+      left: 3,
+    })
   })
 
   test('psy applies swap effect on targeted enemy card', () => {

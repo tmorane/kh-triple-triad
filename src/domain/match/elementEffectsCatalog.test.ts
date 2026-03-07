@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test } from 'bun:test'
 import { ELEMENT_EFFECT_ORDERED_IDS, getElementEffectText } from './elementEffectsCatalog'
 
 describe('elementEffectsCatalog', () => {

@@ -1,5 +1,7 @@
 import type { EffectFeedEntry } from '../../domain/match/effectFeed'
 import type { EffectIndicator, MatchEffectsViewModel } from '../../domain/match/effectsViewModel'
+import { getElementLabel } from '../../domain/cards/taxonomy'
+import type { CardElementId } from '../../domain/types'
 
 function renderIndicatorList(indicators: EffectIndicator[]) {
   return indicators.map((indicator) => (
@@ -52,13 +54,17 @@ function flattenBoardIndicators(boardCardIndicators: MatchEffectsViewModel['boar
   return flattened
 }
 
-function flattenUsedPowers(view: MatchEffectsViewModel): string[] {
-  const used: string[] = []
+function flattenUsedPowers(view: MatchEffectsViewModel): Array<{ key: string; label: string }> {
+  const used: Array<{ key: string; label: string }> = []
   for (const actor of ['player', 'cpu'] as const) {
     const actorUsed = view.usedOnPoseByActor[actor]
     for (const [element, enabled] of Object.entries(actorUsed)) {
       if (enabled) {
-        used.push(`${actor}:${element}`)
+        const actorLabel = actor === 'player' ? 'Joueur' : 'CPU'
+        used.push({
+          key: `${actor}:${element}`,
+          label: `${actorLabel} • ${getElementLabel(element as CardElementId)}`,
+        })
       }
     }
   }
@@ -66,7 +72,7 @@ function flattenUsedPowers(view: MatchEffectsViewModel): string[] {
 }
 
 export function MatchEffectsPanel({ effectsView, effectFeed }: { effectsView: MatchEffectsViewModel; effectFeed: EffectFeedEntry[] }) {
-  const modeIndicator = effectsView.mode === 'normal' ? 'Mode normal' : 'Mode effets'
+  const modeIndicator = effectsView.mode === 'normal' ? 'EFFETS OFF' : 'EFFETS ON'
   const hazards = flattenCellIndicators(effectsView.cellIndicators)
   const activeEffects = flattenBoardIndicators(effectsView.boardCardIndicators)
   const usedPowers = flattenUsedPowers(effectsView)
@@ -74,12 +80,22 @@ export function MatchEffectsPanel({ effectsView, effectFeed }: { effectsView: Ma
   return (
     <section className="match-effects-panel" aria-label="Résumé des effets actifs">
       <div className="match-effects-panel__top">
-        <span className={`effect-chip ${effectsView.mode === 'normal' ? 'effect-chip--info' : 'effect-chip--buff'}`} data-testid="match-effects-panel-mode">
+        <span
+          className={`effect-chip match-effects-panel__mode-chip ${
+            effectsView.mode === 'normal' ? 'effect-chip--debuff' : 'effect-chip--buff'
+          }`}
+          data-testid="match-effects-panel-mode"
+        >
           <span aria-hidden="true">{effectsView.mode === 'normal' ? '⛔' : '✨'}</span>
           <span>{modeIndicator}</span>
         </span>
         {renderIndicatorList(effectsView.globalIndicators)}
       </div>
+      <p className="match-effects-panel__hint">
+        {effectsView.mode === 'normal'
+          ? 'Mode normal: aucun pouvoir de type ne se declenche.'
+          : 'Mode effets: survole les types de chaque main pour voir les pouvoirs disponibles.'}
+      </p>
 
       {effectsView.mode === 'normal' ? null : (
         <>
@@ -98,7 +114,15 @@ export function MatchEffectsPanel({ effectsView, effectFeed }: { effectsView: Ma
           <div className="match-effects-panel__row" data-testid="match-effects-panel-used">
             <span className="match-effects-panel__label">Pouvoirs utilisés</span>
             <div className="match-effects-panel__chips">
-              {usedPowers.length > 0 ? usedPowers.map((entry) => <span key={entry} className="effect-chip effect-chip--info">{entry}</span>) : <span className="small">Aucun</span>}
+              {usedPowers.length > 0 ? (
+                usedPowers.map((entry) => (
+                  <span key={entry.key} className="effect-chip effect-chip--info">
+                    {entry.label}
+                  </span>
+                ))
+              ) : (
+                <span className="small">Aucun</span>
+              )}
             </div>
           </div>
 

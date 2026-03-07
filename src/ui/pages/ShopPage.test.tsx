@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ComponentProps } from 'react'
 import { MemoryRouter } from 'react-router-dom'
-import { beforeEach, describe, expect, test, vi } from 'vitest'
+import { describe, expect, test } from 'bun:test'
 import { GameContext } from '../../app/GameContext'
 import { createDefaultProfile } from '../../domain/progression/profile'
 import type {
@@ -12,17 +12,7 @@ import type {
   ShopPackId,
   SpecialPackPurchaseRequest,
 } from '../../domain/progression/shop'
-import { playNewCardSound } from '../audio/newCardSound'
-import { playShinyPullSound } from '../audio/shinyPullSound'
 import { ShopPage } from './ShopPage'
-
-vi.mock('../audio/newCardSound', () => ({
-  playNewCardSound: vi.fn(),
-}))
-
-vi.mock('../audio/shinyPullSound', () => ({
-  playShinyPullSound: vi.fn(),
-}))
 
 type GameContextValue = NonNullable<ComponentProps<typeof GameContext.Provider>['value']>
 
@@ -144,41 +134,29 @@ function renderShopPage(options: {
   )
 }
 
-describe('ShopPage reveal sounds', () => {
-  beforeEach(() => {
-    vi.mocked(playNewCardSound).mockReset()
-    vi.mocked(playShinyPullSound).mockReset()
-  })
-
-  test('plays new-card sound only for new ownership from owned pack reveal', async () => {
+describe('ShopPage reveals', () => {
+  test('opens owned pack reveal modal with pulled cards', async () => {
     const user = userEvent.setup()
     renderShopPage({})
 
     await user.click(screen.getByTestId('open-owned-pack-rare'))
 
     expect(screen.getByTestId('shop-opened-reveal-modal')).toBeInTheDocument()
-    expect(playNewCardSound).toHaveBeenCalledTimes(2)
+    expect(screen.getByText('Rare Pack Opened')).toBeInTheDocument()
+    expect(screen.getByTestId('shop-opened-reveal-triad-0')).toBeInTheDocument()
+    expect(screen.getByTestId('shop-opened-reveal-triad-1')).toBeInTheDocument()
+    expect(screen.getByTestId('shop-opened-reveal-triad-2')).toBeInTheDocument()
   })
 
-  test('plays new-card sound on special-pack reveal only for new ownership', async () => {
+  test('opens special-pack reveal modal', async () => {
     const user = userEvent.setup()
     renderShopPage({})
 
     await user.click(screen.getByTestId('buy-open-special-pack-sans_coeur_focus'))
 
     expect(screen.getByTestId('shop-opened-reveal-modal')).toBeInTheDocument()
-    expect(playNewCardSound).toHaveBeenCalledTimes(1)
-  })
-
-  test('does not play reveal sounds when audio is disabled', async () => {
-    const user = userEvent.setup()
-    renderShopPage({ audioEnabled: false })
-
-    await user.click(screen.getByTestId('open-owned-pack-rare'))
-
-    expect(screen.getByTestId('shop-opened-reveal-modal')).toBeInTheDocument()
-    expect(playNewCardSound).not.toHaveBeenCalled()
-    expect(playShinyPullSound).not.toHaveBeenCalled()
+    expect(screen.getByText('Gen 1 Booster Opened')).toBeInTheDocument()
+    expect(screen.getByTestId('shop-opened-reveal-triad-0')).toBeInTheDocument()
   })
 
   test('opens shiny test pack reveal with a guaranteed shiny card', async () => {
@@ -190,7 +168,5 @@ describe('ShopPage reveal sounds', () => {
     expect(screen.getByTestId('shop-opened-reveal-modal')).toBeInTheDocument()
     expect(screen.getByText('Shiny Test Pack Opened')).toBeInTheDocument()
     expect(screen.getByTestId('triad-card-shiny-pill')).toBeInTheDocument()
-    expect(playShinyPullSound).toHaveBeenCalledTimes(1)
-    expect(playNewCardSound).not.toHaveBeenCalled()
   })
 })

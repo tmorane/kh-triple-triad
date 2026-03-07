@@ -1,19 +1,18 @@
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import type { ComponentProps } from 'react'
 import { MemoryRouter } from 'react-router-dom'
-import { beforeEach, describe, expect, test, vi } from 'vitest'
-import * as cloudLadderStore from '../../app/cloud/cloudLadderStore'
+import { afterAll, beforeEach, describe, expect, test, vi } from 'bun:test'
+import { __setCloudLadderDependenciesForTests, __setMockLadderEnabledForTests } from '../../app/cloud/cloudLadderStore'
 import { GameContext } from '../../app/GameContext'
+import { cardPool } from '../../domain/cards/cardPool'
 import { createDefaultProfile } from '../../domain/progression/profile'
 import { HomePage } from './HomePage'
 
-vi.mock('../../app/cloud/cloudLadderStore', () => ({
-  isGlobalLadderEnabled: vi.fn(() => false),
-  fetchOwnedCardsLadder: vi.fn(async () => []),
-  fetchPeakRankLadder: vi.fn(async () => []),
-}))
-
 type GameContextValue = NonNullable<ComponentProps<typeof GameContext.Provider>['value']>
+const listStoredProfilesForLadderMock = vi.fn(() => [])
+const isCloudAuthEnabledMock = vi.fn(() => false)
+const getSupabaseClientMock = vi.fn(() => null)
 
 function createContextValue(overrides: Partial<GameContextValue> = {}): GameContextValue {
   const profile = createDefaultProfile()
@@ -111,11 +110,28 @@ function renderHome(overrides: Partial<GameContextValue> = {}) {
   )
 }
 
+function getRenderedMissionCards(container: HTMLElement): HTMLElement[] {
+  return Array.from(container.querySelectorAll('[data-testid^="home-mission-"]')).filter(
+    (node) => !node.getAttribute('data-testid')?.startsWith('home-mission-progress-'),
+  ) as HTMLElement[]
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
-  vi.mocked(cloudLadderStore.isGlobalLadderEnabled).mockReturnValue(false)
-  vi.mocked(cloudLadderStore.fetchOwnedCardsLadder).mockResolvedValue([])
-  vi.mocked(cloudLadderStore.fetchPeakRankLadder).mockResolvedValue([])
+  listStoredProfilesForLadderMock.mockReturnValue([])
+  isCloudAuthEnabledMock.mockReturnValue(false)
+  getSupabaseClientMock.mockReturnValue(null)
+  __setMockLadderEnabledForTests(false)
+  __setCloudLadderDependenciesForTests({
+    listStoredProfilesForLadder: listStoredProfilesForLadderMock,
+    isCloudAuthEnabled: isCloudAuthEnabledMock,
+    getSupabaseClient: getSupabaseClientMock,
+  })
+})
+
+afterAll(() => {
+  __setMockLadderEnabledForTests(null)
+  __setCloudLadderDependenciesForTests(null)
 })
 
 describe('HomePage ranked display', () => {
@@ -127,7 +143,7 @@ describe('HomePage ranked display', () => {
     expect(screen.getByTestId('home-ranked-tier-label-3x3')).toHaveTextContent('3X3')
     expect(screen.getByTestId('home-ranked-badge-label-3x3')).toHaveTextContent('Division 4')
     expect(screen.getByTestId('home-ranked-lp-3x3')).toHaveTextContent('0 LP')
-    expect(screen.getByTestId('home-ranked-badge-3x3')).toHaveAttribute('src', '/ranks/iron.svg')
+    expect(screen.getByTestId('home-ranked-badge-3x3')).toHaveAttribute('src', '/ranks/iron.png')
     expect(screen.getByText('Pokédex')).toBeInTheDocument()
   })
 
@@ -152,12 +168,106 @@ describe('HomePage ranked display', () => {
     expect(screen.getByTestId('home-quick-action-setup')).toHaveAttribute('href', '/decks')
   })
 
+  test('renders hero CTA group with primary and secondary actions', () => {
+    renderHome()
+
+    expect(screen.getByTestId('home-hero-cta')).toBeInTheDocument()
+    expect(screen.getByTestId('home-quick-action-play')).toBeInTheDocument()
+    expect(screen.getByTestId('home-quick-action-packs')).toHaveAttribute('href', '/packs')
+    expect(screen.getByTestId('home-quick-action-setup')).toHaveAttribute('href', '/decks')
+  })
+
+  test('renders profile art in player profile on home', () => {
+    renderHome()
+
+    expect(screen.getByTestId('home-profile-art-image')).toHaveAttribute('src', '/ui/home/season-current.png')
+    expect(screen.queryByText('Season spotlight')).not.toBeInTheDocument()
+  })
+
   test('shows missions block with progress and missions page link', () => {
     renderHome()
 
     expect(screen.getByTestId('home-missions-block')).toBeInTheDocument()
     expect(screen.getByTestId('home-mission-progress-m1_type_specialist')).toHaveTextContent('0/5')
     expect(screen.getByTestId('home-missions-link')).toHaveAttribute('href', '/missions')
+  })
+
+  test('renders 6 mission cards on home', () => {
+    const { container } = render(
+      <MemoryRouter>
+        <GameContext.Provider value={createContextValue()}>
+          <HomePage />
+        </GameContext.Provider>
+      </MemoryRouter>,
+    )
+
+    expect(getRenderedMissionCards(container)).toHaveLength(6)
+  })
+
+  test('highlights one non-completed mission with the highest progress as focus', () => {
+    const profile = createDefaultProfile()
+    profile.missions.m1_type_specialist.progress = 4
+    profile.missions.m1_type_specialist.target = 5
+    profile.missions.m2_combo_practitioner.progress = 2
+    profile.missions.m2_combo_practitioner.target = 6
+    profile.missions.m3_corner_tactician.progress = 1
+    profile.missions.m3_corner_tactician.target = 12
+    profile.missions.m1_type_specialist.completed = false
+    profile.missions.m2_combo_practitioner.completed = false
+    profile.missions.m3_corner_tactician.completed = false
+
+    const { container } = render(
+      <MemoryRouter>
+        <GameContext.Provider value={createContextValue({ profile })}>
+          <HomePage />
+        </GameContext.Provider>
+      </MemoryRouter>,
+    )
+
+    const focusCards = container.querySelectorAll('.home-mission-card--focus')
+    expect(focusCards).toHaveLength(1)
+    expect(screen.getByTestId('home-mission-m1_type_specialist')).toHaveClass('home-mission-card--focus')
+    expect(screen.getByTestId('home-mission-m2_combo_practitioner')).not.toHaveClass('home-mission-card--focus')
+    expect(screen.getByTestId('home-mission-m3_corner_tactician')).not.toHaveClass('home-mission-card--focus')
+  })
+
+  test('renders claim action on completed mission and triggers claim from home', async () => {
+    const user = userEvent.setup()
+    const claimMission = vi.fn(() => ({ valid: true }))
+    const profile = createDefaultProfile()
+    profile.missions.m1_type_specialist.progress = 5
+    profile.missions.m1_type_specialist.target = 5
+    profile.missions.m1_type_specialist.completed = true
+    profile.missions.m1_type_specialist.claimed = false
+
+    renderHome({ profile, claimMission })
+
+    const claimButton = screen.getByTestId('home-mission-claim-m1_type_specialist')
+    expect(claimButton).toHaveTextContent('Claim')
+    await user.click(claimButton)
+    expect(claimMission).toHaveBeenCalledWith('m1_type_specialist')
+  })
+
+  test('does not render claim action for completed bonus missions', () => {
+    const profile = createDefaultProfile()
+    profile.stats.streak = 8
+    profile.stats.played = 40
+    profile.ownedCardIds = cardPool.map((card) => card.id)
+
+    renderHome({ profile })
+
+    expect(screen.queryByTestId('home-mission-claim-b1_win_streak')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('home-mission-claim-b2_match_grinder')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('home-mission-claim-b3_collection_hunter')).not.toBeInTheDocument()
+  })
+
+  test('renders collection hunter target against the full 251-card pokedex', () => {
+    const profile = createDefaultProfile()
+    profile.ownedCardIds = cardPool.map((card) => card.id)
+
+    renderHome({ profile })
+
+    expect(screen.getByTestId('home-mission-progress-b3_collection_hunter')).toHaveTextContent('251/251')
   })
 
   test('keeps home focused on core actions and hides profile management controls', () => {
@@ -177,24 +287,15 @@ describe('HomePage ranked display', () => {
   })
 
   test('renders both ladders on home when global ladder mode is enabled (mock without cloud)', async () => {
-    vi.mocked(cloudLadderStore.isGlobalLadderEnabled).mockReturnValue(true)
-    vi.mocked(cloudLadderStore.fetchOwnedCardsLadder).mockResolvedValue([
+    listStoredProfilesForLadderMock.mockReturnValue([
       {
-        userId: 'u-1',
+        id: 'u-1',
         playerName: 'Alice',
         ownedCardsCount: 120,
-        peakRankScore: 6123,
-        peakRankLabel: 'Diamond II',
-        updatedAt: '2026-02-23T12:00:00.000Z',
-      },
-    ])
-    vi.mocked(cloudLadderStore.fetchPeakRankLadder).mockResolvedValue([
-      {
-        userId: 'u-1',
-        playerName: 'Alice',
-        ownedCardsCount: 120,
-        peakRankScore: 6123,
-        peakRankLabel: 'Diamond II',
+        rankedByMode: {
+          '3x3': { tier: 'diamond', division: 'II', lp: 23 },
+          '4x4': { tier: 'diamond', division: 'II', lp: 23 },
+        },
         updatedAt: '2026-02-23T12:00:00.000Z',
       },
     ])

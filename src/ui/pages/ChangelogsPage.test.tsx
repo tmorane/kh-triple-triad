@@ -1,6 +1,6 @@
 import { render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test } from 'bun:test'
 import { ChangelogsPage } from './ChangelogsPage'
 import { changelogEntries } from './changelogEntries'
 

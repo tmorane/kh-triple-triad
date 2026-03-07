@@ -19,28 +19,13 @@ export function resolveTowerOpponentLevel(floor: number): number {
 }
 
 function resolveTowerBossRules(floor: number): TowerFloorSpec['rules'] {
-  if (floor <= 20) {
-    return { open: true, same: true, plus: false }
-  }
-
-  if (floor <= 50) {
-    return { open: true, same: false, plus: true }
-  }
-
-  return { open: true, same: true, plus: true }
+  void floor
+  return { open: true, same: false, plus: false }
 }
 
 function resolveTowerNonBossRules(floor: number): TowerFloorSpec['rules'] {
-  const cycle = Math.floor((floor - 1) / 3) % 3
-  if (cycle === 0) {
-    return { open: true, same: false, plus: false }
-  }
-
-  if (cycle === 1) {
-    return { open: true, same: true, plus: false }
-  }
-
-  return { open: true, same: false, plus: true }
+  void floor
+  return { open: true, same: false, plus: false }
 }
 
 function resolveTowerFloorCurveBonus(floor: number): number {

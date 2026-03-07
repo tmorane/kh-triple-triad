@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test } from 'bun:test'
 import { cardPool } from '../cards/cardPool'
 import type { CardId } from '../types'
 import {

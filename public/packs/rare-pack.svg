@@ -1,52 +1,48 @@
 <svg width="640" height="900" viewBox="0 0 640 900" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
   <title id="title">Rare Pack</title>
-  <desc id="desc">Sapphire rare card pack artwork in the epic vertical format.</desc>
+  <desc id="desc">Pokemon-inspired rare booster pack with Hyper Ball emblem.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#111f34"/>
-      <stop offset="55%" stop-color="#27406e"/>
-      <stop offset="100%" stop-color="#3f69b4"/>
+      <stop offset="0%" stop-color="#151523"/>
+      <stop offset="58%" stop-color="#3f3721"/>
+      <stop offset="100%" stop-color="#8b6d1f"/>
     </linearGradient>
     <linearGradient id="foil" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#d9e7ff"/>
-      <stop offset="50%" stop-color="#8db2ff"/>
-      <stop offset="100%" stop-color="#5a79c8"/>
+      <stop offset="0%" stop-color="#fff1c4"/>
+      <stop offset="100%" stop-color="#efcc67"/>
     </linearGradient>
-    <radialGradient id="shine" cx="30%" cy="20%" r="70%">
-      <stop offset="0%" stop-color="#e0eaff" stop-opacity="0.78"/>
-      <stop offset="100%" stop-color="#e0eaff" stop-opacity="0"/>
+    <radialGradient id="glow" cx="50%" cy="42%" r="44%">
+      <stop offset="0%" stop-color="#ffde80" stop-opacity="0.58"/>
+      <stop offset="100%" stop-color="#ffde80" stop-opacity="0"/>
     </radialGradient>
   </defs>
 
   <rect x="0" y="0" width="640" height="900" rx="36" fill="url(#bg)"/>
-  <rect x="24" y="24" width="592" height="852" rx="28" fill="none" stroke="#bfd4ff" stroke-opacity="0.66" stroke-width="4"/>
-  <ellipse cx="180" cy="170" rx="220" ry="180" fill="url(#shine)"/>
+  <rect x="18" y="18" width="604" height="864" rx="28" fill="none" stroke="#ffe39f" stroke-opacity="0.52" stroke-width="3"/>
+  <ellipse cx="320" cy="360" rx="250" ry="200" fill="url(#glow)"/>
 
-  <g fill="none" stroke="#e3ecff" stroke-opacity="0.74" stroke-width="6">
-    <path d="M120 180 L320 100 L520 180 L520 420 L320 500 L120 420 Z"/>
-    <path d="M165 250 L320 190 L475 250 L475 380 L320 440 L165 380 Z" stroke-opacity="0.5"/>
+  <g stroke="#ffe8b8" stroke-opacity="0.56" fill="none">
+    <path d="M64 190 L576 190"/>
+    <path d="M64 530 L576 530"/>
+    <path d="M126 118 L514 118 L566 170 L566 550 L514 602 L126 602 L74 550 L74 170 Z" stroke-width="3"/>
   </g>
 
-  <g transform="translate(320 326)">
-    <circle r="82" fill="none" stroke="#a7c0ff" stroke-opacity="0.6" stroke-width="5"/>
-    <circle r="52" fill="none" stroke="url(#foil)" stroke-width="8"/>
-    <path d="M0 -66 L18 -18 L66 0 L18 18 L0 66 L-18 18 L-66 0 L-18 -18 Z" fill="#b8ccff" fill-opacity="0.9"/>
-    <circle r="12" fill="#f2f6ff"/>
+  <g transform="translate(320 330)">
+    <circle r="100" fill="none" stroke="url(#foil)" stroke-width="12"/>
+    <circle r="76" fill="#efefef" stroke="#161616" stroke-width="6"/>
+    <path d="M-76 0 A76 76 0 0 1 76 0 L76 -76 L-76 -76 Z" fill="#16171b"/>
+    <rect x="-76" y="-6" width="152" height="12" fill="#171717"/>
+    <rect x="-62" y="-64" width="52" height="14" rx="6" fill="#f3c84b"/>
+    <rect x="10" y="-64" width="52" height="14" rx="6" fill="#f3c84b"/>
+    <circle r="22" fill="#171717"/>
+    <circle r="14" fill="#f2f2f2"/>
   </g>
 
-  <g fill="#edf2ff">
-    <circle cx="258" cy="236" r="4"/>
-    <circle cx="284" cy="220" r="4"/>
-    <circle cx="320" cy="214" r="4"/>
-    <circle cx="356" cy="220" r="4"/>
-    <circle cx="382" cy="236" r="4"/>
+  <g fill="#fff4dc" font-family="Rajdhani, sans-serif" text-anchor="middle">
+    <text x="320" y="664" font-size="72" font-weight="700" letter-spacing="8">RARE</text>
+    <text x="320" y="730" font-size="40" font-weight="600" letter-spacing="6">TRIPLE TRIAD</text>
   </g>
 
-  <g fill="#edf2ff" font-family="Rajdhani, sans-serif" text-anchor="middle">
-    <text x="320" y="660" font-size="72" font-weight="700" letter-spacing="8">RARE</text>
-    <text x="320" y="728" font-size="40" font-weight="600" letter-spacing="6">TRIPLE TRIAD</text>
-  </g>
-
-  <circle cx="320" cy="570" r="28" fill="#e5ecff" fill-opacity="0.95"/>
-  <circle cx="320" cy="570" r="14" fill="#5e7eca"/>
+  <circle cx="320" cy="572" r="28" fill="#ffedbf"/>
+  <circle cx="320" cy="572" r="14" fill="#e3b140"/>
 </svg>

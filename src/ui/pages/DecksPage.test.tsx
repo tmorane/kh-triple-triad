@@ -1,6 +1,6 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, test } from 'vitest'
+import { beforeEach, describe, expect, test } from 'bun:test'
 import { MemoryRouter } from 'react-router-dom'
 import { GameProvider } from '../../app/GameContext'
 import { cardPool, getCard } from '../../domain/cards/cardPool'

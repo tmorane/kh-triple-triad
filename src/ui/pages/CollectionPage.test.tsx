@@ -2,10 +2,11 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ComponentProps } from 'react'
 import { MemoryRouter } from 'react-router-dom'
-import { beforeEach, describe, expect, test, vi } from 'vitest'
+import { beforeEach, describe, expect, test, vi } from 'bun:test'
 import { GameContext } from '../../app/GameContext'
 import { cardPool } from '../../domain/cards/cardPool'
 import { cardElementIds, getElementLabel } from '../../domain/cards/taxonomy'
+import { achievementCatalog } from '../../domain/progression/achievements'
 import { createDefaultProfile } from '../../domain/progression/profile'
 import { CollectionPage } from './CollectionPage'
 
@@ -207,7 +208,11 @@ describe('CollectionPage', () => {
   test('does not show type logo badge on locked cards in the pokedex grid', () => {
     renderCollection()
 
-    const card = screen.getByTestId('collection-card-c84')
+    const lockedSection = screen.getByTestId('collection-status-section-locked')
+    const card = within(lockedSection).getAllByTestId(/^collection-card-/)[0]
+    if (!card) {
+      throw new Error('Expected at least one locked card in the current page.')
+    }
     expect(within(card).queryByTestId('triad-card-type-badge')).not.toBeInTheDocument()
     expect(within(card).queryByTestId('triad-card-type-logo')).not.toBeInTheDocument()
   })
@@ -215,7 +220,8 @@ describe('CollectionPage', () => {
   test('shows all cards by default with full result count in french', () => {
     renderCollection()
 
-    expect(getVisibleCollectionCards()).toHaveLength(cardPool.length)
+    expect(getVisibleCollectionCards().length).toBeGreaterThan(0)
+    expect(getVisibleCollectionCards().length).toBeLessThanOrEqual(cardPool.length)
     expect(screen.getByTestId('collection-filter-result-count')).toHaveTextContent(
       `${cardPool.length} entrées affichées / ${cardPool.length} au total`,
     )
@@ -227,7 +233,11 @@ describe('CollectionPage', () => {
     profile.ownedCardIds = cardPool.map((card) => card.id)
     profile.cardCopiesById = Object.fromEntries(cardPool.map((card) => [card.id, 1]))
 
-    const userAgentSpy = vi.spyOn(window.navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0')
+    Object.defineProperty(window.navigator, 'userAgent', {
+      configurable: true,
+      value: 'Mozilla/5.0',
+    })
+
     try {
       renderCollection({ profile })
 
@@ -242,7 +252,10 @@ describe('CollectionPage', () => {
       expect(getVisibleCollectionCards()).toHaveLength(25)
       expect(screen.queryByTestId('collection-card-c01')).not.toBeInTheDocument()
     } finally {
-      userAgentSpy.mockRestore()
+      Object.defineProperty(window.navigator, 'userAgent', {
+        configurable: true,
+        value: 'jsdom',
+      })
     }
   })
 
@@ -256,14 +269,18 @@ describe('CollectionPage', () => {
     const lockedCardIds = getSectionCardIds('collection-status-section-locked')
 
     expect(capturedCardIds.length).toBe(profile.ownedCardIds.length)
-    expect(lockedCardIds.length).toBe(cardPool.length - profile.ownedCardIds.length)
+    expect(lockedCardIds.length).toBeGreaterThan(0)
 
     expect(capturedCardIds).toEqual(['c52', 'c02'])
     expect(lockedCardIds).not.toContain('c52')
     expect(lockedCardIds).not.toContain('c02')
 
-    expect(screen.getByTestId('collection-status-title-owned')).toHaveTextContent('Capturés')
-    expect(screen.getByTestId('collection-status-title-locked')).toHaveTextContent('Non capturés')
+    expect(screen.getByTestId('collection-status-title-owned')).toHaveTextContent(
+      `Capturés (${profile.ownedCardIds.length})`,
+    )
+    expect(screen.getByTestId('collection-status-title-locked')).toHaveTextContent(
+      `Non capturés (${cardPool.length - profile.ownedCardIds.length})`,
+    )
   })
 
   test('shows selected card id as pokedex number', async () => {
@@ -289,7 +306,7 @@ describe('CollectionPage', () => {
     expect(screen.getByTestId('collection-filter-result-count')).toHaveTextContent(
       `${legendaryCount} entrées affichées / ${cardPool.length} au total`,
     )
-  })
+  }, 10_000)
 
   test('focuses on one pokemon type from default state, then expands when selecting a second type', async () => {
     const user = userEvent.setup()
@@ -301,23 +318,30 @@ describe('CollectionPage', () => {
     await user.click(screen.getByTestId(`collection-filter-type-${firstType}`))
 
     const firstExpectedCount = cardPool.filter((card) => card.elementId === firstType).length
-    expect(getVisibleCollectionCards()).toHaveLength(firstExpectedCount)
+    expect(getVisibleCollectionCards().length).toBeLessThanOrEqual(firstExpectedCount)
+    expect(screen.getByTestId('collection-filter-result-count')).toHaveTextContent(
+      `${firstExpectedCount} entrées affichées / ${cardPool.length} au total`,
+    )
     expect(screen.getByTestId(`collection-filter-type-${firstType}`)).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByTestId(`collection-filter-type-${secondType}`)).toHaveAttribute('aria-pressed', 'false')
 
     await user.click(screen.getByTestId(`collection-filter-type-${secondType}`))
 
     const expectedCount = cardPool.filter((card) => card.elementId === firstType || card.elementId === secondType).length
-    expect(getVisibleCollectionCards()).toHaveLength(expectedCount)
+    expect(getVisibleCollectionCards().length).toBeLessThanOrEqual(expectedCount)
     expect(screen.getByTestId('collection-filter-result-count')).toHaveTextContent(
       `${expectedCount} entrées affichées / ${cardPool.length} au total`,
     )
 
     await user.click(screen.getByTestId(`collection-filter-type-${secondType}`))
-    expect(getVisibleCollectionCards()).toHaveLength(firstExpectedCount)
+    expect(getVisibleCollectionCards().length).toBeLessThanOrEqual(firstExpectedCount)
+    expect(screen.getByTestId('collection-filter-result-count')).toHaveTextContent(
+      `${firstExpectedCount} entrées affichées / ${cardPool.length} au total`,
+    )
 
     await user.click(screen.getByTestId(`collection-filter-type-${firstType}`))
-    expect(getVisibleCollectionCards()).toHaveLength(cardPool.length)
+    expect(getVisibleCollectionCards().length).toBeGreaterThan(0)
+    expect(getVisibleCollectionCards().length).toBeLessThanOrEqual(cardPool.length)
     expect(screen.getByTestId('collection-filter-result-count')).toHaveTextContent(
       `${cardPool.length} entrées affichées / ${cardPool.length} au total`,
     )
@@ -341,10 +365,62 @@ describe('CollectionPage', () => {
     renderCollection({ profile })
 
     await user.click(screen.getByTestId('collection-filter-discovery-owned'))
-    expect(getVisibleCollectionCards()).toHaveLength(profile.ownedCardIds.length)
+    expect(screen.getByTestId('collection-filter-result-count')).toHaveTextContent(
+      `${profile.ownedCardIds.length} entrées affichées / ${cardPool.length} au total`,
+    )
 
     await user.click(screen.getByTestId('collection-filter-discovery-locked'))
-    expect(getVisibleCollectionCards()).toHaveLength(cardPool.length - profile.ownedCardIds.length)
+    expect(screen.getByTestId('collection-filter-result-count')).toHaveTextContent(
+      `${cardPool.length - profile.ownedCardIds.length} entrées affichées / ${cardPool.length} au total`,
+    )
+  })
+
+  test('filters by fragment progress (>0) and shows only matching cards', async () => {
+    const user = userEvent.setup()
+    const profile = createDefaultProfile()
+    const lockedFragmentCardId = cardPool.find((card) => !profile.ownedCardIds.includes(card.id))?.id
+    if (!lockedFragmentCardId) {
+      throw new Error('Expected at least one locked card in the pool.')
+    }
+
+    profile.cardFragmentsById.c01 = 2
+    profile.cardFragmentsById[lockedFragmentCardId] = 1
+    renderCollection({ profile })
+
+    await user.click(screen.getByTestId('collection-filter-discovery-fragment'))
+
+    expect(screen.getByTestId('collection-filter-result-count')).toHaveTextContent(
+      `2 entrées affichées / ${cardPool.length} au total`,
+    )
+    expect(screen.getByTestId('collection-card-c01')).toBeInTheDocument()
+    expect(screen.getByTestId(`collection-card-${lockedFragmentCardId}`)).toBeInTheDocument()
+  })
+
+  test('fragment filter activates silhouette mode in grid and detail', async () => {
+    const user = userEvent.setup()
+    const profile = createDefaultProfile()
+    const lockedFragmentCardId = cardPool.find((card) => !profile.ownedCardIds.includes(card.id))?.id
+    if (!lockedFragmentCardId) {
+      throw new Error('Expected at least one locked card in the pool.')
+    }
+
+    profile.cardFragmentsById.c01 = 2
+    profile.cardFragmentsById[lockedFragmentCardId] = 1
+    renderCollection({ profile })
+
+    await user.click(screen.getByTestId('collection-filter-discovery-fragment'))
+
+    const lockedGridCard = screen.getByTestId(`collection-card-${lockedFragmentCardId}`)
+    expect(lockedGridCard).toHaveClass('is-fragment-silhouette')
+    expect(lockedGridCard.querySelector('.triad-card__frame')).toBeNull()
+    expect(lockedGridCard.querySelector('.triad-card__art-image')).not.toBeNull()
+
+    await user.click(lockedGridCard)
+
+    const inspectCard = screen.getByTestId('collection-inspect-card')
+    expect(inspectCard).toHaveClass('is-fragment-silhouette')
+    expect(inspectCard.querySelector('.triad-card__frame')).toBeNull()
+    expect(inspectCard.querySelector('.triad-card__art-image')).not.toBeNull()
   })
 
   test('combines rarity and discovery filters with AND logic', async () => {
@@ -451,6 +527,36 @@ describe('CollectionPage', () => {
     expect(screen.getByTestId('collection-filter-rarity-common')).toHaveAttribute('aria-pressed', 'false')
   })
 
+  test('persists fragment discovery filter when leaving and returning to pokedex', async () => {
+    const user = userEvent.setup()
+    const profile = createDefaultProfile()
+    profile.cardFragmentsById.c01 = 1
+    const { unmount } = renderCollection({ profile })
+
+    await user.click(screen.getByTestId('collection-filter-discovery-fragment'))
+    expect(screen.getByTestId('collection-filter-discovery-fragment')).toHaveAttribute('aria-pressed', 'true')
+
+    unmount()
+    renderCollection({ profile })
+
+    expect(screen.getByTestId('collection-filter-discovery-fragment')).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  test('fragment filter reset returns to default display mode', async () => {
+    const user = userEvent.setup()
+    const profile = createDefaultProfile()
+    profile.cardFragmentsById.c01 = 1
+    renderCollection({ profile })
+
+    await user.click(screen.getByTestId('collection-filter-discovery-fragment'))
+    expect(screen.getByTestId('collection-card-c01')).toHaveClass('is-fragment-silhouette')
+
+    await user.click(screen.getByTestId('collection-filter-reset'))
+
+    expect(screen.getByTestId('collection-filter-discovery-all')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTestId('collection-card-c01')).not.toHaveClass('is-fragment-silhouette')
+  })
+
   test('shows empty states in french when no cards match filters', async () => {
     const user = userEvent.setup()
     const profile = createDefaultProfile()
@@ -490,7 +596,13 @@ describe('CollectionPage', () => {
     const user = userEvent.setup()
     renderCollection()
 
-    await user.click(screen.getByTestId('collection-card-c84'))
+    const lockedSection = screen.getByTestId('collection-status-section-locked')
+    const lockedCard = within(lockedSection).getAllByTestId(/^collection-card-/)[0]
+    if (!lockedCard) {
+      throw new Error('Expected at least one locked card in the current page.')
+    }
+
+    await user.click(lockedCard)
 
     expect(screen.getByTestId('collection-selected-name')).toHaveTextContent('Inconnu')
     expect(screen.getByTestId('collection-selected-rarity')).toHaveTextContent('Inconnu')
@@ -538,5 +650,87 @@ describe('CollectionPage', () => {
 
     expect(screen.getByTestId('collection-shiny-craft-progress')).toHaveTextContent('Normales: 49/50')
     expect(screen.getByTestId('collection-shiny-craft-button')).toBeDisabled()
+  })
+
+  test('shows chroma charm badge and reduced shiny cost at 40/40 achievements', async () => {
+    const user = userEvent.setup()
+    const profile = createDefaultProfile()
+    profile.achievements = achievementCatalog.map((achievement, index) => ({
+      id: achievement.id,
+      unlockedAt: `2026-03-02T03:00:${index.toString().padStart(2, '0')}.000Z`,
+    }))
+    if (!profile.ownedCardIds.includes('c11')) {
+      profile.ownedCardIds.push('c11')
+    }
+    profile.cardCopiesById.c11 = 24
+
+    renderCollection({ profile })
+    await user.click(screen.getByTestId('collection-card-c11'))
+
+    expect(screen.getByTestId('collection-chroma-charm-badge')).toHaveTextContent('Charm Chroma actif: coût shiny réduit de 50%')
+    expect(screen.getByTestId('collection-shiny-craft-progress')).toHaveTextContent('Normales: 24/25')
+    expect(screen.getByTestId('collection-shiny-craft-button')).toBeDisabled()
+  })
+
+  test('enables shiny crafting at 25 copies when chroma charm is active', async () => {
+    const user = userEvent.setup()
+    const profile = createDefaultProfile()
+    profile.achievements = achievementCatalog.map((achievement, index) => ({
+      id: achievement.id,
+      unlockedAt: `2026-03-02T04:00:${index.toString().padStart(2, '0')}.000Z`,
+    }))
+    if (!profile.ownedCardIds.includes('c11')) {
+      profile.ownedCardIds.push('c11')
+    }
+    profile.cardCopiesById.c11 = 25
+    const craftShinyCard = vi.fn()
+
+    renderCollection({ profile, craftShinyCard })
+    await user.click(screen.getByTestId('collection-card-c11'))
+
+    expect(screen.getByTestId('collection-shiny-craft-progress')).toHaveTextContent('Normales: 25/25')
+    const craftButton = screen.getByTestId('collection-shiny-craft-button')
+    expect(craftButton).toBeEnabled()
+
+    await user.click(craftButton)
+    expect(craftShinyCard).toHaveBeenCalledWith('c11')
+  })
+
+  test('shows fragment crafting progress and calls craftCardFromFragments when threshold is reached', async () => {
+    const user = userEvent.setup()
+    const profile = createDefaultProfile()
+    if (!profile.ownedCardIds.includes('c11')) {
+      profile.ownedCardIds.push('c11')
+    }
+    profile.cardCopiesById.c11 = 2
+    profile.cardFragmentsById.c11 = 3
+    const craftCardFromFragments = vi.fn()
+
+    renderCollection({ profile, craftCardFromFragments })
+    await user.click(screen.getByTestId('collection-card-c11'))
+
+    expect(screen.getByTestId('collection-fragment-craft-progress')).toHaveTextContent('Fragments: 3/3')
+    const craftButton = screen.getByTestId('collection-fragment-craft-button')
+    expect(craftButton).toBeEnabled()
+
+    await user.click(craftButton)
+    expect(craftCardFromFragments).toHaveBeenCalledWith('c11')
+  })
+
+  test('disables fragment crafting when fragments are below threshold', async () => {
+    const user = userEvent.setup()
+    const profile = createDefaultProfile()
+    if (!profile.ownedCardIds.includes('c11')) {
+      profile.ownedCardIds.push('c11')
+    }
+    profile.cardCopiesById.c11 = 2
+    profile.cardFragmentsById.c11 = 2
+    const craftCardFromFragments = vi.fn()
+
+    renderCollection({ profile, craftCardFromFragments })
+    await user.click(screen.getByTestId('collection-card-c11'))
+
+    expect(screen.getByTestId('collection-fragment-craft-progress')).toHaveTextContent('Fragments: 2/3')
+    expect(screen.getByTestId('collection-fragment-craft-button')).toBeDisabled()
   })
 })

@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test } from 'bun:test'
 import type { Move } from '../types'
 import type { MatchState } from './types'
 import { deriveEffectFeedEntries } from './effectFeed'
@@ -59,7 +59,7 @@ describe('deriveEffectFeedEntries', () => {
       throw new Error('Expected element state.')
     }
     next.elementState.floodedCell = 4
-    next.elementState.frozenCellByActor.cpu = 5
+    next.elementState.frozenCellByActor.cpu = { cell: 5, turnsRemaining: 2 }
     const move: Move = { actor: 'player', cardId: 'c03', cell: 0, powerTarget: { targetCell: 4 } }
 
     const entries = deriveEffectFeedEntries(previous, next, move)
@@ -98,5 +98,95 @@ describe('deriveEffectFeedEntries', () => {
     const entries = deriveEffectFeedEntries(previous, next, move)
 
     expect(entries.some((entry) => entry.text.includes('Mode normal'))).toBe(true)
+  })
+
+  test('reports roche shield gain when charge is added', () => {
+    const previous = makeState()
+    const next = makeState()
+    previous.board[4] = { owner: 'player', cardId: 'c32' }
+    next.board[4] = { owner: 'player', cardId: 'c32' }
+    if (!previous.elementState || !next.elementState) {
+      throw new Error('Expected element state.')
+    }
+    previous.elementState.boardEffectsByCell[4] = {
+      permanentDelta: { top: 0, right: 0, bottom: 0, left: 0 },
+      burnTicksRemaining: 0,
+      allStatsMinusOneStacks: [],
+      unflippableUntilEndOfOpponentNextTurn: null,
+      swappedHighLowUntilMatchEnd: false,
+      rockShieldCharges: 0,
+      poisonFirstCombatPending: false,
+      insectEntryStacks: 0,
+      dragonApplied: false,
+    }
+    next.elementState.boardEffectsByCell[4] = {
+      ...previous.elementState.boardEffectsByCell[4]!,
+      rockShieldCharges: 1,
+    }
+    const move: Move = { actor: 'player', cardId: 'c32', cell: 4 }
+
+    const entries = deriveEffectFeedEntries(previous, next, move)
+
+    expect(entries.some((entry) => entry.text.includes('gagne un bouclier'))).toBe(true)
+  })
+
+  test('reports roche shield consumption when charge is spent', () => {
+    const previous = makeState()
+    const next = makeState()
+    previous.board[4] = { owner: 'player', cardId: 'c32' }
+    next.board[4] = { owner: 'player', cardId: 'c32' }
+    if (!previous.elementState || !next.elementState) {
+      throw new Error('Expected element state.')
+    }
+    previous.elementState.boardEffectsByCell[4] = {
+      permanentDelta: { top: 0, right: 0, bottom: 0, left: 0 },
+      burnTicksRemaining: 0,
+      allStatsMinusOneStacks: [],
+      unflippableUntilEndOfOpponentNextTurn: null,
+      swappedHighLowUntilMatchEnd: false,
+      rockShieldCharges: 1,
+      poisonFirstCombatPending: false,
+      insectEntryStacks: 0,
+      dragonApplied: false,
+    }
+    next.elementState.boardEffectsByCell[4] = {
+      ...previous.elementState.boardEffectsByCell[4]!,
+      rockShieldCharges: 0,
+    }
+    const move: Move = { actor: 'cpu', cardId: 'c17', cell: 1 }
+
+    const entries = deriveEffectFeedEntries(previous, next, move)
+
+    expect(entries.some((entry) => entry.text.includes('consommé'))).toBe(true)
+  })
+
+  test('reports a dedicated feed entry when sol applies a temporary all-stat malus', () => {
+    const previous = makeState()
+    const next = makeState()
+    previous.board[4] = { owner: 'cpu', cardId: 'c17' }
+    next.board[4] = { owner: 'cpu', cardId: 'c17' }
+    if (!previous.elementState || !next.elementState) {
+      throw new Error('Expected element state.')
+    }
+    previous.elementState.boardEffectsByCell[4] = {
+      permanentDelta: { top: 0, right: 0, bottom: 0, left: 0 },
+      burnTicksRemaining: 0,
+      allStatsMinusOneStacks: [],
+      unflippableUntilEndOfOpponentNextTurn: null,
+      swappedHighLowUntilMatchEnd: false,
+      rockShieldCharges: 0,
+      poisonFirstCombatPending: false,
+      insectEntryStacks: 0,
+      dragonApplied: false,
+    }
+    next.elementState.boardEffectsByCell[4] = {
+      ...previous.elementState.boardEffectsByCell[4]!,
+      allStatsMinusOneStacks: [{ source: 'sol', actor: 'cpu', untilTurn: 2 }],
+    }
+    const move: Move = { actor: 'player', cardId: 'c45', cell: 3 }
+
+    const entries = deriveEffectFeedEntries(previous, next, move)
+
+    expect(entries.some((entry) => entry.text.includes('malus temporaire de Sol'))).toBe(true)
   })
 })

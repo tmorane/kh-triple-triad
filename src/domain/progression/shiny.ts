@@ -1,9 +1,11 @@
 import type { SeededRng } from '../random/seededRng'
 import type { CardId, PlayerProfile } from '../types'
+import { hasUnlockedAllAchievements } from './achievementRewards'
 
 export const SHINY_DROP_ROLL_MAX = 10_000
 export const SHINY_DROP_CHANCE = 100
-export const SHINY_CRAFT_COST = 50
+export const BASE_SHINY_CRAFT_COST = 50
+export const SHINY_CRAFT_COST = BASE_SHINY_CRAFT_COST
 
 export function rollShinyVariant(rng: SeededRng): boolean {
   return rng.nextInt(SHINY_DROP_ROLL_MAX) < SHINY_DROP_CHANCE
@@ -25,10 +27,15 @@ export function hasShinyCopy(profile: PlayerProfile, cardId: CardId): boolean {
   return getShinyCopies(profile, cardId) > 0
 }
 
+export function getShinyCraftCost(profile: PlayerProfile): number {
+  return hasUnlockedAllAchievements(profile) ? Math.ceil(BASE_SHINY_CRAFT_COST / 2) : BASE_SHINY_CRAFT_COST
+}
+
 export function craftShinyCard(profile: PlayerProfile, cardId: CardId): PlayerProfile {
+  const shinyCraftCost = getShinyCraftCost(profile)
   const normalCopies = getNormalCopies(profile, cardId)
-  if (normalCopies < SHINY_CRAFT_COST) {
-    throw new Error('You need at least 50 normal copies to craft a shiny card.')
+  if (normalCopies < shinyCraftCost) {
+    throw new Error(`You need at least ${shinyCraftCost} normal copies to craft a shiny card.`)
   }
 
   const nextProfile: PlayerProfile = {
@@ -38,7 +45,7 @@ export function craftShinyCard(profile: PlayerProfile, cardId: CardId): PlayerPr
     shinyCardCopiesById: { ...profile.shinyCardCopiesById },
   }
 
-  const normalCopiesAfter = normalCopies - SHINY_CRAFT_COST
+  const normalCopiesAfter = normalCopies - shinyCraftCost
   if (normalCopiesAfter <= 0) {
     delete nextProfile.cardCopiesById[cardId]
   } else {

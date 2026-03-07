@@ -1,7 +1,11 @@
 import { getElementLabel } from '../../domain/cards/taxonomy'
 import type { CardElementId } from '../../domain/types'
 
-const elementLogoBasePath = `${import.meta.env.BASE_URL}logos-elements/`
+const viteBaseUrl =
+  typeof import.meta !== 'undefined' && typeof import.meta.env !== 'undefined' && typeof import.meta.env.BASE_URL === 'string'
+    ? import.meta.env.BASE_URL
+    : '/'
+const elementLogoBasePath = `${viteBaseUrl}logos-elements/`
 
 const elementLogoFilenameById: Partial<Record<CardElementId, string>> = {
   normal: 'normal.png',

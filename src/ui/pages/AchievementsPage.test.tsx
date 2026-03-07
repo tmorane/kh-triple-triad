@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ComponentProps } from 'react'
 import { MemoryRouter } from 'react-router-dom'
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test } from 'bun:test'
 import { GameContext } from '../../app/GameContext'
 import { createDefaultProfile } from '../../domain/progression/profile'
 import { AchievementsPage } from './AchievementsPage'
@@ -108,23 +108,26 @@ describe('AchievementsPage', () => {
     renderAchievements()
 
     expect(screen.getAllByTestId(/^achievement-item-/)).toHaveLength(40)
-    expect(screen.getByTestId('achievements-unlocked-count')).toHaveTextContent('Unlocked 0/40')
+    expect(screen.getByRole('heading', { name: 'Succès' })).toBeInTheDocument()
+    expect(screen.getByTestId('achievements-unlocked-count')).toHaveTextContent('Débloqués 0/40')
+    expect(screen.getByTestId('achievements-claimable-summary')).toHaveTextContent('Récompenses claimables: 0 pack(s) commun(s)')
+    expect(screen.getByTestId('achievements-claim-all-button')).toBeDisabled()
   })
 
   test('highlights the full card when unlocked and does not show unlock date', () => {
     const profile = createDefaultProfile()
-    profile.achievements = [{ id: 'play_1', unlockedAt: '2026-02-22T10:11:12.000Z' }]
+    profile.achievements = [{ id: 'match_1', unlockedAt: '2026-02-22T10:11:12.000Z' }]
 
     renderAchievements({ profile })
 
-    expect(screen.getByTestId('achievement-item-play_1')).toHaveClass('is-unlocked')
-    expect(screen.getByTestId('achievement-item-play_3')).toHaveClass('is-locked')
-    expect(screen.getByTestId('achievement-item-play_1')).toHaveTextContent('Play 1 match')
-    expect(screen.getByTestId('achievement-item-play_3')).toHaveTextContent('Play 3 matches')
+    expect(screen.getByTestId('achievement-item-match_1')).toHaveClass('is-unlocked')
+    expect(screen.getByTestId('achievement-item-match_10')).toHaveClass('is-locked')
+    expect(screen.getByTestId('achievement-item-match_1')).toHaveTextContent('Jouer 1 match')
+    expect(screen.getByTestId('achievement-item-match_10')).toHaveTextContent('Jouer 10 matchs')
     expect(screen.queryByText('Hover')).not.toBeInTheDocument()
-    expect(screen.getByTestId('achievement-status-play_1')).toHaveClass('is-unlocked')
-    expect(screen.getByTestId('achievement-status-play_3')).toHaveClass('is-locked')
-    expect(screen.queryByTestId('achievement-date-play_1')).not.toBeInTheDocument()
+    expect(screen.getByTestId('achievement-status-match_1')).toHaveClass('is-unlocked')
+    expect(screen.getByTestId('achievement-status-match_10')).toHaveClass('is-locked')
+    expect(screen.queryByTestId('achievement-date-match_1')).not.toBeInTheDocument()
     expect(screen.queryByText(/2026-02-22/)).not.toBeInTheDocument()
   })
 
@@ -132,8 +135,8 @@ describe('AchievementsPage', () => {
     const user = userEvent.setup()
     renderAchievements()
 
-    const item = screen.getByTestId('achievement-item-play_1')
-    const tooltip = screen.getByTestId('achievement-tooltip-play_1')
+    const item = screen.getByTestId('achievement-item-match_1')
+    const tooltip = screen.getByTestId('achievement-tooltip-match_1')
 
     expect(tooltip).toHaveAttribute('hidden')
 
@@ -154,5 +157,34 @@ describe('AchievementsPage', () => {
 
     await user.click(item)
     expect(tooltip).toHaveAttribute('hidden')
+  })
+
+  test('shows global claim button with dynamic amount and calls claim action', async () => {
+    const user = userEvent.setup()
+    const profile = createDefaultProfile()
+    profile.achievements = [
+      { id: 'match_1', unlockedAt: '2026-03-02T10:00:00.000Z' },
+      { id: 'win_1', unlockedAt: '2026-03-02T10:01:00.000Z' },
+      { id: 'gold_250', unlockedAt: '2026-03-02T10:02:00.000Z' },
+    ]
+    profile.achievementRewardsClaimedById = { win_1: true }
+
+    let called = 0
+    renderAchievements({
+      profile,
+      claimAllAchievementRewards: () => {
+        called += 1
+        return { claimedCount: 2, grantedCommonPacks: 2 }
+      },
+    })
+
+    expect(screen.getByTestId('achievements-claimable-summary')).toHaveTextContent('Récompenses claimables: 2 pack(s) commun(s)')
+
+    const button = screen.getByTestId('achievements-claim-all-button')
+    expect(button).toBeEnabled()
+    expect(button).toHaveTextContent('Récupérer 2 pack(s) commun(s)')
+
+    await user.click(button)
+    expect(called).toBe(1)
   })
 })
