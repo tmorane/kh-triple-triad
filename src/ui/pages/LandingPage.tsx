@@ -1,128 +1,149 @@
 import { Link } from 'react-router-dom'
 
-const previewCards = [
-  { name: 'Pikachu', src: '/splashart/Pikachu.webp', value: '8' },
-  { name: 'Dracaufeu', src: '/splashart/Dracaufeu.webp', value: 'A' },
-  { name: 'Tortank', src: '/splashart/Tortank.webp', value: '7' },
-  { name: 'Mewtwo', src: '/splashart/Mewtwo.webp', value: '9' },
-]
-
-const reasons = [
-  {
-    title: 'Une partie en deux minutes',
-    text: 'Tu poses une carte, tu retournes une ligne, tu relances parce que tu sais exactement où tu as merdé.',
-  },
-  {
-    title: 'Des decks qui ont du caractère',
-    text: 'Types, synergies, combos, raretés: assez simple pour tester vite, assez profond pour optimiser.',
-  },
-  {
-    title: 'Un vrai fil de progression',
-    text: 'Packs, Pokédex, missions, rangs et récompenses gardent chaque duel utile.',
-  },
-]
-
-const modes = [
-  {
-    title: '3x3 classique',
-    text: 'Le format nerveux pour apprendre le rythme et punir les placements faibles.',
-    src: '/modes/mode-3x3-normal-new.webp',
-  },
-  {
-    title: '3x3 classé',
-    text: 'Même grille, moins de pitié. Tu gagnes des LP ou tu découvres l’humilité.',
-    src: '/modes/mode-3x3-ranked-new.webp',
-  },
+const featureLinks = [
+  { label: 'Mode histoire', to: '/story' },
+  { label: 'Duel 3x3', to: '/setup' },
+  { label: 'Pokédex', to: '/pokedex' },
+  { label: 'Boosters', to: '/packs' },
 ]
 
 export function LandingPage() {
   return (
     <div className="landing-page">
-      <header className="landing-nav" aria-label="Navigation landing">
-        <Link className="landing-brand" to="/">
-          KH Triple Triad
-        </Link>
-        <nav className="landing-nav__links" aria-label="Navigation rapide">
-          <Link to="/rules">Règles</Link>
-          <Link to="/home">Console</Link>
-          <Link className="landing-nav__cta" to="/setup">
-            Tester
-          </Link>
-        </nav>
-      </header>
-
       <main>
         <section className="landing-hero">
-          <div className="landing-hero__media" aria-hidden="true">
-            <div className="landing-board-preview">
-              <div className="landing-board-preview__grid">
-                {previewCards.map((card, index) => (
-                  <article className={`landing-preview-card landing-preview-card--${index + 1}`} key={card.name}>
-                    <img src={card.src} alt="" />
-                    <strong>{card.value}</strong>
-                    <span>{card.name}</span>
-                  </article>
-                ))}
-              </div>
-            </div>
-          </div>
-
           <div className="landing-hero__copy">
-            <h1>KH Triple Triad</h1>
+            <span className="landing-kicker">Tout ce qui est déjà dans le jeu</span>
+            <h1>PokeTriad</h1>
             <p>
-              Le duel de cartes tactique qui se joue en deux minutes et se rejoue toute la soirée. Pose, retourne,
-              collectionne, grimpe.
+              Lance une partie, avance dans l’histoire, complète ton Pokédex et ouvre des boosters pour renforcer ton
+              deck. Tout est pensé pour enchaîner vite: jouer, récupérer de nouvelles cartes, puis retenter mieux.
             </p>
             <div className="landing-hero__actions">
               <Link className="button button-primary landing-primary-action" to="/setup">
-                Tester maintenant
+                Lancer une partie
               </Link>
-              <Link className="button landing-secondary-action" to="/rules">
-                Voir les règles
+              <Link className="button landing-secondary-action" to="/story">
+                Explorer l’histoire
               </Link>
             </div>
           </div>
-        </section>
 
-        <section className="landing-reasons" aria-labelledby="landing-reasons-title">
-          <div className="landing-section-head">
-            <h2 id="landing-reasons-title">Pourquoi tu vas relancer une partie</h2>
-            <p>Parce que le jeu comprend le meilleur piège: une défaite qui ressemble à une revanche facile.</p>
-          </div>
-          <div className="landing-reason-grid">
-            {reasons.map((reason, index) => (
-              <article className="landing-reason" key={reason.title}>
-                <span>{String(index + 1).padStart(2, '0')}</span>
-                <h3>{reason.title}</h3>
-                <p>{reason.text}</p>
-              </article>
-            ))}
+          <div className="landing-hero__media">
+            <figure className="landing-ingame-preview">
+              <img src="/ui/landing/ingame-board-preview.png" alt="Partie PokeTriad en cours sur un plateau 3x3" />
+            </figure>
           </div>
         </section>
 
-        <section className="landing-modes" aria-labelledby="landing-modes-title">
+        <section className="landing-demo-strip" aria-label="Modules disponibles">
+          {featureLinks.map((feature) => (
+            <Link key={feature.to} to={feature.to}>
+              {feature.label}
+            </Link>
+          ))}
+        </section>
+
+        <section className="landing-showcase" aria-labelledby="landing-showcase-title">
           <div className="landing-section-head">
-            <h2 id="landing-modes-title">Choisis ton duel</h2>
-            <p>Commence tranquille, puis va chercher le classé quand tu sens que le cerveau chauffe.</p>
+            <span className="landing-kicker">Le jeu, pas le blabla</span>
+            <h2 id="landing-showcase-title">Chaque bloc ouvre une vraie partie de l’app</h2>
+            <p>Le but est simple: donner envie de cliquer parce qu’on comprend immédiatement ce qu’il y a à tester.</p>
           </div>
-          <div className="landing-mode-grid">
-            {modes.map((mode) => (
-              <article className="landing-mode" key={mode.title}>
-                <img src={mode.src} alt="" />
+
+          <div className="landing-showcase-grid">
+            <article className="landing-demo-panel landing-demo-panel--story">
+              <div className="landing-demo-panel__copy">
+                <span className="landing-demo-panel__eyebrow">Mode histoire</span>
+                <h3>Une route, des dresseurs, des duels à enchaîner</h3>
+                <p>
+                  Tu avances sur les cartes de la Gen 1, tu croises des adversaires, puis le duel prend le relais. C’est
+                  le fil rouge du jeu, pas un menu décoratif.
+                </p>
+                <Link className="landing-inline-link" to="/story">
+                  Ouvrir le mode histoire
+                </Link>
+              </div>
+              <div className="landing-story-demo" aria-hidden="true">
+                <img src="/story/gen1/pallet-town.png" alt="" />
+                <img src="/story/gen1/route-1.png" alt="" />
+              </div>
+            </article>
+
+            <article className="landing-demo-panel landing-demo-panel--battle">
+              <div className="landing-demo-panel__copy">
+                <span className="landing-demo-panel__eyebrow">Ingame</span>
+                <h3>Le coeur du jeu: lire la grille et retourner la table</h3>
+                <p>
+                  Cinq cartes, un plateau 3x3, des valeurs sur chaque côté. Tu gagnes rarement parce que ta carte est
+                  plus forte; tu gagnes parce qu’elle est posée au bon endroit.
+                </p>
+                <Link className="landing-inline-link" to="/setup">
+                  Lancer un duel
+                </Link>
+              </div>
+              <div className="landing-mode-demo" aria-hidden="true">
+                <img src="/modes/mode-3x3-normal-new.webp" alt="" />
+                <img src="/modes/mode-3x3-ranked-new.webp" alt="" />
+              </div>
+            </article>
+
+            <article className="landing-demo-panel landing-demo-panel--pokedex">
+              <div className="landing-demo-panel__copy">
+                <span className="landing-demo-panel__eyebrow">Pokédex</span>
+                <h3>La collection sert vraiment tes decks</h3>
+                <p>
+                  Les cartes ne sont pas là pour remplir une vitrine. Tu compares les raretés, les éléments et les
+                  valeurs avant de construire un deck qui tient en duel.
+                </p>
+                <Link className="landing-inline-link" to="/pokedex">
+                  Voir le Pokédex
+                </Link>
+              </div>
+              <div className="landing-pokedex-demo" aria-hidden="true">
                 <div>
-                  <h3>{mode.title}</h3>
-                  <p>{mode.text}</p>
+                  <strong>251</strong>
+                  <span>cartes</span>
                 </div>
-              </article>
-            ))}
+                <div>
+                  <strong>5</strong>
+                  <span>raretés</span>
+                </div>
+                <img src="/packs/legendary-focus-pack.svg" alt="" />
+              </div>
+            </article>
+
+            <article className="landing-demo-panel landing-demo-panel--packs">
+              <div className="landing-demo-panel__copy">
+                <span className="landing-demo-panel__eyebrow">Boosters</span>
+                <h3>Ouvre des packs, améliore ta main, recommence plus malin</h3>
+                <p>
+                  Les boosters alimentent la collection et changent tes options de deck. Rare, épique, légendaire: la
+                  boucle est lisible, rapide, et elle pousse à relancer.
+                </p>
+                <Link className="landing-inline-link" to="/packs">
+                  Ouvrir les boosters
+                </Link>
+              </div>
+              <div className="landing-pack-demo" aria-hidden="true">
+                <img src="/packs/rare-pack.svg" alt="" />
+                <img src="/packs/epic-pack.svg" alt="" />
+                <img src="/packs/legendary-pack.svg" alt="" />
+              </div>
+            </article>
           </div>
         </section>
 
         <section className="landing-final-cta" aria-labelledby="landing-final-title">
-          <h2 id="landing-final-title">Une grille, neuf cartes, zéro excuse.</h2>
-          <Link className="button button-primary landing-primary-action" to="/setup">
-            Lancer un test
-          </Link>
+          <h2 id="landing-final-title">La meilleure façon de comprendre, c’est de jouer. Lance un duel, puis reviens ouvrir un booster.</h2>
+          <div className="landing-hero__actions">
+            <Link className="button button-primary landing-primary-action" to="/setup">
+              Jouer maintenant
+            </Link>
+            <Link className="button landing-secondary-action" to="/pokedex">
+              Parcourir les cartes
+            </Link>
+          </div>
         </section>
       </main>
     </div>
