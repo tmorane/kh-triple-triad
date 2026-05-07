@@ -1023,7 +1023,7 @@ export function CollectionPage() {
         <Link className="button button-primary" to="/setup">
           Lancer un match
         </Link>
-        <Link className="button" to="/">
+        <Link className="button" to="/home">
           Accueil
         </Link>
       </div>

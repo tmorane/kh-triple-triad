@@ -369,7 +369,7 @@ export function PacksPage() {
         <Link className="button" to="/pokedex">
           Pokédex
         </Link>
-        <Link className="button" to="/">
+        <Link className="button" to="/home">
           Accueil
         </Link>
       </div>

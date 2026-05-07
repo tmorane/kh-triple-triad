@@ -876,7 +876,7 @@ export function ShopPage() {
         <Link className="button button-primary" to="/pokedex">
           Pokédex
         </Link>
-        <Link className="button" to="/">
+        <Link className="button" to="/home">
           Accueil
         </Link>
       </div>

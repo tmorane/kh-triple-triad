@@ -93,7 +93,7 @@ export function MissionsPage() {
         <Link className="button button-primary" to="/setup">
           Jouer
         </Link>
-        <Link className="button" to="/">
+        <Link className="button" to="/home">
           Accueil
         </Link>
       </div>

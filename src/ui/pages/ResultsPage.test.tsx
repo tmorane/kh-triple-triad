@@ -542,7 +542,7 @@ describe('ResultsPage mission recap', () => {
     expect(screen.getByTestId('play-again-button')).toHaveAttribute('href', '/setup')
     expect(screen.getByTestId('results-pokedex-button')).toHaveAttribute('href', '/pokedex')
     expect(screen.getByTestId('results-shop-button')).toHaveAttribute('href', '/shop')
-    expect(screen.getByTestId('results-home-button')).toHaveAttribute('href', '/')
+    expect(screen.getByTestId('results-home-button')).toHaveAttribute('href', '/home')
   })
 
   test('hides mission recap when summary has no mission recap', () => {

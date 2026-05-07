@@ -32,7 +32,7 @@ export function LegalIpPage() {
       </article>
 
       <div className="actions">
-        <Link className="button button-primary" to="/">
+        <Link className="button button-primary" to="/home">
           Accueil
         </Link>
         <Link className="button" to="/setup">

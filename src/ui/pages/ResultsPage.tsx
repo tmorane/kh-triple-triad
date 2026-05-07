@@ -118,7 +118,7 @@ export function ResultsPage() {
   const [swapOutCardId, setSwapOutCardId] = useState<CardId | null>(towerRun?.deck[0] ?? null)
 
   if (!lastMatchSummary) {
-    return <Navigate to="/" replace />
+    return <Navigate to="/home" replace />
   }
 
   const { queue, result, rewards, opponent, rankedMode, rankedUpdate, trackedPokemonUpdate, tower, missionRecap, storyReward } =
@@ -465,7 +465,7 @@ export function ResultsPage() {
         <Link className="button results-main-action results-main-action--shop" to="/shop" data-testid="results-shop-button">
           Shop
         </Link>
-        <Link className="button results-main-action results-main-action--home" to="/" data-testid="results-home-button">
+        <Link className="button results-main-action results-main-action--home" to="/home" data-testid="results-home-button">
           Accueil
         </Link>
       </div>

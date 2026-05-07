@@ -375,21 +375,21 @@ describe('app integration', () => {
   })
 
   test('theme defaults to pokemon when no preference exists', () => {
-    renderApp('/')
+    renderApp('/home')
 
     expect(document.body.dataset.theme).toBe('pokemon')
   })
 
   test('theme forces pokemon even when stored preference is kh', () => {
     localStorage.setItem(THEME_STORAGE_KEY, 'kh')
-    renderApp('/')
+    renderApp('/home')
 
     expect(document.body.dataset.theme).toBe('pokemon')
     expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('pokemon')
   })
 
   test('theme and background selectors are hidden when locked', () => {
-    renderApp('/')
+    renderApp('/home')
 
     expect(document.body.dataset.theme).toBe('pokemon')
     expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('pokemon')
@@ -401,14 +401,14 @@ describe('app integration', () => {
 
   test('background mode follows system preference when no stored value exists', () => {
     mockPrefersDarkMode(true)
-    renderApp('/')
+    renderApp('/home')
 
     expect(document.body.dataset.backgroundMode).toBe('dark')
   })
 
   test('background mode toggle updates body dataset', async () => {
     const user = userEvent.setup()
-    renderApp('/')
+    renderApp('/home')
 
     expect(document.body.dataset.backgroundMode).toBe('light')
     await user.click(screen.getByTestId('background-mode-toggle'))
@@ -417,7 +417,7 @@ describe('app integration', () => {
 
   test('background mode toggle persists preference across remounts', async () => {
     const user = userEvent.setup()
-    const firstRender = renderApp('/')
+    const firstRender = renderApp('/home')
 
     expect(document.body.dataset.backgroundMode).toBe('light')
     await user.click(screen.getByTestId('background-mode-toggle'))
@@ -425,14 +425,14 @@ describe('app integration', () => {
     expect(localStorage.getItem(BACKGROUND_MODE_STORAGE_KEY)).toBe('dark')
 
     firstRender.unmount()
-    renderApp('/')
+    renderApp('/home')
 
     expect(document.body.dataset.backgroundMode).toBe('dark')
   })
 
   test('home -> setup -> match happy path from preset selection', async () => {
     const user = userEvent.setup()
-    renderApp('/')
+    renderApp('/home')
 
     expect(screen.getByTestId('topbar-cta-link')).toHaveTextContent('Jouer')
     await user.click(screen.getByTestId('topbar-cta-link'))
@@ -521,7 +521,7 @@ describe('app integration', () => {
 
   test('topbar tracked pokemon widget opens popup and updates target', async () => {
     const user = userEvent.setup()
-    renderApp('/')
+    renderApp('/home')
 
     expect(screen.getByTestId('topbar-tracked-name')).toHaveTextContent('Aucun')
     expect(screen.getByTestId('topbar-tracked-gauge')).toHaveTextContent('0/100')
@@ -536,7 +536,7 @@ describe('app integration', () => {
   })
 
   test('player name is rendered in both topbar brand and home heading', () => {
-    renderApp('/')
+    renderApp('/home')
 
     expect(screen.getByRole('link', { name: 'Joueur' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Joueur' })).toBeInTheDocument()
@@ -556,6 +556,14 @@ describe('app integration', () => {
 
     await user.click(screen.getByRole('link', { name: 'Garden Console' }))
     expect(screen.getByTestId('home-quick-action-play')).toBeInTheDocument()
+  })
+
+  test('root route renders public landing with test CTA', () => {
+    renderApp('/')
+
+    expect(screen.getByRole('heading', { name: 'KH Triple Triad' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Tester maintenant' })).toHaveAttribute('href', '/setup')
+    expect(screen.queryByTestId('topbar-tracked-name')).not.toBeInTheDocument()
   })
 
   test('decks blocks adding cards from the right grid when deck is already full', async () => {
@@ -899,7 +907,7 @@ describe('app integration', () => {
 
   test('shop is reachable from home and buying a pack updates gold and pack inventory', async () => {
     const user = userEvent.setup()
-    renderApp('/')
+    renderApp('/home')
     const commonPackPrice = getPackPrice('common')
 
     await user.click(screen.getByTestId('topbar-link-shop'))
@@ -1004,7 +1012,7 @@ describe('app integration', () => {
   })
 
   test('home does not expose legacy reset controls', () => {
-    renderApp('/')
+    renderApp('/home')
 
     expect(screen.queryByTestId('home-reset-trigger')).not.toBeInTheDocument()
     expect(screen.queryByTestId('home-reset-confirm')).not.toBeInTheDocument()
@@ -1269,7 +1277,7 @@ describe('app integration', () => {
 
   test('achievements page is reachable and displays unlocked progress', async () => {
     const user = userEvent.setup()
-    renderApp('/')
+    renderApp('/home')
 
     await user.click(screen.getByTestId('topbar-more-toggle'))
     expect(screen.getByTestId('topbar-more-menu')).toBeInTheDocument()
@@ -1293,7 +1301,7 @@ describe('app integration', () => {
     localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(seeded))
 
     const user = userEvent.setup()
-    renderApp('/')
+    renderApp('/home')
 
     await user.click(screen.getByTestId('topbar-more-toggle'))
     await user.click(screen.getByTestId('topbar-more-link-achievements'))
@@ -1317,7 +1325,7 @@ describe('app integration', () => {
 
   test('ranks page is reachable from more menu and shows all tiers', async () => {
     const user = userEvent.setup()
-    renderApp('/')
+    renderApp('/home')
 
     await user.click(screen.getByTestId('topbar-more-toggle'))
     await user.click(screen.getByTestId('topbar-more-link-ranks'))
@@ -1328,7 +1336,7 @@ describe('app integration', () => {
 
   test('missions page is reachable from more menu', async () => {
     const user = userEvent.setup()
-    renderApp('/')
+    renderApp('/home')
 
     await user.click(screen.getByTestId('topbar-more-toggle'))
     await user.click(screen.getByTestId('topbar-more-link-missions'))
@@ -1339,7 +1347,7 @@ describe('app integration', () => {
 
   test('story mode opens a map selector before entering a map', async () => {
     const user = userEvent.setup()
-    renderApp('/')
+    renderApp('/home')
 
     await user.click(screen.getByTestId('topbar-more-toggle'))
     await user.click(screen.getByTestId('topbar-more-link-story'))
@@ -1608,7 +1616,7 @@ describe('app integration', () => {
 
   test('changelogs page is reachable from more menu', async () => {
     const user = userEvent.setup()
-    renderApp('/')
+    renderApp('/home')
 
     await user.click(screen.getByTestId('topbar-more-toggle'))
     await user.click(screen.getByTestId('topbar-more-link-changelogs'))
@@ -1619,7 +1627,7 @@ describe('app integration', () => {
 
   test('mentions ip page is reachable from more menu with legal disclaimer blocks', async () => {
     const user = userEvent.setup()
-    renderApp('/')
+    renderApp('/home')
 
     await user.click(screen.getByTestId('topbar-more-toggle'))
     await user.click(await screen.findByTestId('topbar-more-link-legal'))
@@ -1632,7 +1640,7 @@ describe('app integration', () => {
 
   test('privacy page is reachable from more menu with data handling sections', async () => {
     const user = userEvent.setup()
-    renderApp('/')
+    renderApp('/home')
 
     await user.click(screen.getByTestId('topbar-more-toggle'))
     await user.click(await screen.findByTestId('topbar-more-link-privacy'))
@@ -1646,7 +1654,7 @@ describe('app integration', () => {
 
   test('more menu keeps only secondary links and mobile nav includes decks and packs', async () => {
     const user = userEvent.setup()
-    renderApp('/')
+    renderApp('/home')
 
     expect(screen.getByTestId('topbar-link-decks')).toHaveAttribute('href', '/decks')
     expect(screen.getByTestId('topbar-link-packs')).toHaveAttribute('href', '/packs')

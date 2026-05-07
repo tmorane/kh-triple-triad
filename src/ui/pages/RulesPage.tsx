@@ -243,7 +243,7 @@ export function RulesPage() {
         <Link className="button button-primary" to="/setup">
           Préparer un match
         </Link>
-        <Link className="button" to="/">
+        <Link className="button" to="/home">
           Accueil
         </Link>
       </div>

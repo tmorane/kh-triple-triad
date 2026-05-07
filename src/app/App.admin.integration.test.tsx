@@ -24,7 +24,7 @@ describe('App admin images integration', () => {
 
   test('hides Admin Images link for allowlisted admins while connection is removed', async () => {
     const user = userEvent.setup()
-    renderApp('/')
+    renderApp('/home')
 
     await user.click(screen.getByTestId('topbar-more-toggle'))
     await waitFor(() => expect(screen.queryByTestId('topbar-more-link-admin-images')).not.toBeInTheDocument())
@@ -34,7 +34,7 @@ describe('App admin images integration', () => {
     const user = userEvent.setup()
     import.meta.env.VITE_ADMIN_ALLOWED_EMAILS = ''
 
-    renderApp('/')
+    renderApp('/home')
 
     await user.click(screen.getByTestId('topbar-more-toggle'))
     await waitFor(() => expect(screen.queryByTestId('topbar-more-link-admin-images')).not.toBeInTheDocument())
@@ -44,7 +44,7 @@ describe('App admin images integration', () => {
     const user = userEvent.setup()
     import.meta.env.VITE_ADMIN_BYPASS_LOCAL_AUTH = 'true'
 
-    renderApp('/')
+    renderApp('/home')
 
     await user.click(screen.getByTestId('topbar-more-toggle'))
     expect(await screen.findByTestId('topbar-more-link-admin-images')).toHaveAttribute('href', '/admin/images')
