@@ -21,8 +21,10 @@ import { createInitialMissionsProgress, missionIds } from './missionCatalog'
 import { createInitialTrackedPokemonState } from './pokedexProgression'
 import { createInitialRankedState } from './ranked'
 
-export const PROFILE_STORAGE_KEY = 'kh-triple-triad-v1-profile'
-const STORED_PROFILES_STORAGE_KEY = 'kh-triple-triad-v1-profiles'
+export const PROFILE_STORAGE_KEY = 'poketriad-v1-profile'
+const LEGACY_PROFILE_STORAGE_KEY = 'kh-triple-triad-v1-profile'
+const STORED_PROFILES_STORAGE_KEY = 'poketriad-v1-profiles'
+const LEGACY_STORED_PROFILES_STORAGE_KEY = 'kh-triple-triad-v1-profiles'
 const STORED_PROFILES_VERSION = 1
 const DEFAULT_PLAYER_NAME = 'Joueur'
 const MAX_PLAYER_NAME_LENGTH = 20
@@ -160,6 +162,7 @@ interface PlayerProfileV7Legacy
   extends Omit<
     PlayerProfile,
     | 'version'
+    | 'hasChosenPlayerName'
     | 'rankedByMode'
     | 'cardFragmentsById'
     | 'shinyCardCopiesById'
@@ -175,6 +178,7 @@ interface PlayerProfileV8Legacy
   extends Omit<
     PlayerProfile,
     | 'version'
+    | 'hasChosenPlayerName'
     | 'settings'
     | 'cardFragmentsById'
     | 'shinyCardCopiesById'
@@ -189,17 +193,26 @@ interface PlayerProfileV8Legacy
 interface PlayerProfileV9Legacy
   extends Omit<
     PlayerProfile,
-    'version' | 'cardFragmentsById' | 'shinyCardCopiesById' | 'achievementProgress' | 'missionRewardsGrantedById' | 'achievementRewardsClaimedById'
+    | 'version'
+    | 'hasChosenPlayerName'
+    | 'cardFragmentsById'
+    | 'shinyCardCopiesById'
+    | 'achievementProgress'
+    | 'missionRewardsGrantedById'
+    | 'achievementRewardsClaimedById'
   > {
   version: 9
 }
 
 interface PlayerProfileV10Legacy
-  extends Omit<PlayerProfile, 'version' | 'cardFragmentsById' | 'achievementProgress' | 'missionRewardsGrantedById' | 'achievementRewardsClaimedById'> {
+  extends Omit<
+    PlayerProfile,
+    'version' | 'hasChosenPlayerName' | 'cardFragmentsById' | 'achievementProgress' | 'missionRewardsGrantedById' | 'achievementRewardsClaimedById'
+  > {
   version: 10
 }
 
-interface PlayerProfileV11Legacy extends Omit<PlayerProfile, 'version' | 'achievementRewardsClaimedById'> {
+interface PlayerProfileV11Legacy extends Omit<PlayerProfile, 'version' | 'hasChosenPlayerName' | 'achievementRewardsClaimedById'> {
   version: 11
 }
 
@@ -257,6 +270,10 @@ export function isPlayerNameValid(name: string): { valid: boolean; reason?: stri
   return { valid: true }
 }
 
+export function shouldRequestPlayerName(profile: PlayerProfile): boolean {
+  return !profile.hasChosenPlayerName
+}
+
 export function createDefaultProfile(): PlayerProfile {
   return createProfileFromStarterCards(starterOwnedCardIds, starterDeck)
 }
@@ -273,6 +290,7 @@ function createProfileFromStarterCards(initialOwnedCardIds: CardId[], initialDec
   return {
     version: 12,
     playerName: DEFAULT_PLAYER_NAME,
+    hasChosenPlayerName: false,
     gold: 100,
     ownedCardIds,
     cardCopiesById: createCardCopiesById(ownedCardIds),
@@ -396,6 +414,7 @@ export function createStoredProfile(playerName: string): StoredProfileMutationRe
   const storedProfiles = getOrCreateStoredProfiles()
   const nextProfile = createDefaultProfile()
   nextProfile.playerName = playerName.trim()
+  nextProfile.hasChosenPlayerName = true
 
   const now = new Date().toISOString()
   const nextId = createStoredProfileId(new Set(storedProfiles.profiles.map((entry) => entry.id)))
@@ -530,7 +549,7 @@ function getOrCreateStoredProfiles(): StoredProfilesV1 {
 }
 
 function loadStoredProfilesFromStorage(): StoredProfilesV1 | null {
-  const raw = localStorage.getItem(STORED_PROFILES_STORAGE_KEY)
+  const raw = readStorageValue(STORED_PROFILES_STORAGE_KEY, LEGACY_STORED_PROFILES_STORAGE_KEY)
   if (!raw) {
     return null
   }
@@ -617,7 +636,7 @@ function loadStoredProfilesFromStorage(): StoredProfilesV1 | null {
 }
 
 function loadLegacyProfileFromStorage(): PlayerProfile {
-  const raw = localStorage.getItem(PROFILE_STORAGE_KEY)
+  const raw = readStorageValue(PROFILE_STORAGE_KEY, LEGACY_PROFILE_STORAGE_KEY)
   if (!raw) {
     return finalizeLoadedProfile(createDefaultProfile()).profile
   }
@@ -820,6 +839,20 @@ function persistStoredProfiles(storedProfiles: StoredProfilesV1): void {
 
 function syncLegacyProfile(profile: PlayerProfile): void {
   localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile))
+}
+
+function readStorageValue(storageKey: string, legacyStorageKey: string): string | null {
+  const raw = localStorage.getItem(storageKey)
+  if (raw) {
+    return raw
+  }
+
+  const legacyRaw = localStorage.getItem(legacyStorageKey)
+  if (legacyRaw) {
+    localStorage.setItem(storageKey, legacyRaw)
+  }
+
+  return legacyRaw
 }
 
 function createStoredProfileId(existingIds: Set<string> = new Set()): string {
@@ -1115,6 +1148,7 @@ function migrateProfileV11ToV12(profile: PlayerProfileV11Legacy): PlayerProfile 
   return {
     ...profile,
     version: 12,
+    hasChosenPlayerName: profile.playerName.trim() !== DEFAULT_PLAYER_NAME,
     achievementRewardsClaimedById: {},
   }
 }
@@ -1143,7 +1177,9 @@ function finalizeLoadedProfile(profile: PlayerProfile): { profile: PlayerProfile
         syncMissions(
           syncMissionRewardsGrantedById(
             syncTrackedPokemon(
-              syncAchievementRewardsClaimedById(syncAchievementProgress(syncCardFragmentsById(syncDeckSlots(syncPlayerName(profile))))),
+              syncAchievementRewardsClaimedById(
+                syncAchievementProgress(syncCardFragmentsById(syncDeckSlots(syncPlayerNameChoice(syncPlayerName(profile))))),
+              ),
             ),
           ),
         ),
@@ -1397,6 +1433,20 @@ function syncPlayerName(profile: PlayerProfile): PlayerProfile {
   }
 }
 
+function syncPlayerNameChoice(profile: PlayerProfile): PlayerProfile {
+  const current = (profile as PlayerProfile & { hasChosenPlayerName?: unknown }).hasChosenPlayerName
+  const hasChosenPlayerName = typeof current === 'boolean' ? current : profile.playerName.trim() !== DEFAULT_PLAYER_NAME
+
+  if (current === hasChosenPlayerName) {
+    return profile
+  }
+
+  return {
+    ...profile,
+    hasChosenPlayerName,
+  }
+}
+
 function syncMissions(profile: PlayerProfile): PlayerProfile {
   if (!isMissionProgressMap(profile.missions)) {
     return {
@@ -1532,6 +1582,7 @@ function isPlayerProfile(value: unknown): value is PlayerProfile {
     candidate.version === 12 &&
     typeof candidate.playerName === 'string' &&
     isPlayerNameValid(candidate.playerName).valid &&
+    (candidate.hasChosenPlayerName === undefined || typeof candidate.hasChosenPlayerName === 'boolean') &&
     typeof candidate.gold === 'number' &&
     Array.isArray(candidate.ownedCardIds) &&
     candidate.ownedCardIds.every((card) => typeof card === 'string') &&

@@ -258,6 +258,7 @@ export interface SpecialPackPityState {
 export interface PlayerProfile {
   version: 12
   playerName: string
+  hasChosenPlayerName: boolean
   gold: number
   ownedCardIds: CardId[]
   cardCopiesById: Record<CardId, number>

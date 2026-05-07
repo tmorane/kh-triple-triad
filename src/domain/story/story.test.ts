@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { beforeEach, describe, expect, test } from 'bun:test'
 import { cardPool } from '../cards/cardPool'
 import { createDefaultProfile } from '../progression/profile'
 import {
@@ -12,6 +12,7 @@ import {
   listStoryLeagueStages,
   listStoryMaps,
   listStoryTrainers,
+  loadStoryProgress,
   markStoryTrainerDefeated,
   moveStoryPlayer,
   resolveStoryMapExit,
@@ -20,12 +21,31 @@ import {
   resolveStoryMap,
   resolveStoryTrainer,
   resolveStoryZoneReward,
+  saveStoryProgress,
+  STORY_PROGRESS_STORAGE_KEY,
   type StoryDirection,
   type StoryMap,
   type StoryPoint,
 } from './story'
 
 describe('story mode domain', () => {
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
+  test('migrates old KH story progress into PokeTriad storage', () => {
+    const legacyStoryProgressStorageKey = 'kh-triple-triad-story-progress-v1'
+    const progress = markStoryTrainerDefeated(createInitialStoryProgress(), 'route-kid')
+
+    localStorage.setItem(legacyStoryProgressStorageKey, JSON.stringify(progress))
+
+    expect(STORY_PROGRESS_STORAGE_KEY).toBe('poketriad-story-progress-v1')
+    expect(loadStoryProgress().defeatedTrainerIds).toContain('route-kid')
+
+    saveStoryProgress(progress)
+    expect(localStorage.getItem(STORY_PROGRESS_STORAGE_KEY)).toBeTruthy()
+  })
+
   test('lists story maps available for the selector as immutable entries', () => {
     const maps = listStoryMaps()
 

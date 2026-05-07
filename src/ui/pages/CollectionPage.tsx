@@ -20,7 +20,8 @@ type CollectionDiscoveryFilter = 'all' | 'owned' | 'locked' | 'fragment'
 type CollectionFinishFilter = 'all' | 'shiny'
 
 const rarityFilterOrder: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary']
-const collectionFiltersStorageKey = 'kh-triple-triad.collection-filters.v2'
+const collectionFiltersStorageKey = 'poketriad.collection-filters.v2'
+const legacyCollectionFiltersStorageKey = 'kh-triple-triad.collection-filters.v2'
 
 const discoveryFilterOptions: Array<{ value: CollectionDiscoveryFilter; label: string }> = [
   { value: 'all', label: 'Tous' },
@@ -130,7 +131,7 @@ function readPersistedCollectionFilters(
   }
 
   try {
-    const rawValue = window.localStorage.getItem(collectionFiltersStorageKey)
+    const rawValue = readCollectionFiltersStorage()
     if (!rawValue) {
       return null
     }
@@ -162,6 +163,20 @@ function readPersistedCollectionFilters(
   } catch {
     return null
   }
+}
+
+function readCollectionFiltersStorage(): string | null {
+  const rawValue = window.localStorage.getItem(collectionFiltersStorageKey)
+  if (rawValue) {
+    return rawValue
+  }
+
+  const legacyRawValue = window.localStorage.getItem(legacyCollectionFiltersStorageKey)
+  if (legacyRawValue) {
+    window.localStorage.setItem(collectionFiltersStorageKey, legacyRawValue)
+  }
+
+  return legacyRawValue
 }
 
 function persistCollectionFilters(filters: PersistedCollectionFilters) {

@@ -1,8 +1,9 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, type FormEvent, useEffect, useState } from 'react'
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { canAccessAdminImages } from './app/admin/adminClientAccess'
 import { type BackgroundMode, persistBackgroundMode, resolveBackgroundMode, toggleBackgroundMode } from './app/backgroundMode'
 import { useGame } from './app/useGame'
+import { shouldRequestPlayerName } from './domain/progression/profile'
 import { listStoryMaps } from './domain/story/story'
 import { HomePage } from './ui/pages/HomePage'
 import { LandingPage } from './ui/pages/LandingPage'
@@ -11,7 +12,8 @@ import { TrackedPokemonWidget } from './ui/components/TrackedPokemonWidget'
 import { stopStoryMusic } from './ui/audio/storyMusic'
 import './index.css'
 
-const THEME_STORAGE_KEY = 'kh-triple-triad-theme-mode-v1'
+const THEME_STORAGE_KEY = 'poketriad-theme-mode-v1'
+const LEGACY_THEME_STORAGE_KEY = 'kh-triple-triad-theme-mode-v1'
 const LOCKED_THEME_MODE = 'pokemon' as const
 const TOPBAR_ICON_PATHS = {
   play: '/ui/icons/header/play.png',
@@ -48,17 +50,122 @@ const AdminImagesPage = lazy(() =>
 )
 const AccountPage = lazy(() => import('./ui/pages/AccountPage').then((module) => ({ default: module.AccountPage })))
 
+interface PlayerNameOnboardingDialogProps {
+  initialName: string
+  onSubmit(name: string): { valid: boolean; reason?: string }
+}
+
+function PlayerNameOnboardingDialog({ initialName, onSubmit }: PlayerNameOnboardingDialogProps) {
+  const [draft, setDraft] = useState(initialName)
+  const [error, setError] = useState<string | null>(null)
+
+  const submitPlayerName = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const result = onSubmit(draft)
+    if (!result.valid) {
+      setError(result.reason ?? 'Pseudo invalide.')
+      return
+    }
+
+    setError(null)
+  }
+
+  return (
+    <div className="player-name-onboarding-backdrop">
+      <section
+        className="player-name-onboarding-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="player-name-onboarding-title"
+      >
+        <div className="player-name-onboarding-copy">
+          <p className="player-name-onboarding-eyebrow">Premier passage</p>
+          <h2 id="player-name-onboarding-title">Choisis ton pseudo</h2>
+          <p className="small">C'est ce nom qui apparaîtra dans les classements.</p>
+        </div>
+
+        <form className="player-name-onboarding-form" onSubmit={submitPlayerName}>
+          <label className="player-name-onboarding-label" htmlFor="player-name-onboarding-input">
+            Pseudo
+            <input
+              id="player-name-onboarding-input"
+              data-testid="player-name-onboarding-input"
+              type="text"
+              value={draft}
+              maxLength={20}
+              autoFocus
+              onChange={(event) => setDraft(event.target.value)}
+            />
+          </label>
+          <button type="submit" className="button button-primary" data-testid="player-name-onboarding-submit">
+            Valider
+          </button>
+        </form>
+
+        {error ? (
+          <p className="error" role="alert">
+            {error}
+          </p>
+        ) : null}
+      </section>
+    </div>
+  )
+}
+
+interface PlayerWelcomeDialogProps {
+  playerName: string
+  onDismiss(): void
+}
+
+function PlayerWelcomeDialog({ playerName, onDismiss }: PlayerWelcomeDialogProps) {
+  return (
+    <div className="player-name-onboarding-backdrop">
+      <section
+        className="player-name-onboarding-dialog player-welcome-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="player-welcome-title"
+      >
+        <div className="player-name-onboarding-copy">
+          <p className="player-name-onboarding-eyebrow">Bienvenue</p>
+          <h2 id="player-welcome-title">{`Bienvenue, ${playerName}`}</h2>
+          <p className="small">
+            Pose tes cartes sur la grille, retourne celles de l'adversaire, gagne de l'or et ouvre des packs pour
+            renforcer ton deck.
+          </p>
+          <p className="small">
+            Ton pseudo servira pour le ladder. Maintenant, fais parler les chiffres.
+          </p>
+        </div>
+
+        <button type="button" className="button button-primary" data-testid="player-welcome-dismiss" onClick={onDismiss}>
+          Commencer
+        </button>
+      </section>
+    </div>
+  )
+}
+
 function App() {
-  const { profile, currentMatch, abandonCurrentMatch, abandonTowerRun } = useGame()
+  const { profile, currentMatch, abandonCurrentMatch, abandonTowerRun, renamePlayer } = useGame()
   const location = useLocation()
   const navigate = useNavigate()
   const [isMoreOpen, setIsMoreOpen] = useState(false)
+  const [welcomePlayerName, setWelcomePlayerName] = useState<string | null>(null)
   const isAdminImagesLinkVisible = canAccessAdminImages(null)
   const [backgroundMode, setBackgroundMode] = useState<BackgroundMode>(() => resolveBackgroundMode())
   const isLandingPage = location.pathname === '/'
   const ctaLabel = currentMatch ? 'Continuer' : 'Jouer'
   const ctaTarget = currentMatch ? '/match' : '/setup'
   const routeFallback = <p className="small">Chargement...</p>
+
+  const submitPlayerName = (name: string) => {
+    const result = renamePlayer(name)
+    if (result.valid) {
+      setWelcomePlayerName(name.trim())
+    }
+    return result
+  }
 
   const handleTopbarAbandon = () => {
     if (!currentMatch) {
@@ -92,7 +199,8 @@ function App() {
   useEffect(() => {
     document.body.dataset.theme = LOCKED_THEME_MODE
     try {
-      window.localStorage.setItem(THEME_STORAGE_KEY, LOCKED_THEME_MODE)
+      const storedThemeMode = window.localStorage.getItem(THEME_STORAGE_KEY) ?? window.localStorage.getItem(LEGACY_THEME_STORAGE_KEY)
+      window.localStorage.setItem(THEME_STORAGE_KEY, storedThemeMode === LOCKED_THEME_MODE ? storedThemeMode : LOCKED_THEME_MODE)
     } catch {
       // Ignore storage write errors (private mode, disabled storage, etc.).
     }
@@ -135,7 +243,7 @@ function App() {
             {profile.playerName}
           </NavLink>
           <NavLink to="/home" className="brand-sub brand-sub-link">
-            Garden Console
+            PokeTriad
           </NavLink>
         </div>
 
@@ -464,6 +572,14 @@ function App() {
         </span>
         <span className="background-mode-toggle__label">{backgroundMode === 'dark' ? 'Clair' : 'Sombre'}</span>
       </button>
+      ) : null}
+
+      {shouldRequestPlayerName(profile) ? (
+        <PlayerNameOnboardingDialog initialName="" onSubmit={submitPlayerName} />
+      ) : null}
+
+      {!shouldRequestPlayerName(profile) && welcomePlayerName ? (
+        <PlayerWelcomeDialog playerName={welcomePlayerName} onDismiss={() => setWelcomePlayerName(null)} />
       ) : null}
     </div>
   )

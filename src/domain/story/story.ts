@@ -173,7 +173,8 @@ export interface StoryLeagueStage {
   deckTheme: string
 }
 
-export const STORY_PROGRESS_STORAGE_KEY = 'kh-triple-triad-story-progress-v1'
+export const STORY_PROGRESS_STORAGE_KEY = 'poketriad-story-progress-v1'
+const LEGACY_STORY_PROGRESS_STORAGE_KEY = 'kh-triple-triad-story-progress-v1'
 const storyAssetBasePath = '/story/gen1/'
 const storyGen2AssetBasePath = '/story/gen2/'
 const storyTrainerPortraitBasePath = `${storyAssetBasePath}trainers/`
@@ -1360,7 +1361,8 @@ export function loadStoryProgress(): StoryProgress {
   }
 
   try {
-    return normalizeStoryProgress(JSON.parse(window.localStorage.getItem(STORY_PROGRESS_STORAGE_KEY) ?? 'null'))
+    const raw = readStoryProgressStorage()
+    return normalizeStoryProgress(JSON.parse(raw ?? 'null'))
   } catch {
     return createInitialStoryProgress()
   }
@@ -1376,6 +1378,20 @@ export function saveStoryProgress(progress: StoryProgress): void {
   } catch {
     // Ignore storage errors in private browsing or locked-down environments.
   }
+}
+
+function readStoryProgressStorage(): string | null {
+  const raw = window.localStorage.getItem(STORY_PROGRESS_STORAGE_KEY)
+  if (raw) {
+    return raw
+  }
+
+  const legacyRaw = window.localStorage.getItem(LEGACY_STORY_PROGRESS_STORAGE_KEY)
+  if (legacyRaw) {
+    window.localStorage.setItem(STORY_PROGRESS_STORAGE_KEY, legacyRaw)
+  }
+
+  return legacyRaw
 }
 
 function getDirectionDelta(direction: StoryDirection): StoryPoint {

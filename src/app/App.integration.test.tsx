@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, setDefaultTimeout, test } from 'bun:test'
+import { beforeEach, describe, expect, setDefaultTimeout, test, vi } from 'bun:test'
 import { MemoryRouter } from 'react-router-dom'
 import App from '../App'
 import { cardPool } from '../domain/cards/cardPool'
@@ -19,8 +19,17 @@ import { useGame } from './useGame'
 import { getOpponentLevelForProfile } from '../domain/match/opponents'
 import { getActiveStoryMusicId, stopStoryMusic } from '../ui/audio/storyMusic'
 
-const THEME_STORAGE_KEY = 'kh-triple-triad-theme-mode-v1'
-const BACKGROUND_MODE_STORAGE_KEY = 'kh-triple-triad-background-mode-v1'
+vi.mock('./cloud/cloudLadderStore', () => ({
+  fetchOwnedCardsLadder: vi.fn(async () => []),
+  fetchPeakRankLadder: vi.fn(async () => []),
+  isGlobalLadderEnabled: vi.fn(() => false),
+}))
+
+const THEME_STORAGE_KEY = 'poketriad-theme-mode-v1'
+const BACKGROUND_MODE_STORAGE_KEY = 'poketriad-background-mode-v1'
+const STORED_PROFILES_STORAGE_KEY = 'poketriad-v1-profiles'
+const LEGACY_PROFILE_STORAGE_KEY = 'kh-triple-triad-v1-profile'
+const LEGACY_STORED_PROFILES_STORAGE_KEY = 'kh-triple-triad-v1-profiles'
 
 function mockPrefersDarkMode(matchesDark: boolean) {
   Object.defineProperty(window, 'matchMedia', {
@@ -48,6 +57,8 @@ function mockPrefersDarkMode(matchesDark: boolean) {
 }
 
 function renderApp(initialPath = '/') {
+  seedChosenDefaultProfileWhenMissing()
+
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
       <GameProvider>
@@ -57,8 +68,30 @@ function renderApp(initialPath = '/') {
   )
 }
 
-function createProfileWithExtraOwnedCards(extraCardIds: CardId[]) {
+function createTestProfile() {
   const profile = createDefaultProfile()
+  profile.hasChosenPlayerName = true
+  return profile
+}
+
+function storeProfile(profile: ReturnType<typeof createDefaultProfile>) {
+  profile.hasChosenPlayerName = true
+  localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile))
+}
+
+function seedChosenDefaultProfileWhenMissing() {
+  const hasProfile =
+    localStorage.getItem(PROFILE_STORAGE_KEY) ||
+    localStorage.getItem(LEGACY_PROFILE_STORAGE_KEY) ||
+    localStorage.getItem(STORED_PROFILES_STORAGE_KEY) ||
+    localStorage.getItem(LEGACY_STORED_PROFILES_STORAGE_KEY)
+  if (!hasProfile) {
+    storeProfile(createTestProfile())
+  }
+}
+
+function createProfileWithExtraOwnedCards(extraCardIds: CardId[]) {
+  const profile = createTestProfile()
   for (const cardId of extraCardIds) {
     if (!profile.ownedCardIds.includes(cardId)) {
       profile.ownedCardIds.push(cardId)
@@ -554,21 +587,21 @@ describe('app integration', () => {
     await user.click(screen.getByTestId('topbar-link-shop'))
     expect(await screen.findByRole('heading', { name: 'Boutique' }, { timeout: 5_000 })).toBeInTheDocument()
 
-    await user.click(screen.getByRole('link', { name: 'Garden Console' }))
+    await user.click(screen.getByRole('link', { name: 'PokeTriad' }))
     expect(screen.getByTestId('home-quick-action-play')).toBeInTheDocument()
   })
 
   test('root route renders public landing with test CTA', () => {
     renderApp('/')
 
-    expect(screen.getByRole('heading', { name: 'KH Triple Triad' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Tester maintenant' })).toHaveAttribute('href', '/setup')
+    expect(screen.getByRole('heading', { name: 'PokeTriad' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Lancer une partie' })).toHaveAttribute('href', '/setup')
     expect(screen.queryByTestId('topbar-tracked-name')).not.toBeInTheDocument()
   })
 
   test('decks blocks adding cards from the right grid when deck is already full', async () => {
     const user = userEvent.setup()
-    localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(createProfileWithExtraOwnedCards(['c04'])))
+    storeProfile(createProfileWithExtraOwnedCards(['c04']))
     renderApp('/decks')
 
     const deckSelection = await screen.findByLabelText('Sélection du deck')
@@ -611,7 +644,7 @@ describe('app integration', () => {
 
   test('auto deck only uses owned cards in active match mode', async () => {
     const user = userEvent.setup()
-    const profile = createDefaultProfile()
+    const profile = createTestProfile()
     const ownedCardIds = cardPool
       .filter((card) => card.rarity === 'legendary')
       .slice(0, ACTIVE_DECK_SIZE)
@@ -624,7 +657,7 @@ describe('app integration', () => {
     profile.deckSlots[0].cards = ownedCardIds.slice(0, 5)
     profile.deckSlots[0].cards4x4 = [...ownedCardIds]
     profile.selectedDeckSlotId = 'slot-1'
-    localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile))
+    storeProfile(profile)
 
     renderApp('/setup')
 
@@ -646,10 +679,10 @@ describe('app integration', () => {
     'setup normal queue uses the selected opponent level in match',
     async () => {
     const user = userEvent.setup()
-    const profile = createDefaultProfile()
+    const profile = createTestProfile()
     profile.rankedByMode[ACTIVE_MODE].tier = 'gold'
     profile.rankedByMode[ACTIVE_MODE].division = 'IV'
-    localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile))
+    storeProfile(profile)
 
     renderApp('/setup')
 
@@ -667,10 +700,10 @@ describe('app integration', () => {
     'setup ranked preset ignores normal-level selection and uses ranked-level opponent',
     async () => {
     const user = userEvent.setup()
-    const profile = createDefaultProfile()
+    const profile = createTestProfile()
     profile.rankedByMode[ACTIVE_MODE].tier = 'gold'
     profile.rankedByMode[ACTIVE_MODE].division = 'IV'
-    localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile))
+    storeProfile(profile)
 
     renderApp('/setup')
 
@@ -742,7 +775,7 @@ describe('app integration', () => {
 
   test('decks filters keep start flow intact', async () => {
     const user = userEvent.setup()
-    localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(createProfileWithExtraOwnedCards(['c04'])))
+    storeProfile(createProfileWithExtraOwnedCards(['c04']))
     renderApp('/decks')
 
     const firstVisibleCard = screen.getAllByTestId(/^setup-card-/)[0]
@@ -767,6 +800,7 @@ describe('app integration', () => {
 
   test('match finish modal can start a rematch with the same deck', async () => {
     const user = userEvent.setup()
+    seedChosenDefaultProfileWhenMissing()
 
     render(
       <MemoryRouter initialEntries={['/setup']}>
@@ -813,11 +847,11 @@ describe('app integration', () => {
 
   test('ranked rematch keeps current opponent level while promotion series is still in progress', async () => {
     const user = userEvent.setup()
-    const profile = createDefaultProfile()
+    const profile = createTestProfile()
     profile.rankedByMode[ACTIVE_MODE].tier = 'iron'
     profile.rankedByMode[ACTIVE_MODE].division = 'I'
     profile.rankedByMode[ACTIVE_MODE].lp = 95
-    localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile))
+    storeProfile(profile)
 
     render(
       <MemoryRouter initialEntries={['/setup']}>
@@ -849,6 +883,8 @@ describe('app integration', () => {
 
   test('victory requires selecting one cpu card before continue and persists +1 fragment for that card', async () => {
     const user = userEvent.setup()
+    seedChosenDefaultProfileWhenMissing()
+
     render(
       <MemoryRouter initialEntries={['/setup']}>
         <GameProvider>
@@ -1241,12 +1277,12 @@ describe('app integration', () => {
 
   test('legendary focus hit resets pity chance to 1% and grants the selected target', async () => {
     const user = userEvent.setup()
-    const profile = createDefaultProfile()
+    const profile = createTestProfile()
     const targetLegendary = cardPool.find((card) => card.rarity === 'legendary')
     expect(targetLegendary).toBeTruthy()
     profile.gold = 2000
     profile.specialPackPity = { legendaryFocusChancePercent: 100 }
-    localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile))
+    storeProfile(profile)
 
     renderApp('/shop')
 
@@ -1292,13 +1328,13 @@ describe('app integration', () => {
   })
 
   test('achievements page global claim grants common packs for unlocked rewards', async () => {
-    const seeded = createDefaultProfile()
+    const seeded = createTestProfile()
     seeded.achievements = [
       { id: 'match_1', unlockedAt: '2026-03-02T10:00:00.000Z' },
       { id: 'win_1', unlockedAt: '2026-03-02T10:01:00.000Z' },
     ]
     seeded.packInventoryByRarity.common = 3
-    localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(seeded))
+    storeProfile(seeded)
 
     const user = userEvent.setup()
     renderApp('/home')
@@ -1749,7 +1785,7 @@ describe('app integration', () => {
   })
 
   test('pokedex applies chroma charm shiny cost reduction when 40 achievements are unlocked', async () => {
-    const seeded = createDefaultProfile()
+    const seeded = createTestProfile()
     seeded.achievements = achievementCatalog.map((achievement, index) => ({
       id: achievement.id,
       unlockedAt: `2026-03-02T11:00:${index.toString().padStart(2, '0')}.000Z`,
@@ -1758,7 +1794,7 @@ describe('app integration', () => {
       seeded.ownedCardIds.push('c11')
     }
     seeded.cardCopiesById.c11 = 24
-    localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(seeded))
+    storeProfile(seeded)
 
     const user = userEvent.setup()
     renderApp('/pokedex')

@@ -2,12 +2,19 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ComponentProps } from 'react'
 import { MemoryRouter } from 'react-router-dom'
-import { describe, expect, test, vi } from 'bun:test'
+import { beforeEach, describe, expect, test, vi } from 'bun:test'
 import { GameContext } from '../../app/GameContext'
+import * as cloudLadderStore from '../../app/cloud/cloudLadderStore'
 import { createDefaultProfile } from '../../domain/progression/profile'
 import { HomePage } from './HomePage'
 
 type GameContextValue = NonNullable<ComponentProps<typeof GameContext.Provider>['value']>
+
+vi.mock('../../app/cloud/cloudLadderStore', () => ({
+  fetchOwnedCardsLadder: vi.fn(async () => []),
+  fetchPeakRankLadder: vi.fn(async () => []),
+  isGlobalLadderEnabled: vi.fn(() => false),
+}))
 
 function createContextValue(overrides: Partial<GameContextValue> = {}): GameContextValue {
   const profile = createDefaultProfile()
@@ -112,6 +119,13 @@ function getRenderedMissionCards(container: HTMLElement): HTMLElement[] {
 }
 
 describe('HomePage ranked display', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(cloudLadderStore.isGlobalLadderEnabled).mockReturnValue(false)
+    vi.mocked(cloudLadderStore.fetchPeakRankLadder).mockResolvedValue([])
+    vi.mocked(cloudLadderStore.fetchOwnedCardsLadder).mockResolvedValue([])
+  })
+
   test('shows 3x3 ranked tier, LP and emblem', () => {
     renderHome()
 
@@ -131,13 +145,39 @@ describe('HomePage ranked display', () => {
     expect(screen.getByTestId('home-quick-action-play')).toHaveAttribute('href', '/match')
   })
 
-  test('renders first-run onboarding and next recommended action', () => {
+  test('renders first-run onboarding and replaces next actions with compact ladders', async () => {
+    vi.mocked(cloudLadderStore.isGlobalLadderEnabled).mockReturnValue(true)
+    vi.mocked(cloudLadderStore.fetchPeakRankLadder).mockResolvedValue([
+      {
+        userId: 'rank-1',
+        playerName: 'Sora',
+        ownedCardsCount: 152,
+        peakRankScore: 6085,
+        peakRankLabel: 'Challenger',
+        updatedAt: '2026-02-19T08:00:00.000Z',
+      },
+    ])
+    vi.mocked(cloudLadderStore.fetchOwnedCardsLadder).mockResolvedValue([
+      {
+        userId: 'owned-1',
+        playerName: 'Kairi',
+        ownedCardsCount: 200,
+        peakRankScore: 5000,
+        peakRankLabel: 'Diamond IV',
+        updatedAt: '2026-02-17T08:00:00.000Z',
+      },
+    ])
+
     renderHome()
 
     expect(screen.getByTestId('home-onboarding')).toBeInTheDocument()
     expect(screen.getByTestId('home-onboarding-primary')).toHaveTextContent('Faire le tutoriel')
     expect(screen.getByTestId('home-onboarding-step-base_tutorial')).toHaveTextContent('Maintenant')
-    expect(screen.getByTestId('home-next-action-start_tutorial')).toHaveTextContent('Faire le tutoriel')
+    expect(screen.queryByTestId('home-next-actions')).not.toBeInTheDocument()
+    expect(await screen.findByTestId('home-ladders-block')).toHaveTextContent('Classements')
+    expect(screen.getByTestId('home-rank-ladder')).toHaveTextContent('Sora')
+    expect(screen.getByTestId('home-owned-ladder')).toHaveTextContent('Kairi')
+    expect(screen.getByTestId('home-owned-ladder')).toHaveTextContent('200 Pokémon')
   })
 
   test('hides onboarding after tutorial and first match while keeping loop actions', () => {
@@ -148,7 +188,7 @@ describe('HomePage ranked display', () => {
     renderHome({ profile })
 
     expect(screen.queryByTestId('home-onboarding')).not.toBeInTheDocument()
-    expect(screen.getByTestId('home-next-actions')).toBeInTheDocument()
+    expect(screen.getByTestId('home-ladders-block')).toBeInTheDocument()
     expect(screen.getByTestId('home-long-term-goals')).toBeInTheDocument()
   })
 
@@ -382,11 +422,12 @@ describe('HomePage ranked display', () => {
     expect(screen.queryByTestId('home-player-name-trigger')).not.toBeInTheDocument()
   })
 
-  test('hides global ladder connection block for now', () => {
+  test('shows disabled ladder state when no ladder source is available', () => {
     renderHome()
 
-    expect(screen.queryByRole('heading', { name: 'Classements globaux' })).not.toBeInTheDocument()
     expect(screen.queryByTestId('home-ladder-disabled-note')).not.toBeInTheDocument()
-    expect(screen.queryByTestId('home-owned-ladder')).not.toBeInTheDocument()
+    expect(screen.getByTestId('home-ladders-block')).toHaveTextContent('Classements')
+    expect(screen.getByTestId('home-rank-ladder')).toHaveTextContent('Aucun rang publié')
+    expect(screen.getByTestId('home-owned-ladder')).toHaveTextContent('Aucune collection publiée')
   })
 })

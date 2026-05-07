@@ -1,6 +1,6 @@
-# KH Triple Triad
+# PokeTriad
 
-KH Triple Triad est un jeu de cartes tactique en React + TypeScript inspiré de Triple Triad, avec progression, ranked, shop/packs, missions, succès, Pokédex, et comptes cloud (optionnels).
+PokeTriad est un jeu de cartes tactique en React + TypeScript inspiré de Triple Triad, avec progression, ranked, shop/packs, missions, succès, Pokédex, et comptes cloud (optionnels).
 
 ## Quickstart
 

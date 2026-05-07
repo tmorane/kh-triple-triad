@@ -45,6 +45,22 @@ describe('profile persistence', () => {
     localStorage.clear()
   })
 
+  test('migrates the old KH single profile storage key into PokeTriad storage', () => {
+    const legacyProfileStorageKey = 'kh-triple-triad-v1-profile'
+    const legacyProfile = {
+      ...createDefaultProfile(),
+      gold: 420,
+    }
+
+    localStorage.setItem(legacyProfileStorageKey, JSON.stringify(legacyProfile))
+
+    const profile = loadProfile()
+
+    expect(PROFILE_STORAGE_KEY).toBe('poketriad-v1-profile')
+    expect(profile.gold).toBe(420)
+    expect(localStorage.getItem(PROFILE_STORAGE_KEY)).toBeTruthy()
+  })
+
   test('creates a default profile on first launch', () => {
     const profile = loadProfile()
 

@@ -1,16 +1,18 @@
 import type { CSSProperties } from 'react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { IS_4X4_UI_ENABLED } from '../../app/matchUiConfig'
+import { fetchOwnedCardsLadder, fetchPeakRankLadder, isGlobalLadderEnabled, type LadderEntry } from '../../app/cloud/cloudLadderStore'
+import { IS_4X4_UI_ENABLED, PRIMARY_MATCH_MODE } from '../../app/matchUiConfig'
 import { useGame } from '../../app/useGame'
 import { cardPool } from '../../domain/cards/cardPool'
-import { deriveFirstRunOnboarding, deriveLongTermGoals, deriveRecommendedActions } from '../../domain/progression/engagementLoop'
+import { deriveFirstRunOnboarding, deriveLongTermGoals } from '../../domain/progression/engagementLoop'
 import { missionDefinitions, missionIds } from '../../domain/progression/missionCatalog'
 import type { MissionId, RankedTierId } from '../../domain/types'
 import { getRankEmblemSrc } from '../rankEmblems'
 import { TrackedPokemonWidget } from '../components/TrackedPokemonWidget'
 
 const GOLD_MILESTONES = [150, 200, 300, 450, 600, 800, 1000]
+const HOME_LADDER_LIMIT = 3
 const numberFormat = new Intl.NumberFormat('fr-FR')
 
 const tierNames: Record<RankedTierId, string> = {
@@ -41,6 +43,30 @@ interface HomeMissionCard {
   completed: boolean
   claimed: boolean
   claimable: boolean
+}
+
+type LadderStatus = 'disabled' | 'loading' | 'ready' | 'empty' | 'error'
+
+interface HomeLadderState {
+  status: LadderStatus
+  rankEntries: LadderEntry[]
+  ownedEntries: LadderEntry[]
+}
+
+const emptyHomeLadderState: HomeLadderState = {
+  status: 'disabled',
+  rankEntries: [],
+  ownedEntries: [],
+}
+
+const rankLabelTranslation: Record<string, string> = {
+  Iron: 'Fer',
+  Bronze: 'Bronze',
+  Silver: 'Argent',
+  Gold: 'Or',
+  Platinum: 'Platine',
+  Diamond: 'Diamant',
+  Challenger: 'Challenger',
 }
 
 function clampPercent(value: number): number {
@@ -91,9 +117,40 @@ function formatTierLabelExplicit(tier: RankedTierId, division: string | null): s
   return `${label} (Division ${divisionNumber})`
 }
 
+function formatDisplayRankLabel(label: string): string {
+  const [tier, ...rest] = label.split(' ')
+  if (!tier) {
+    return label
+  }
+
+  return [rankLabelTranslation[tier] ?? tier, ...rest].join(' ')
+}
+
+function formatOwnedPokemonCount(count: number): string {
+  return `${numberFormat.format(count)} Pokémon`
+}
+
+function renderHomeLadderRows(entries: LadderEntry[], emptyMessage: string, renderValue: (entry: LadderEntry) => string) {
+  if (entries.length === 0) {
+    return <li className="home-ladder-empty">{emptyMessage}</li>
+  }
+
+  return entries.map((entry, index) => (
+    <li className="home-ladder-row" key={entry.userId}>
+      <span className="home-ladder-position">#{index + 1}</span>
+      <span className="home-ladder-name">{entry.playerName}</span>
+      <span className="home-ladder-value">{renderValue(entry)}</span>
+    </li>
+  ))
+}
+
 export function HomePage() {
-  const { profile, currentMatch, towerRun, claimMission } = useGame()
+  const { profile, currentMatch, claimMission } = useGame()
   const [profileArtAvailable, setProfileArtAvailable] = useState(true)
+  const ladderEnabled = isGlobalLadderEnabled()
+  const [ladderState, setLadderState] = useState<HomeLadderState>(() => (
+    ladderEnabled ? { ...emptyHomeLadderState, status: 'loading' } : emptyHomeLadderState
+  ))
 
   const played = profile.stats.played
   const wins = profile.stats.won
@@ -116,11 +173,50 @@ export function HomePage() {
   const rankedTierLabel4x4 = formatTierLabelExplicit(ranked4x4.tier, ranked4x4.division)
   const rankedProgressPercent = IS_4X4_UI_ENABLED ? ranked4x4.lp : ranked3x3.lp
   const onboarding = deriveFirstRunOnboarding(profile)
-  const recommendedActions = deriveRecommendedActions(profile, {
-    hasCurrentMatch: currentMatch !== null,
-    towerRunActive: Boolean(towerRun),
-  })
   const longTermGoals = deriveLongTermGoals(profile)
+  const localLadderRefreshKey = [
+    profile.playerName,
+    profile.ownedCardIds.length,
+    ranked3x3.tier,
+    ranked3x3.division,
+    ranked3x3.lp,
+    ranked4x4.tier,
+    ranked4x4.division,
+    ranked4x4.lp,
+  ].join('|')
+
+  useEffect(() => {
+    if (!ladderEnabled) {
+      return
+    }
+
+    let cancelled = false
+
+    void Promise.all([
+      fetchPeakRankLadder(PRIMARY_MATCH_MODE, HOME_LADDER_LIMIT),
+      fetchOwnedCardsLadder(HOME_LADDER_LIMIT),
+    ])
+      .then(([rankEntries, ownedEntries]) => {
+        if (cancelled) {
+          return
+        }
+
+        setLadderState({
+          status: rankEntries.length > 0 || ownedEntries.length > 0 ? 'ready' : 'empty',
+          rankEntries,
+          ownedEntries,
+        })
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setLadderState({ ...emptyHomeLadderState, status: 'error' })
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [ladderEnabled, localLadderRefreshKey])
 
   const panelStyle = {
     '--home-win-rate': `${winRatePercent}%`,
@@ -276,15 +372,44 @@ export function HomePage() {
             </Link>
           </div>
 
-          <section className="home-next-actions" data-testid="home-next-actions" aria-label="À faire maintenant">
-            <h2>À faire maintenant</h2>
-            <div className="home-next-actions__list">
-              {recommendedActions.slice(0, 3).map((action) => (
-                <Link className="home-next-action" to={action.to} key={action.id} data-testid={`home-next-action-${action.id}`}>
-                  <strong>{action.title}</strong>
-                  <span>{action.description}</span>
-                </Link>
-              ))}
+          <section className="home-ladders-block" data-testid="home-ladders-block" aria-label="Classements">
+            <div className="home-ladders-head">
+              <h2>Classements</h2>
+              <Link className="home-ladders-link" to="/ranks">
+                Top complet
+              </Link>
+            </div>
+            {ladderState.status === 'loading' ? (
+              <p className="small" data-testid="home-ladder-loading">
+                Chargement des classements...
+              </p>
+            ) : null}
+            {ladderState.status === 'error' ? (
+              <p className="error" role="alert" data-testid="home-ladder-error">
+                Ladder indisponible.
+              </p>
+            ) : null}
+            <div className="home-ladders-grid">
+              <article className="home-ladder-card">
+                <h3>Rang {PRIMARY_MATCH_MODE.toUpperCase()}</h3>
+                <ol className="home-ladder-list" data-testid="home-rank-ladder">
+                  {renderHomeLadderRows(
+                    ladderState.rankEntries,
+                    'Aucun rang publié.',
+                    (entry) => formatDisplayRankLabel(entry.peakRankLabel),
+                  )}
+                </ol>
+              </article>
+              <article className="home-ladder-card">
+                <h3>Captures</h3>
+                <ol className="home-ladder-list" data-testid="home-owned-ladder">
+                  {renderHomeLadderRows(
+                    ladderState.ownedEntries,
+                    'Aucune collection publiée.',
+                    (entry) => formatOwnedPokemonCount(entry.ownedCardsCount),
+                  )}
+                </ol>
+              </article>
             </div>
           </section>
 

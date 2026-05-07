@@ -214,6 +214,7 @@ export const GameContext = createContext<GameContextValue | null>(null)
 function cloneProfile(profile: PlayerProfile): PlayerProfile {
   return {
     ...profile,
+    hasChosenPlayerName: profile.hasChosenPlayerName,
     ownedCardIds: [...profile.ownedCardIds],
     cardCopiesById: { ...profile.cardCopiesById },
     cardFragmentsById: { ...profile.cardFragmentsById },
@@ -718,6 +719,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
         persistProfileUpdate((nextProfile) => {
           nextProfile.playerName = name.trim()
+          nextProfile.hasChosenPlayerName = true
         })
 
         return { valid: true }

@@ -897,7 +897,7 @@ function StoryMapExplorer({ storyMapId }: { storyMapId: StoryMapId }) {
                         data-testid="story-start-battle"
                       >
                         <span>{activeTrainerDefeated ? 'Revanche' : 'Lancer le duel'}</span>
-                        <small>{activeTrainerDefeated ? 'Farm fragments' : 'Combat Triple Triad'}</small>
+                        <small>{activeTrainerDefeated ? 'Farm fragments' : 'Combat PokeTriad'}</small>
                       </button>
                     </div>
                   ) : null}
