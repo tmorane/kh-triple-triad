@@ -1,7 +1,8 @@
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import type { ComponentProps } from 'react'
 import { MemoryRouter } from 'react-router-dom'
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test, vi } from 'bun:test'
 import { GameContext } from '../../app/GameContext'
 import { createDefaultProfile } from '../../domain/progression/profile'
 import { MissionsPage } from './MissionsPage'
@@ -70,7 +71,7 @@ function createContextValue(overrides: Partial<GameContextValue> = {}): GameCont
     buySpecialPack: () => {
       throw new Error('Not implemented in test.')
     },
-    addTestGold: () => {
+    addTestOr: () => {
       throw new Error('Not implemented in test.')
     },
     createStoredProfile: () => {
@@ -105,26 +106,33 @@ function renderMissions(valueOverrides: Partial<GameContextValue> = {}) {
 }
 
 describe('MissionsPage', () => {
-  test('renders mission cards with default progress', () => {
+  test('renders six mission cards with default progress', () => {
     renderMissions()
 
     expect(screen.getByRole('heading', { name: 'Missions' })).toBeInTheDocument()
-    expect(screen.getByTestId('missions-summary')).toHaveTextContent('0/3 completed')
+    expect(screen.getByTestId('missions-summary')).toHaveTextContent('0/6 terminées')
     expect(screen.getByTestId('missions-progress-m1_type_specialist')).toHaveTextContent('0/5')
     expect(screen.getByTestId('missions-progress-m2_combo_practitioner')).toHaveTextContent('0/6')
     expect(screen.getByTestId('missions-progress-m3_corner_tactician')).toHaveTextContent('0/12')
+    expect(screen.getByTestId('missions-progress-b1_win_streak')).toHaveTextContent('0/5')
+    expect(screen.getByTestId('missions-progress-b2_match_grinder')).toHaveTextContent('0/25')
+    expect(screen.getByTestId('missions-progress-b3_collection_hunter')).toHaveTextContent('0/30')
   })
 
-  test('shows claimed state for completed mission', () => {
+  test('renders claim action on completed mission and calls context', async () => {
+    const user = userEvent.setup()
+    const claimMission = vi.fn(() => ({ valid: true }))
     const profile = createDefaultProfile()
-    profile.missions.m2_combo_practitioner.progress = 6
-    profile.missions.m2_combo_practitioner.completed = true
-    profile.missions.m2_combo_practitioner.claimed = true
+    profile.missions.m1_type_specialist.progress = 5
+    profile.missions.m1_type_specialist.completed = true
 
-    renderMissions({ profile })
+    renderMissions({ profile, claimMission })
 
-    expect(screen.getByTestId('missions-status-m2_combo_practitioner')).toHaveTextContent('Claimed')
-    expect(screen.getByTestId('missions-summary')).toHaveTextContent('1/3 completed')
+    const claimButton = screen.getByTestId('missions-claim-m1_type_specialist')
+    await user.click(claimButton)
+
+    expect(claimMission).toHaveBeenCalledWith('m1_type_specialist')
+    expect(screen.getByTestId('missions-feedback')).toHaveTextContent('Récompense récupérée. Nouvelle mission lancée.')
   })
 
   test('shows reward history note when mission reward was already granted before reset', () => {
@@ -134,7 +142,7 @@ describe('MissionsPage', () => {
     renderMissions({ profile })
 
     expect(screen.getByTestId('missions-reward-history-m1_type_specialist')).toHaveTextContent(
-      'Reward already granted before reset.',
+      'Récompense déjà accordée avant réinitialisation.',
     )
   })
 })

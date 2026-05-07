@@ -3,7 +3,7 @@ import { describe, expect, test, vi } from 'bun:test'
 import type { MatchEffectsViewModel } from '../../domain/match/effectsViewModel'
 import { getCard } from '../../domain/cards/cardPool'
 import type { Actor } from '../../domain/types'
-import type { MoveFlipEvent } from '../../domain/match/types'
+import type { MoveDuelEvent, MoveFlipEvent } from '../../domain/match/types'
 import {
   PixiBoard,
   getPixiRenderResolution,
@@ -40,6 +40,7 @@ function renderFallbackBoard(overrides?: {
   focusedCell?: number | null
   arenaVariant?: BoardArenaVariant
   effectsView?: MatchEffectsViewModel
+  duelEvents?: MoveDuelEvent[]
   flipEvents?: MoveFlipEvent[]
   flipEventVersion?: number
 }) {
@@ -66,6 +67,7 @@ function renderFallbackBoard(overrides?: {
       focusedCell={overrides?.focusedCell ?? null}
       arenaVariant={overrides?.arenaVariant ?? 'v1'}
       effectsView={overrides?.effectsView}
+      duelEvents={overrides?.duelEvents ?? []}
       flipEvents={overrides?.flipEvents ?? []}
       flipEventVersion={overrides?.flipEventVersion ?? 0}
     />,
@@ -212,6 +214,35 @@ describe('PixiBoard', () => {
     expect(screen.getByTestId('board-cell-4')).toHaveAttribute('data-flip-direction', 'horizontal')
   })
 
+  test('highlights the two compared stats during a duel event', () => {
+    const board = makeEmptyBoard()
+    board[0] = { cardId: 'c11', owner: 'cpu' }
+    board[1] = { cardId: 'c110', owner: 'player' }
+
+    renderFallbackBoard({
+      board,
+      interactive: false,
+      duelEvents: [
+        {
+          attacker: 'player',
+          defender: 'cpu',
+          attackerCell: 1,
+          defenderCell: 0,
+          attackerSide: 'left',
+          defenderSide: 'right',
+          attackerValue: 4,
+          defenderValue: 1,
+          result: 'capture',
+        },
+      ],
+    })
+
+    expect(screen.getByTestId('board-cell-1-stat-left')).toHaveClass('is-duel-stat')
+    expect(screen.getByTestId('board-cell-0-stat-right')).toHaveClass('is-duel-stat')
+    expect(screen.getByTestId('board-cell-1-stat-right')).not.toHaveClass('is-duel-stat')
+    expect(screen.getByTestId('board-cell-0-stat-left')).not.toHaveClass('is-duel-stat')
+  })
+
   test('restarts fallback flip rendering for repeated flips on the same cell across flip event versions', () => {
     const firstBoard = makeEmptyBoard()
     firstBoard[4] = { cardId: 'c01', owner: 'player' }
@@ -289,10 +320,10 @@ describe('PixiBoard', () => {
     expect(screen.getByTestId('board-cell-5')).toHaveClass('fallback-cell--ground-debuffed')
     expect(screen.getByTestId('board-cell-5-ground-pop')).toHaveTextContent('-1')
     expect(screen.getByTestId('board-cell-5-ground-pop')).toHaveTextContent('ALL')
-    expect(screen.getByTestId('board-cell-5-ground-badge')).toHaveTextContent('-1 ALL')
+    expect(screen.getByTestId('board-cell-5-ground-badge')).toHaveTextContent('-1 1T')
     expect(screen.getByTestId('board-cell-5-ground-badge-logo')).toHaveAttribute(
       'src',
-      expect.stringContaining('/ui/match/board-effects/Sol.png'),
+      expect.stringContaining('/ui/match/board-effects/runtime/Sol.webp'),
     )
   })
 
@@ -448,7 +479,7 @@ describe('PixiBoard', () => {
       'src',
       expect.stringContaining('/logos-elements/eau.png'),
     )
-    expect(screen.getByTestId('board-cell-4-water-penalty-badge')).toHaveTextContent('-2')
+    expect(screen.getByTestId('board-cell-4-water-penalty-badge')).toHaveTextContent('-3')
   })
 
   test('renders temporary feu target and cast markers in fallback mode', () => {
@@ -602,8 +633,8 @@ describe('PixiBoard', () => {
       mode: 'effects',
       globalIndicators: [],
       cellIndicators: {
-        2: [{ key: 'cell-flooded', icon: '🌊', label: 'Inondée', tooltip: 'Case inondée.', tone: 'debuff' }],
-        3: [{ key: 'cell-frozen', icon: '❄️', label: 'Gelée 2', tooltip: 'Case gelée.', tone: 'debuff', valueText: '2' }],
+        2: [{ key: 'cell-flooded', icon: '🌊', label: 'EAU', tooltip: 'Case inondée.', tone: 'debuff' }],
+        3: [{ key: 'cell-frozen', icon: '❄️', label: 'GEL 2T', tooltip: 'Case gelée.', tone: 'debuff', valueText: '2T' }],
       },
       boardCardIndicators: {},
       displayStatsByCell: {},
@@ -617,9 +648,35 @@ describe('PixiBoard', () => {
 
     expect(screen.getByTestId('board-cell-2')).toHaveClass('fallback-cell--flooded')
     expect(screen.getByTestId('board-cell-3')).toHaveClass('fallback-cell--frozen')
-    expect(screen.getByTestId('board-cell-2')).toHaveTextContent('🌊')
-    expect(screen.getByTestId('board-cell-3')).toHaveTextContent('❄️')
-    expect(screen.getByTestId('board-cell-3-frozen-counter')).toHaveTextContent('2')
+    expect(screen.getByTestId('board-cell-2')).toHaveTextContent('EAU')
+    expect(screen.getByTestId('board-cell-3')).toHaveTextContent('GEL 2T')
+    expect(screen.getByTestId('board-cell-3-frozen-counter')).toHaveTextContent('2T')
+  })
+
+  test('renders compact buff and debuff labels directly on occupied board cells', () => {
+    const board = makeEmptyBoard()
+    board[4] = { cardId: 'c11', owner: 'cpu' }
+    const effectsView: MatchEffectsViewModel = {
+      mode: 'effects',
+      globalIndicators: [],
+      cellIndicators: {},
+      boardCardIndicators: {
+        4: [
+          { key: 'card-burn', icon: '🔥', label: '-1 2T', tooltip: 'Brulure active.', tone: 'debuff', valueText: '2T' },
+          { key: 'card-plante-pack', icon: '🌿', label: '+2', tooltip: 'Plante: +2 sur toutes les stats.', tone: 'buff', valueText: '+2' },
+        ],
+      },
+      displayStatsByCell: {},
+      handIndicatorsByActor: { player: {}, cpu: {} },
+      handDisplayStatsByActor: { player: {}, cpu: {} },
+      usedOnPoseByActor: { player: {}, cpu: {} },
+      laneTypeSlotsByActor: { player: [], cpu: [] },
+    }
+
+    renderFallbackBoard({ board, effectsView, interactive: false })
+
+    expect(screen.getByTestId('board-cell-4-effect-chips')).toHaveTextContent('-1 2T')
+    expect(screen.getByTestId('board-cell-4-effect-chips')).toHaveTextContent('+2')
   })
 
   test('renders active display stats and trend classes from effects view', () => {
@@ -723,5 +780,38 @@ describe('PixiBoard', () => {
     fireEvent.mouseOut(cell)
 
     expect(screen.queryByTestId('board-cell-hover-stats')).not.toBeInTheDocument()
+  })
+
+  test('shows contextual combat attack bonus in hover details', () => {
+    const board = makeEmptyBoard()
+    board[4] = { cardId: 'c26', owner: 'player' }
+    const effectsView: MatchEffectsViewModel = {
+      mode: 'effects',
+      globalIndicators: [],
+      cellIndicators: {},
+      boardCardIndicators: {
+        4: [
+          {
+            key: 'card-combat-attack',
+            icon: '⚔',
+            label: 'ATK +1',
+            tooltip: 'Combat: +1 sur le côté utilisé quand cette carte attaque.',
+            tone: 'buff',
+          },
+        ],
+      },
+      displayStatsByCell: {},
+      handIndicatorsByActor: { player: {}, cpu: {} },
+      handDisplayStatsByActor: { player: {}, cpu: {} },
+      usedOnPoseByActor: { player: {}, cpu: {} },
+      laneTypeSlotsByActor: { player: [], cpu: [] },
+    }
+
+    renderFallbackBoard({ board, interactive: true, targetableCells: [4], effectsView })
+
+    fireEvent.mouseOver(screen.getByTestId('board-cell-4'))
+
+    expect(screen.getByTestId('board-cell-hover-stats')).toHaveTextContent('ATK +1')
+    expect(screen.getByTestId('board-cell-hover-stats')).toHaveTextContent('attaque')
   })
 })

@@ -130,9 +130,14 @@ export function groupAdminPublicGalleryByDirectory(images: AdminPublicGalleryIma
     })
 }
 
-export async function fetchAdminPublicGallery(): Promise<AdminPublicGalleryImage[]> {
+export async function fetchAdminPublicGallery(accessToken: string | null): Promise<AdminPublicGalleryImage[]> {
   try {
-    const response = await fetch(`/api/admin/images/gallery?t=${Date.now()}`, { cache: 'no-store' })
+    const response = await fetch(`/api/admin/images/gallery?t=${Date.now()}`, {
+      cache: 'no-store',
+      headers: {
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      },
+    })
     if (response.status === 404) {
       return []
     }

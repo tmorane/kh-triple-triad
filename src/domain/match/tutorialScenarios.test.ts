@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { cardPool } from '../cards/cardPool'
 import { ELEMENT_EFFECT_ORDERED_IDS } from './elementEffectsCatalog'
+import { applyMove, createMatch, resolveMatchResult } from './engine'
 import {
   BASE_TUTORIAL_SCENARIO_ID,
   buildElementTutorialScenarioId,
@@ -17,7 +18,7 @@ describe('tutorialScenarios', () => {
     expect(scenario.id).toBe(BASE_TUTORIAL_SCENARIO_ID)
     expect(scenario.enableElementPowers).toBe(false)
     expect(scenario.playerDeck).toEqual(['c01', 'c03', 'c26', 'c32', 'c17'])
-    expect(scenario.cpuDeck).toEqual(['c50', 'c10', 'c06', 'c07', 'c04'])
+    expect(scenario.cpuDeck).toEqual(['c50', 'c28', 'c161', 'c172', 'c173'])
     expect(scenario.playerDeck).toHaveLength(5)
     expect(scenario.cpuDeck).toHaveLength(5)
     expect(scenario.steps).toHaveLength(9)
@@ -34,13 +35,21 @@ describe('tutorialScenarios', () => {
     expect(scenarioIds).toEqual(expectedIds)
   })
 
-  test('builds 5-card element decks and duplicates when element pool is smaller than 5 cards', () => {
+  test('builds 5-card element decks with unique forced support cards when an element pool is smaller than 5 cards', () => {
     const glaceScenario = resolveTutorialScenario(buildElementTutorialScenarioId('glace'))
+    const dragonScenario = resolveTutorialScenario(buildElementTutorialScenarioId('dragon'))
     const playerSteps = glaceScenario.steps.filter((step) => step.actor === 'player')
     const glacePoolSize = cardPool.filter((card) => card.elementId === 'glace').length
+    const dragonPoolSize = cardPool.filter((card) => card.elementId === 'dragon').length
 
     expect(glaceScenario.playerDeck).toHaveLength(5)
     expect(new Set(glaceScenario.playerDeck).size).toBe(Math.min(5, glacePoolSize))
+    expect(dragonPoolSize).toBeLessThan(5)
+    expect(dragonScenario.playerDeck).toHaveLength(5)
+    expect(new Set(dragonScenario.playerDeck).size).toBe(5)
+    expect(dragonScenario.playerDeck.filter((cardId) => cardPool.find((card) => card.id === cardId)?.elementId === 'dragon')).toHaveLength(
+      dragonPoolSize,
+    )
     expect(glaceScenario.enableElementPowers).toBe(true)
     expect(playerSteps.every((step) => step.objective === undefined)).toBe(true)
   })
@@ -76,5 +85,29 @@ describe('tutorialScenarios', () => {
       return
     }
     expect(firstPlayerStep.move.cell).toBe(4)
+  })
+
+  test('all match tutorials finish with a forced player victory when guided steps are followed', () => {
+    const scenarioIds = [BASE_TUTORIAL_SCENARIO_ID, ...listElementTutorialScenarioIds()]
+
+    const outcomes = scenarioIds.map((scenarioId) => {
+      const scenario = resolveTutorialScenario(scenarioId)
+      const initialState = createMatch({
+        mode: scenario.mode,
+        playerDeck: scenario.playerDeck,
+        cpuDeck: scenario.cpuDeck,
+        rules: scenario.rules,
+        seed: 101,
+        startingTurn: scenario.steps[0]?.actor ?? 'player',
+        enableElementPowers: scenario.enableElementPowers,
+        strictPowerTargeting: scenario.strictPowerTargeting,
+      })
+      const finalState = scenario.steps.reduce((state, step) => applyMove(state, step.move), initialState)
+      const result = resolveMatchResult(finalState)
+
+      return [scenarioId, result.winner, result.playerCount, result.cpuCount] as const
+    })
+
+    expect(outcomes.every(([, winner, playerCount, cpuCount]) => winner === 'player' && playerCount > cpuCount)).toBe(true)
   })
 })

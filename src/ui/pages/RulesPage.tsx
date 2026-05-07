@@ -85,14 +85,14 @@ export function RulesPage() {
 
   return (
     <section className="panel">
-      <h1>Rules</h1>
+      <h1>Règles</h1>
       <ul className="rule-copy">
         <li>
-          <strong>Open:</strong> Turn it on to see the CPU hand. Turn it off to keep the CPU hand hidden.
+          <strong>Visible:</strong> active cette règle pour voir la main du CPU. Désactive-la pour garder sa main cachée.
         </li>
       </ul>
 
-      <h2>Element effects</h2>
+      <h2>Effets de type</h2>
       <section className="rules-match-tutorials" aria-label="Tutoriels de partie">
         <h3>Tutoriels de partie</h3>
         <p className="small">Commence par le tutoriel de base, puis enchaine sur les types.</p>
@@ -139,7 +139,7 @@ export function RulesPage() {
           <>
             <p className="rules-tutorial__title">Tutoriel en cours</p>
             <p className="rules-tutorial__meta" data-testid="rules-tutorial-progress">
-              Etape {tutorialStepIndex + 1}/{totalTutorialSteps}
+              Étape {tutorialStepIndex + 1}/{totalTutorialSteps}
             </p>
             <p className="rules-tutorial__meta" data-testid="rules-tutorial-step-label">
               {tutorialLogo?.name ?? tutorialRule?.id ?? ''}
@@ -174,7 +174,7 @@ export function RulesPage() {
         )}
       </section>
 
-      <div className={`rules-element-icons ${isTutorialActive ? 'is-tutorial-active' : ''}`} role="list" aria-label="Element effects icons">
+      <div className={`rules-element-icons ${isTutorialActive ? 'is-tutorial-active' : ''}`} role="list" aria-label="Icônes des effets de type">
         {elementRuleItems.map((rule) => {
           const logo = getElementLogoMeta(rule.id)
           const isCurrentTutorialIcon = isTutorialActive && tutorialRule?.id === rule.id
@@ -241,10 +241,10 @@ export function RulesPage() {
 
       <div className="actions">
         <Link className="button button-primary" to="/setup">
-          Go to Match Setup
+          Préparer un match
         </Link>
         <Link className="button" to="/">
-          Home
+          Accueil
         </Link>
       </div>
     </section>

@@ -1,26 +1,14 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { canAccessAdminImages } from './app/admin/adminClientAccess'
 import { type BackgroundMode, persistBackgroundMode, resolveBackgroundMode, toggleBackgroundMode } from './app/backgroundMode'
-import { getCloudSessionUser, onCloudAuthStateChange } from './app/cloud/cloudAuth'
-import { CloudProfileAutoSync } from './app/cloud/CloudProfileAutoSync'
 import { useGame } from './app/useGame'
-import { AchievementsPage } from './ui/pages/AchievementsPage'
-import { AccountPage } from './ui/pages/AccountPage'
-import { AdminImagesPage } from './ui/pages/AdminImagesPage'
-import { CollectionPage } from './ui/pages/CollectionPage'
-import { ChangelogsPage } from './ui/pages/ChangelogsPage'
-import { DecksPage } from './ui/pages/DecksPage'
+import { listStoryMaps } from './domain/story/story'
 import { HomePage } from './ui/pages/HomePage'
-import { LegalIpPage } from './ui/pages/LegalIpPage'
-import { MatchPage } from './ui/pages/MatchPage'
-import { MissionsPage } from './ui/pages/MissionsPage'
-import { PacksPage } from './ui/pages/PacksPage'
-import { ResultsPage } from './ui/pages/ResultsPage'
-import { RanksPage } from './ui/pages/RanksPage'
-import { RulesPage } from './ui/pages/RulesPage'
-import { ShopPage } from './ui/pages/ShopPage'
+import { LandingPage } from './ui/pages/LandingPage'
 import { SetupPage } from './ui/pages/SetupPage'
+import { TrackedPokemonWidget } from './ui/components/TrackedPokemonWidget'
+import { stopStoryMusic } from './ui/audio/storyMusic'
 import './index.css'
 
 const THEME_STORAGE_KEY = 'kh-triple-triad-theme-mode-v1'
@@ -34,16 +22,43 @@ const TOPBAR_ICON_PATHS = {
   account: '/ui/icons/header/account.png',
   more: '/ui/icons/header/more.png',
 } as const
+const STORY_MAP_ROUTE_IDS = new Set(listStoryMaps().map((map) => map.id))
+
+const RulesPage = lazy(() => import('./ui/pages/RulesPage').then((module) => ({ default: module.RulesPage })))
+const StoryMapSelectPage = lazy(() => import('./ui/pages/StoryPage').then((module) => ({ default: module.StoryMapSelectPage })))
+const StoryPage = lazy(() => import('./ui/pages/StoryPage').then((module) => ({ default: module.StoryPage })))
+const DecksPage = lazy(() => import('./ui/pages/DecksPage').then((module) => ({ default: module.DecksPage })))
+const ShopPage = lazy(() => import('./ui/pages/ShopPage').then((module) => ({ default: module.ShopPage })))
+const PacksPage = lazy(() => import('./ui/pages/PacksPage').then((module) => ({ default: module.PacksPage })))
+const MatchPage = lazy(() => import('./ui/pages/MatchPage').then((module) => ({ default: module.MatchPage })))
+const ResultsPage = lazy(() => import('./ui/pages/ResultsPage').then((module) => ({ default: module.ResultsPage })))
+const CollectionPage = lazy(() => import('./ui/pages/CollectionPage').then((module) => ({ default: module.CollectionPage })))
+const AchievementsPage = lazy(() =>
+  import('./ui/pages/AchievementsPage').then((module) => ({ default: module.AchievementsPage })),
+)
+const MissionsPage = lazy(() => import('./ui/pages/MissionsPage').then((module) => ({ default: module.MissionsPage })))
+const RanksPage = lazy(() => import('./ui/pages/RanksPage').then((module) => ({ default: module.RanksPage })))
+const ChangelogsPage = lazy(() =>
+  import('./ui/pages/ChangelogsPage').then((module) => ({ default: module.ChangelogsPage })),
+)
+const LegalIpPage = lazy(() => import('./ui/pages/LegalIpPage').then((module) => ({ default: module.LegalIpPage })))
+const PrivacyPage = lazy(() => import('./ui/pages/PrivacyPage').then((module) => ({ default: module.PrivacyPage })))
+const AdminImagesPage = lazy(() =>
+  import('./ui/pages/AdminImagesPage').then((module) => ({ default: module.AdminImagesPage })),
+)
+const AccountPage = lazy(() => import('./ui/pages/AccountPage').then((module) => ({ default: module.AccountPage })))
 
 function App() {
   const { profile, currentMatch, abandonCurrentMatch, abandonTowerRun } = useGame()
   const location = useLocation()
   const navigate = useNavigate()
   const [isMoreOpen, setIsMoreOpen] = useState(false)
-  const [isAdminImagesLinkVisible, setIsAdminImagesLinkVisible] = useState(false)
+  const isAdminImagesLinkVisible = canAccessAdminImages(null)
   const [backgroundMode, setBackgroundMode] = useState<BackgroundMode>(() => resolveBackgroundMode())
-  const ctaLabel = currentMatch ? 'Continue' : 'Play'
+  const isLandingPage = location.pathname === '/'
+  const ctaLabel = currentMatch ? 'Continuer' : 'Jouer'
   const ctaTarget = currentMatch ? '/match' : '/setup'
+  const routeFallback = <p className="small">Chargement...</p>
 
   const handleTopbarAbandon = () => {
     if (!currentMatch) {
@@ -66,6 +81,12 @@ function App() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsMoreOpen(false)
+  }, [location.pathname])
+
+  useEffect(() => {
+    if (!isStoryMapPathname(location.pathname)) {
+      stopStoryMusic()
+    }
   }, [location.pathname])
 
   useEffect(() => {
@@ -105,59 +126,27 @@ function App() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [isMoreOpen])
 
-  useEffect(() => {
-    let mounted = true
-
-    const applyUser = (email: string | null | undefined) => {
-      if (!mounted) {
-        return
-      }
-
-      setIsAdminImagesLinkVisible(canAccessAdminImages(email))
-    }
-
-    void getCloudSessionUser()
-      .then((user) => {
-        applyUser(user?.email ?? null)
-      })
-      .catch(() => {
-        applyUser(null)
-      })
-
-    const unsubscribe = onCloudAuthStateChange((user) => {
-      applyUser(user?.email ?? null)
-    })
-
-    return () => {
-      mounted = false
-      unsubscribe()
-    }
-  }, [])
-
   return (
-    <div className="app-shell">
-      <CloudProfileAutoSync />
-
+    <div className={`app-shell${isLandingPage ? ' app-shell--landing' : ''}`}>
+      {!isLandingPage ? (
       <header className="topbar">
         <div className="brand-block">
-          <NavLink to="/" className="brand brand-link">
+          <NavLink to="/home" className="brand brand-link">
             {profile.playerName}
           </NavLink>
-          <NavLink to="/" className="brand-sub brand-sub-link">
+          <NavLink to="/home" className="brand-sub brand-sub-link">
             Garden Console
           </NavLink>
         </div>
 
-        <nav className="main-nav" aria-label="Primary navigation">
+        <div className="topbar-match-actions" data-testid="topbar-match-actions">
           <NavLink to={ctaTarget} className="topbar-cta topbar-nav-item" data-testid="topbar-cta-link">
             <img className="topbar-nav-item__icon" src={TOPBAR_ICON_PATHS.play} alt="" aria-hidden="true" />
             <span className="topbar-nav-item__label">{ctaLabel}</span>
           </NavLink>
-          {currentMatch ? (
-            <button type="button" className="topbar-abandon" data-testid="topbar-abandon-button" onClick={handleTopbarAbandon}>
-              Abandonner
-            </button>
-          ) : null}
+        </div>
+
+        <nav className="main-nav" aria-label="Navigation principale">
           <NavLink to="/decks" className="topbar-nav-item" data-testid="topbar-link-decks">
             <img className="topbar-nav-item__icon" src={TOPBAR_ICON_PATHS.decks} alt="" aria-hidden="true" />
             <span className="topbar-nav-item__label">Decks</span>
@@ -168,7 +157,7 @@ function App() {
           </NavLink>
           <NavLink to="/shop" className="topbar-nav-item" data-testid="topbar-link-shop">
             <img className="topbar-nav-item__icon" src={TOPBAR_ICON_PATHS.shop} alt="" aria-hidden="true" />
-            <span className="topbar-nav-item__label">Shop</span>
+            <span className="topbar-nav-item__label">Boutique</span>
           </NavLink>
           <NavLink to="/packs" className="topbar-nav-item" data-testid="topbar-link-packs">
             <img className="topbar-nav-item__icon" src={TOPBAR_ICON_PATHS.packs} alt="" aria-hidden="true" />
@@ -176,7 +165,7 @@ function App() {
           </NavLink>
           <NavLink to="/account" className="topbar-nav-item" data-testid="topbar-link-account">
             <img className="topbar-nav-item__icon" src={TOPBAR_ICON_PATHS.account} alt="" aria-hidden="true" />
-            <span className="topbar-nav-item__label">Account</span>
+            <span className="topbar-nav-item__label">Compte</span>
           </NavLink>
           <button
             type="button"
@@ -188,14 +177,25 @@ function App() {
             onClick={() => setIsMoreOpen(true)}
           >
             <img className="topbar-nav-item__icon" src={TOPBAR_ICON_PATHS.more} alt="" aria-hidden="true" />
-            <span className="topbar-nav-item__label">More</span>
+            <span className="topbar-nav-item__label">Plus</span>
           </button>
         </nav>
 
-        <p className="topbar-gold">Gold {profile.gold}</p>
+        <div className="topbar-status-area" data-testid="topbar-status-area">
+          <div className="topbar-status">
+            <TrackedPokemonWidget testIdPrefix="topbar-tracked" variant="topbar" />
+            <p className="topbar-gold">Or {profile.gold}</p>
+          </div>
+          {currentMatch ? (
+            <button type="button" className="topbar-abandon" data-testid="topbar-abandon-button" onClick={handleTopbarAbandon}>
+              Abandonner
+            </button>
+          ) : null}
+        </div>
       </header>
+      ) : null}
 
-      {isMoreOpen ? (
+      {!isLandingPage && isMoreOpen ? (
         <div
           className="topbar-more-backdrop"
           role="presentation"
@@ -212,67 +212,209 @@ function App() {
             onClick={(event) => event.stopPropagation()}
           >
             <div className="topbar-more-head">
-              <h2 id="topbar-more-title">More</h2>
+              <h2 id="topbar-more-title">Plus</h2>
               <button type="button" className="button" onClick={() => setIsMoreOpen(false)}>
-                Close
+                Fermer
               </button>
             </div>
-            <nav className="topbar-more-links" aria-label="More navigation">
+            <nav className="topbar-more-links" aria-label="Navigation secondaire">
               <NavLink to="/achievements" data-testid="topbar-more-link-achievements" onClick={() => setIsMoreOpen(false)}>
-                Achievements
+                Succès
               </NavLink>
               <NavLink to="/missions" data-testid="topbar-more-link-missions" onClick={() => setIsMoreOpen(false)}>
                 Missions
               </NavLink>
+              <NavLink to="/story" data-testid="topbar-more-link-story" onClick={() => setIsMoreOpen(false)}>
+                Histoire
+              </NavLink>
               <NavLink to="/ranks" data-testid="topbar-more-link-ranks" onClick={() => setIsMoreOpen(false)}>
-                Ranks
+                Rangs
               </NavLink>
               <NavLink to="/rules" data-testid="topbar-more-link-rules" onClick={() => setIsMoreOpen(false)}>
-                Rules
+                Règles
               </NavLink>
               <NavLink to="/changelogs" data-testid="topbar-more-link-changelogs" onClick={() => setIsMoreOpen(false)}>
-                Changelogs
+                Notes de version
               </NavLink>
               <NavLink to="/legal" data-testid="topbar-more-link-legal" onClick={() => setIsMoreOpen(false)}>
                 Mentions IP
               </NavLink>
+              <NavLink to="/privacy" data-testid="topbar-more-link-privacy" onClick={() => setIsMoreOpen(false)}>
+                Confidentialité
+              </NavLink>
               {isAdminImagesLinkVisible ? (
                 <NavLink to="/admin/images" data-testid="topbar-more-link-admin-images" onClick={() => setIsMoreOpen(false)}>
-                  Admin Images
+                  Images admin
                 </NavLink>
               ) : null}
               <NavLink to="/account" data-testid="topbar-more-link-account" onClick={() => setIsMoreOpen(false)}>
-                Account
+                Compte
               </NavLink>
             </nav>
           </section>
         </div>
       ) : null}
 
-      <main className="content">
+      <main className={`content${isLandingPage ? ' content--landing' : ''}`}>
         <Routes>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/rules" element={<RulesPage />} />
-          <Route path="/decks" element={<DecksPage />} />
+          <Route path="/" element={<LandingPage />} />
+          <Route path="/home" element={<HomePage />} />
+          <Route
+            path="/rules"
+            element={
+              <Suspense fallback={routeFallback}>
+                <RulesPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/story"
+            element={
+              <Suspense fallback={routeFallback}>
+                <StoryMapSelectPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/story/:chapterId/:mapId"
+            element={
+              <Suspense fallback={routeFallback}>
+                <StoryPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/story/:storyId"
+            element={
+              <Suspense fallback={routeFallback}>
+                <StoryPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/decks"
+            element={
+              <Suspense fallback={routeFallback}>
+                <DecksPage />
+              </Suspense>
+            }
+          />
           <Route path="/setup" element={<SetupPage />} />
-          <Route path="/shop" element={<ShopPage />} />
-          <Route path="/packs" element={<PacksPage />} />
-          <Route path="/match" element={<MatchPage />} />
-          <Route path="/results" element={<ResultsPage />} />
-          <Route path="/pokedex" element={<CollectionPage />} />
+          <Route
+            path="/shop"
+            element={
+              <Suspense fallback={routeFallback}>
+                <ShopPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/packs"
+            element={
+              <Suspense fallback={routeFallback}>
+                <PacksPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/match"
+            element={
+              <Suspense fallback={routeFallback}>
+                <MatchPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/results"
+            element={
+              <Suspense fallback={routeFallback}>
+                <ResultsPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/pokedex"
+            element={
+              <Suspense fallback={routeFallback}>
+                <CollectionPage />
+              </Suspense>
+            }
+          />
           <Route path="/collection" element={<Navigate to="/pokedex" replace />} />
-          <Route path="/achievements" element={<AchievementsPage />} />
-          <Route path="/missions" element={<MissionsPage />} />
-          <Route path="/ranks" element={<RanksPage />} />
-          <Route path="/changelogs" element={<ChangelogsPage />} />
-          <Route path="/legal" element={<LegalIpPage />} />
-          <Route path="/admin/images" element={<AdminImagesPage />} />
-          <Route path="/account" element={<AccountPage />} />
+          <Route
+            path="/achievements"
+            element={
+              <Suspense fallback={routeFallback}>
+                <AchievementsPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/missions"
+            element={
+              <Suspense fallback={routeFallback}>
+                <MissionsPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/ranks"
+            element={
+              <Suspense fallback={routeFallback}>
+                <RanksPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/changelogs"
+            element={
+              <Suspense fallback={routeFallback}>
+                <ChangelogsPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/legal"
+            element={
+              <Suspense fallback={routeFallback}>
+                <LegalIpPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/privacy"
+            element={
+              <Suspense fallback={routeFallback}>
+                <PrivacyPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/admin/images"
+            element={
+              isAdminImagesLinkVisible ? (
+                <Suspense fallback={routeFallback}>
+                  <AdminImagesPage />
+                </Suspense>
+              ) : (
+                <Navigate to="/home" replace />
+              )
+            }
+          />
+          <Route
+            path="/account"
+            element={
+              <Suspense fallback={routeFallback}>
+                <AccountPage />
+              </Suspense>
+            }
+          />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
 
-      <nav className="mobile-main-nav" data-testid="mobile-main-nav" aria-label="Primary mobile navigation">
+      {!isLandingPage ? (
+      <nav className="mobile-main-nav" data-testid="mobile-main-nav" aria-label="Navigation mobile principale">
         <NavLink to={ctaTarget} className="mobile-main-nav__item">
           <img className="mobile-main-nav__icon" src={TOPBAR_ICON_PATHS.play} alt="" aria-hidden="true" />
           {ctaLabel}
@@ -287,7 +429,7 @@ function App() {
         </NavLink>
         <NavLink to="/shop" className="mobile-main-nav__item">
           <img className="mobile-main-nav__icon" src={TOPBAR_ICON_PATHS.shop} alt="" aria-hidden="true" />
-          Shop
+          Boutique
         </NavLink>
         <NavLink to="/packs" className="mobile-main-nav__item">
           <img className="mobile-main-nav__icon" src={TOPBAR_ICON_PATHS.packs} alt="" aria-hidden="true" />
@@ -295,7 +437,7 @@ function App() {
         </NavLink>
         <NavLink to="/account" className="mobile-main-nav__item">
           <img className="mobile-main-nav__icon" src={TOPBAR_ICON_PATHS.account} alt="" aria-hidden="true" />
-          Account
+          Compte
         </NavLink>
         <button
           type="button"
@@ -304,24 +446,37 @@ function App() {
           onClick={() => setIsMoreOpen(true)}
         >
           <img className="mobile-main-nav__icon" src={TOPBAR_ICON_PATHS.more} alt="" aria-hidden="true" />
-          More
+          Plus
         </button>
       </nav>
+      ) : null}
 
+      {!isLandingPage ? (
       <button
         type="button"
         className="background-mode-toggle"
         data-testid="background-mode-toggle"
-        aria-label="Toggle background mode"
+        aria-label="Changer le mode de fond"
         onClick={() => setBackgroundMode((mode) => toggleBackgroundMode(mode))}
       >
         <span className="background-mode-toggle__icon" aria-hidden="true">
           {backgroundMode === 'dark' ? '☀' : '☾'}
         </span>
-        <span className="background-mode-toggle__label">{backgroundMode === 'dark' ? 'Light' : 'Dark'}</span>
+        <span className="background-mode-toggle__label">{backgroundMode === 'dark' ? 'Clair' : 'Sombre'}</span>
       </button>
+      ) : null}
     </div>
   )
 }
 
 export default App
+
+function isStoryMapPathname(pathname: string): boolean {
+  const segments = pathname.split('/').filter(Boolean)
+  if (segments[0] !== 'story') {
+    return false
+  }
+
+  const mapId = segments.length === 2 ? segments[1] : segments.length === 3 ? segments[2] : null
+  return mapId ? STORY_MAP_ROUTE_IDS.has(mapId as ReturnType<typeof listStoryMaps>[number]['id']) : false
+}

@@ -1,6 +1,6 @@
 const SPLASHART_BASE_PATH = '/splashart'
 const SHINY_SPLASHART_BASE_PATH = '/splashart-shiny'
-const ART_EXTENSIONS = ['png', 'webp', 'jpg'] as const
+const ART_EXTENSIONS = ['webp', 'png', 'jpg'] as const
 const CARD_ART_NAME_ALIASES: Record<string, string[]> = {
   'Minute Bombe': ['Bombe Minute'],
   Surveillant: ['Robot de Surveillance'],
@@ -12,6 +12,10 @@ function stripDiacritics(value: string): string {
 
 function normalizeSeparators(value: string): string {
   return value.replace(/[/:]+/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+function withUnicodeNormalForms(value: string): string[] {
+  return [value, value.normalize('NFC'), value.normalize('NFD')]
 }
 
 function unique(values: string[]): string[] {
@@ -59,11 +63,11 @@ export function getCardArtCandidates(cardName: string, options: CardArtOptions =
     const asciiAlias = stripDiacritics(alias)
     const normalizedAlias = normalizeSeparators(asciiAlias)
 
-    return [alias, asciiAlias, normalizedAlias]
+    return [...withUnicodeNormalForms(alias), asciiAlias, normalizedAlias]
   })
 
   const filenameVariants = unique([
-    trimmedName,
+    ...withUnicodeNormalForms(trimmedName),
     asciiName,
     normalizedName,
     ...aliasNameVariants,

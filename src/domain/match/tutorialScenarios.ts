@@ -52,20 +52,36 @@ const tutorialRules: RuleSet = { open: true, same: false, plus: false }
 const tutorialMode: MatchMode = '3x3'
 const defaultPlayerFirstPlayerCells = [4, 1, 5, 2, 8] as const
 const defaultPlayerFirstCpuCells = [0, 3, 7, 6] as const
+const freezeSafeCpuCells = [3, 0, 7, 6] as const
 const fireCpuFirstPlayerCells = [4, 5, 2, 8] as const
 const fireCpuFirstCpuCells = [1, 0, 3, 7, 6] as const
-const fallbackCpuDeck: CardId[] = ['c71', 'c72', 'c73', 'c74', 'c75']
+const forcedTutorialCpuDeck: CardId[] = ['c50', 'c28', 'c161', 'c172', 'c173']
+const forcedTutorialSupportCards: CardId[] = ['c149', 'c150', 'c151', 'c248', 'c250', 'c142', 'c143', 'c144', 'c145']
 
-function resolveExistingFallbackCpuDeck(): CardId[] {
-  const cardIds = new Set(cardPool.map((card) => card.id))
-  if (fallbackCpuDeck.every((cardId) => cardIds.has(cardId))) {
-    return [...fallbackCpuDeck]
+function getCardTotal(cardId: CardId): number {
+  const card = cardPool.find((entry) => entry.id === cardId)
+  if (!card) {
+    return 0
   }
-  return cardPool.slice(0, 5).map((card) => card.id)
+  return card.top + card.right + card.bottom + card.left
+}
+
+function resolveWeakTutorialCpuDeck(): CardId[] {
+  const cardIds = new Set(cardPool.map((card) => card.id))
+  if (forcedTutorialCpuDeck.every((cardId) => cardIds.has(cardId))) {
+    return [...forcedTutorialCpuDeck]
+  }
+  return [...cardPool]
+    .sort((a, b) => a.top + a.right + a.bottom + a.left - (b.top + b.right + b.bottom + b.left))
+    .slice(0, 5)
+    .map((card) => card.id)
 }
 
 function resolveCardsByElement(elementId: CardElementId): CardId[] {
-  return cardPool.filter((card) => card.elementId === elementId).map((card) => card.id)
+  return cardPool
+    .filter((card) => card.elementId === elementId)
+    .sort((a, b) => b.top + b.right + b.bottom + b.left - (a.top + a.right + a.bottom + a.left))
+    .map((card) => card.id)
 }
 
 function buildElementDeck(elementId: CardElementId, size: number): CardId[] {
@@ -73,9 +89,34 @@ function buildElementDeck(elementId: CardElementId, size: number): CardId[] {
   if (source.length === 0) {
     throw new Error(`No card found for element "${elementId}".`)
   }
+  const cardIds = new Set(cardPool.map((card) => card.id))
   const deck: CardId[] = []
-  for (let index = 0; index < size; index += 1) {
-    deck.push(source[index % source.length]!)
+  for (const cardId of source) {
+    if (!deck.includes(cardId)) {
+      deck.push(cardId)
+    }
+    if (deck.length === size) {
+      return deck
+    }
+  }
+  for (const cardId of forcedTutorialSupportCards) {
+    if (cardIds.has(cardId) && !deck.includes(cardId)) {
+      deck.push(cardId)
+    }
+    if (deck.length === size) {
+      return deck
+    }
+  }
+  for (const card of [...cardPool].sort((a, b) => getCardTotal(b.id) - getCardTotal(a.id))) {
+    if (!deck.includes(card.id)) {
+      deck.push(card.id)
+    }
+    if (deck.length === size) {
+      return deck
+    }
+  }
+  if (deck.length !== size) {
+    throw new Error(`Unable to build ${size}-card tutorial deck for element "${elementId}".`)
   }
   return deck
 }
@@ -139,6 +180,7 @@ function buildStrictTutorialSteps(
     startingActor?: 'player' | 'cpu'
     playerCells?: readonly number[]
     cpuCells?: readonly number[]
+    playerPowerTargetCells?: readonly number[]
   },
 ): TutorialStep[] {
   const steps: TutorialStep[] = []
@@ -147,6 +189,7 @@ function buildStrictTutorialSteps(
   const startingActor = options?.startingActor ?? 'player'
   const playerCells = options?.playerCells ?? defaultPlayerFirstPlayerCells
   const cpuCells = options?.cpuCells ?? defaultPlayerFirstCpuCells
+  const playerPowerTargetCells = options?.playerPowerTargetCells
   const turnCount = playerCells.length + cpuCells.length
   let playerIndex = 0
   let cpuIndex = 0
@@ -165,6 +208,9 @@ function buildStrictTutorialSteps(
             actor: 'player',
             cardId: playerDeck[playerIndex]!,
             cell: plannedCell,
+            powerTarget: Number.isInteger(playerPowerTargetCells?.[playerIndex])
+              ? { targetCell: playerPowerTargetCells![playerIndex]! }
+              : undefined,
           },
           chapterId,
           chapterLabel,
@@ -299,7 +345,7 @@ function getElementTutorialIntroCopy(elementId: CardElementId, forcedCell: numbe
 
 function buildBaseTutorialScenario(): TutorialScenario {
   const playerDeck: CardId[] = ['c01', 'c03', 'c26', 'c32', 'c17']
-  const cpuDeck: CardId[] = ['c50', 'c10', 'c06', 'c07', 'c04']
+  const cpuDeck = resolveWeakTutorialCpuDeck()
 
   return {
     id: BASE_TUTORIAL_SCENARIO_ID,
@@ -414,7 +460,7 @@ export function buildElementTutorialScenarioId(elementId: CardElementId): Tutori
 
 function buildElementTutorialScenario(elementId: CardElementId): TutorialScenario {
   const playerDeck = buildElementDeck(elementId, 5)
-  const cpuDeck = resolveExistingFallbackCpuDeck()
+  const cpuDeck = resolveWeakTutorialCpuDeck()
   const elementEffectText = getElementEffectText(elementId, 'plain')
   const isFireScenario = elementId === 'feu'
   const steps = isFireScenario
@@ -433,13 +479,18 @@ function buildElementTutorialScenario(elementId: CardElementId): TutorialScenari
           cpuCells: fireCpuFirstCpuCells,
         },
       )
-    : buildStrictTutorialSteps(playerDeck, cpuDeck, [
-        `Pose une carte ${elementId} au centre.`,
-        `Continue avec une carte ${elementId} en haut.`,
-        `Joue encore ${elementId} sur la droite.`,
-        `Enchaine avec ${elementId} sur la ligne du haut.`,
-        `Termine le tutoriel ${elementId}.`,
-      ])
+    : buildStrictTutorialSteps(
+        playerDeck,
+        cpuDeck,
+        [
+          `Pose une carte ${elementId} au centre.`,
+          `Continue avec une carte ${elementId} en haut.`,
+          `Joue encore ${elementId} sur la droite.`,
+          `Enchaine avec ${elementId} sur la ligne du haut.`,
+          `Termine le tutoriel ${elementId}.`,
+        ],
+        elementId === 'glace' ? { cpuCells: freezeSafeCpuCells, playerPowerTargetCells: [6, 8, 8, 8, 8] } : undefined,
+      )
 
   const firstPlayerStep = steps.find((step): step is TutorialPlayerStep => step.actor === 'player')
   const introForcedCell = firstPlayerStep ? firstPlayerStep.move.cell + 1 : 5

@@ -52,7 +52,7 @@ export interface RuleSet {
   plus: boolean
 }
 
-export type MatchQueue = 'normal' | 'ranked' | 'tower' | 'tutorial'
+export type MatchQueue = 'normal' | 'ranked' | 'tower' | 'tutorial' | 'story'
 export type MatchMode = '3x3' | '4x4'
 
 export interface MatchConfig {
@@ -175,7 +175,13 @@ export interface AchievementProgress {
   shinyCrafted: number
 }
 
-export type MissionId = 'm1_type_specialist' | 'm2_combo_practitioner' | 'm3_corner_tactician'
+export type MissionId =
+  | 'm1_type_specialist'
+  | 'm2_combo_practitioner'
+  | 'm3_corner_tactician'
+  | 'b1_win_streak'
+  | 'b2_match_grinder'
+  | 'b3_collection_hunter'
 
 export type MissionReward =
   | { kind: 'gold'; amount: number }
@@ -223,9 +229,22 @@ export interface RankedState {
     count: number
   }
   demotionShieldLosses: number
+  promotionSeries?: {
+    wins: number
+    losses: number
+  } | null
+  seasonId?: string
+  seasonLeagueRewardsClaimed?: Partial<Record<RankedTierId, true>>
 }
 
 export type RankedByMode = Record<MatchMode, RankedState>
+
+export interface TrackedPokemonState {
+  targetCardId: CardId | null
+  gaugePoints: number
+  completedGaugesInWindow: number
+  windowStartedAt: string | null
+}
 
 export interface TutorialProgress {
   baseCompleted: boolean
@@ -255,6 +274,7 @@ export interface PlayerProfile {
   missionRewardsGrantedById: Partial<Record<MissionId, true>>
   specialPackPity?: SpecialPackPityState
   rankedByMode: RankedByMode
+  trackedPokemon?: TrackedPokemonState
   tutorialProgress?: TutorialProgress
   towerProgress?: TowerProgressState
   towerRun?: TowerRunState | null

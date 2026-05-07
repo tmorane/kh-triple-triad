@@ -1,10 +1,10 @@
-import { isAdminEmailAllowed, parseAdminAllowedEmails } from './adminAllowlist'
+import { isAdminEmailAllowed, parseAdminAllowedEmails } from './adminAllowlist.js'
 import {
   AdminImageValidationError,
   type AdminImageGenerateResponse,
   generateAdminImages,
   validateAdminImageGenerateRequest,
-} from './adminImageGeneration'
+} from './adminImageGeneration.js'
 
 interface AdminImageApiRequest {
   method?: string
@@ -96,7 +96,7 @@ export async function handleAdminImageGenerateRequest(
   try {
     const payload = parseBody(request.body)
     const validation = validateAdminImageGenerateRequest(payload)
-    if (!validation.ok) {
+    if (validation.ok === false) {
       return { status: 400, body: { error: validation.message } }
     }
 

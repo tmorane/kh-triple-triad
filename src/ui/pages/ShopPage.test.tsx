@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ComponentProps } from 'react'
 import { MemoryRouter } from 'react-router-dom'
-import { describe, expect, test } from 'bun:test'
+import { beforeEach, describe, expect, test } from 'bun:test'
 import { GameContext } from '../../app/GameContext'
 import { createDefaultProfile } from '../../domain/progression/profile'
 import type {
@@ -82,7 +82,7 @@ function renderShopPage(options: {
     },
     openOwnedPack:
       options.openOwnedPack ??
-      ((_packId) => ({
+      (() => ({
         packId: 'rare',
         remainingPackCount: 0,
         pulls: [
@@ -93,7 +93,7 @@ function renderShopPage(options: {
       })),
     buySpecialPack:
       options.buySpecialPack ??
-      ((_request) => ({
+      (() => ({
         packId: 'sans_coeur_focus',
         targetLegendaryCardId: null,
         pulls: [
@@ -135,6 +135,18 @@ function renderShopPage(options: {
 }
 
 describe('ShopPage reveals', () => {
+  beforeEach(() => {
+    import.meta.env.VITE_SHOW_DEMO_TOOLS = 'false'
+  })
+
+  test('hides local test tools by default', () => {
+    renderShopPage({})
+
+    expect(screen.queryByTestId('shop-add-test-gold')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('shop-open-shiny-test-pack')).not.toBeInTheDocument()
+    expect(screen.queryByText(/\(test\)/i)).not.toBeInTheDocument()
+  })
+
   test('opens owned pack reveal modal with pulled cards', async () => {
     const user = userEvent.setup()
     renderShopPage({})
@@ -142,7 +154,7 @@ describe('ShopPage reveals', () => {
     await user.click(screen.getByTestId('open-owned-pack-rare'))
 
     expect(screen.getByTestId('shop-opened-reveal-modal')).toBeInTheDocument()
-    expect(screen.getByText('Rare Pack Opened')).toBeInTheDocument()
+    expect(screen.getByText('Pack rare ouvert')).toBeInTheDocument()
     expect(screen.getByTestId('shop-opened-reveal-triad-0')).toBeInTheDocument()
     expect(screen.getByTestId('shop-opened-reveal-triad-1')).toBeInTheDocument()
     expect(screen.getByTestId('shop-opened-reveal-triad-2')).toBeInTheDocument()
@@ -155,18 +167,19 @@ describe('ShopPage reveals', () => {
     await user.click(screen.getByTestId('buy-open-special-pack-sans_coeur_focus'))
 
     expect(screen.getByTestId('shop-opened-reveal-modal')).toBeInTheDocument()
-    expect(screen.getByText('Gen 1 Booster Opened')).toBeInTheDocument()
+    expect(screen.getByText('Booster Gen 1 ouvert')).toBeInTheDocument()
     expect(screen.getByTestId('shop-opened-reveal-triad-0')).toBeInTheDocument()
   })
 
   test('opens shiny test pack reveal with a guaranteed shiny card', async () => {
     const user = userEvent.setup()
+    import.meta.env.VITE_SHOW_DEMO_TOOLS = 'true'
     renderShopPage({})
 
     await user.click(screen.getByTestId('shop-open-shiny-test-pack'))
 
     expect(screen.getByTestId('shop-opened-reveal-modal')).toBeInTheDocument()
-    expect(screen.getByText('Shiny Test Pack Opened')).toBeInTheDocument()
+    expect(screen.getByText('Pack shiny test ouvert')).toBeInTheDocument()
     expect(screen.getByTestId('triad-card-shiny-pill')).toBeInTheDocument()
   })
 })

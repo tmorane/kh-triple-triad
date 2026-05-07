@@ -3,6 +3,7 @@ import { cardPool } from '../cards/cardPool'
 import { createSeededRng, type SeededRng } from '../random/seededRng'
 import type { PlayerProfile } from '../types'
 import { createDefaultProfile } from './profile'
+import { cloneMissionProgressMap } from './missionCatalog'
 import {
   getPackDropRates,
   getPackPrice,
@@ -32,11 +33,7 @@ function cloneProfile(profile: PlayerProfile): PlayerProfile {
     stats: { ...profile.stats },
     achievementProgress: { ...profile.achievementProgress },
     achievements: [...profile.achievements],
-    missions: {
-      m1_type_specialist: { ...profile.missions.m1_type_specialist },
-      m2_combo_practitioner: { ...profile.missions.m2_combo_practitioner },
-      m3_corner_tactician: { ...profile.missions.m3_corner_tactician },
-    },
+    missions: cloneMissionProgressMap(profile.missions),
     missionRewardsGrantedById: { ...profile.missionRewardsGrantedById },
     rankedByMode: {
       '3x3': {
@@ -98,15 +95,16 @@ describe('shop progression', () => {
 
   test('purchaseShopPack deducts exact gold and increments pack inventory', () => {
     const profile = createDefaultProfile()
+    profile.gold = getPackPrice('common')
     const initialOwned = [...profile.ownedCardIds]
     const initialCopies = { ...profile.cardCopiesById }
 
     const result = purchaseShopPack(profile, 'common')
 
-    expect(result.receipt.goldSpent).toBe(60)
-    expect(result.receipt.goldRemaining).toBe(40)
+    expect(result.receipt.goldSpent).toBe(140)
+    expect(result.receipt.goldRemaining).toBe(0)
     expect(result.receipt.packCountAfter).toBe(1)
-    expect(result.profile.gold).toBe(40)
+    expect(result.profile.gold).toBe(0)
     expect(result.profile.packInventoryByRarity.common).toBe(1)
     expect(result.profile.ownedCardIds).toEqual(initialOwned)
     expect(result.profile.cardCopiesById).toEqual(initialCopies)
@@ -122,11 +120,11 @@ describe('shop progression', () => {
 
   test('purchaseShopPacks multiplies cost and increments inventory by quantity', () => {
     const profile = createDefaultProfile()
-    profile.gold = 180
+    profile.gold = getPackPrice('common') * 3
 
     const result = purchaseShopPacks(profile, 'common', 3)
 
-    expect(result.receipt.goldSpent).toBe(180)
+    expect(result.receipt.goldSpent).toBe(420)
     expect(result.receipt.goldRemaining).toBe(0)
     expect(result.receipt.packCountAfter).toBe(3)
     expect(result.profile.gold).toBe(0)
@@ -134,34 +132,34 @@ describe('shop progression', () => {
   })
 
   test('uses configured pack prices', () => {
-    expect(getPackPrice('common')).toBe(60)
-    expect(getPackPrice('uncommon')).toBe(120)
-    expect(getPackPrice('rare')).toBe(220)
-    expect(getPackPrice('epic')).toBe(300)
-    expect(getPackPrice('legendary')).toBe(360)
+    expect(getPackPrice('common')).toBe(140)
+    expect(getPackPrice('uncommon')).toBe(240)
+    expect(getPackPrice('rare')).toBe(420)
+    expect(getPackPrice('epic')).toBe(720)
+    expect(getPackPrice('legendary')).toBe(1200)
   })
 
   test('exposes configured drop rates for shop packs', () => {
     expect(getPackDropRates('common')).toEqual({
-      common: 70,
-      uncommon: 22,
+      common: 74,
+      uncommon: 19,
       rare: 5,
       epic: 2,
-      legendary: 1,
+      legendary: 0,
     })
     expect(getPackDropRates('rare')).toEqual({
-      common: 15,
-      uncommon: 25,
-      rare: 35,
-      epic: 20,
-      legendary: 5,
+      common: 24,
+      uncommon: 33,
+      rare: 34,
+      epic: 7,
+      legendary: 2,
     })
     expect(getPackDropRates('legendary')).toEqual({
-      common: 11,
-      uncommon: 22,
-      rare: 44,
-      epic: 20,
-      legendary: 3,
+      common: 12,
+      uncommon: 35,
+      rare: 50,
+      epic: 1,
+      legendary: 2,
     })
   })
 
@@ -205,10 +203,10 @@ describe('shop progression', () => {
     const profile = createDefaultProfile()
     profile.packInventoryByRarity.common = 1
 
-    const result = openOwnedPack(profile, 'common', createFixedIntRng([0, 0, 70, 0, 99, 0]))
+    const result = openOwnedPack(profile, 'common', createFixedIntRng([0, 0, 74, 0, 99, 0]))
 
     expect(result.opened.pulls).toHaveLength(3)
-    expect(result.opened.pulls.map((pull) => pull.rarity)).toEqual(['common', 'uncommon', 'legendary'])
+    expect(result.opened.pulls.map((pull) => pull.rarity)).toEqual(['common', 'uncommon', 'epic'])
   })
 
   test('openOwnedPack pull rarity always matches dropped card rarity', () => {
@@ -247,7 +245,7 @@ describe('shop progression', () => {
     profile.packInventoryByRarity.rare = 1
     const firstRareCardId = rarePool[0]
 
-    const result = openOwnedPack(profile, 'rare', createFixedIntRng([40, 0, 40, 0, 40, 0]))
+    const result = openOwnedPack(profile, 'rare', createFixedIntRng([60, 0, 60, 0, 60, 0]))
 
     expect(result.opened.pulls[0].cardId).toBe(firstRareCardId)
     expect(result.opened.pulls[0].rarity).toBe('rare')
@@ -271,7 +269,7 @@ describe('shop progression', () => {
     base.ownedCardIds = [...ownedRareIds]
     base.cardCopiesById = Object.fromEntries(ownedRareIds.map((cardId) => [cardId, 1]))
 
-    const result = openOwnedPack(cloneProfile(base), 'rare', createFixedIntRng([40, 6]))
+    const result = openOwnedPack(cloneProfile(base), 'rare', createFixedIntRng([60, 6]))
 
     expect(result.opened.pulls[0].cardId).toBe(weightedTarget)
     expect(result.opened.pulls[0].rarity).toBe('rare')
@@ -329,9 +327,9 @@ describe('shop progression', () => {
   })
 
   test('uses configured special pack prices', () => {
-    expect(getSpecialPackPrice('sans_coeur_focus')).toBe(220)
-    expect(getSpecialPackPrice('simili_focus')).toBe(220)
-    expect(getSpecialPackPrice('legendary_focus')).toBe(900)
+    expect(getSpecialPackPrice('sans_coeur_focus')).toBe(180)
+    expect(getSpecialPackPrice('simili_focus')).toBe(180)
+    expect(getSpecialPackPrice('legendary_focus')).toBe(650)
   })
 
   test('purchaseAndOpenSpecialPack rejects purchases when gold is below special pack price', () => {
@@ -349,7 +347,7 @@ describe('shop progression', () => {
 
     const result = purchaseAndOpenSpecialPack(profile, { packId: 'sans_coeur_focus' }, createSeededRng(21))
 
-    expect(result.profile.gold).toBe(1780)
+    expect(result.profile.gold).toBe(1820)
     expect(result.opened.pulls).toHaveLength(3)
     for (const pull of result.opened.pulls) {
       const card = cardPool.find((entry) => entry.id === pull.cardId)

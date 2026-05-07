@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { canAccessAdminImages, isAdminAuthBypassedInClient } from './adminClientAccess'
+import { canAccessAdminImages, isAdminAuthBypassedInClient, resolveAdminAuthBypassForClient } from './adminClientAccess'
 
 describe('isAdminAuthBypassedInClient', () => {
   test('returns true when explicit bypass env is enabled', () => {
@@ -13,12 +13,25 @@ describe('isAdminAuthBypassedInClient', () => {
   })
 })
 
+describe('resolveAdminAuthBypassForClient', () => {
+  test('forces bypass off in production', () => {
+    expect(
+      resolveAdminAuthBypassForClient({
+        rawBypassValue: 'true',
+        isProd: true,
+        isDev: false,
+        mode: 'production',
+      }),
+    ).toBe(false)
+  })
+})
+
 describe('canAccessAdminImages', () => {
-  test('allows signed-in users when client allowlist is not configured', () => {
+  test('rejects signed-in users when client allowlist is not configured', () => {
     import.meta.env.VITE_ADMIN_BYPASS_LOCAL_AUTH = 'false'
     import.meta.env.VITE_ADMIN_ALLOWED_EMAILS = ''
 
-    expect(canAccessAdminImages('admin@example.com')).toBe(true)
+    expect(canAccessAdminImages('admin@example.com')).toBe(false)
   })
 
   test('rejects users not in configured allowlist', () => {

@@ -1,7 +1,15 @@
-import { listAllPublicImages } from './publicGalleryStore'
+/* global process */
+import { createClient } from '@supabase/supabase-js'
+import { handleAdminImageGalleryRequest } from '../../../src/app/admin/adminImageGalleryApi.js'
+import { isAdminAuthBypassEnabled } from './adminAuthPolicy.js'
+import { listAllPublicImages } from './publicGalleryStore.js'
+
+const DEFAULT_SUPABASE_URL = 'https://dufnghfphczftetkpcqf.supabase.co'
+const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_RyP064ovRl0TW8yypqtyag_xuZ-TsQL'
 
 interface NodeRequestLike {
   method?: string
+  headers: Record<string, string | string[] | undefined>
 }
 
 interface NodeResponseLike {
@@ -10,18 +18,66 @@ interface NodeResponseLike {
   setHeader: (name: string, value: string) => void
 }
 
-export default async function handler(req: NodeRequestLike, res: NodeResponseLike): Promise<void> {
-  if (req.method !== 'GET') {
-    res.setHeader('Allow', 'GET')
-    res.status(405).json({ error: 'Method Not Allowed' })
-    return
+function readEnv(name: string, fallback?: string): string {
+  const value = process.env[name]
+  if (typeof value === 'string' && value.trim().length > 0) {
+    return value.trim()
   }
 
-  try {
-    const images = await listAllPublicImages()
-    res.status(200).json({ images })
-  } catch {
-    res.status(500).json({ error: 'Unable to read public gallery.' })
+  if (fallback) {
+    return fallback
   }
+
+  throw new Error(`Missing required environment variable: ${name}`)
 }
 
+function headerValue(value: string | string[] | undefined): string | undefined {
+  if (typeof value === 'string') {
+    return value
+  }
+  if (Array.isArray(value)) {
+    return value[0]
+  }
+  return undefined
+}
+
+async function verifySupabaseAccessToken(token: string): Promise<{ email: string | null }> {
+  const supabaseUrl = readEnv('VITE_SUPABASE_URL', DEFAULT_SUPABASE_URL)
+  const supabaseAnonKey = readEnv('VITE_SUPABASE_ANON_KEY', DEFAULT_SUPABASE_ANON_KEY)
+  const supabase = createClient(supabaseUrl, supabaseAnonKey)
+
+  const { data, error } = await supabase.auth.getUser(token)
+  if (error || !data.user) {
+    throw new Error('Invalid token')
+  }
+
+  return { email: data.user.email ?? null }
+}
+
+export default async function handler(req: NodeRequestLike, res: NodeResponseLike): Promise<void> {
+  const bypassAuth = isAdminAuthBypassEnabled({
+    rawBypassValue: process.env.ADMIN_BYPASS_LOCAL_AUTH,
+    nodeEnv: process.env.NODE_ENV,
+  })
+
+  const result = await handleAdminImageGalleryRequest(
+    {
+      method: req.method,
+      headers: {
+        authorization: headerValue(req.headers.authorization),
+      },
+    },
+    {
+      verifyAccessToken: verifySupabaseAccessToken,
+      listImages: listAllPublicImages,
+      allowedEmailsRaw: process.env.ADMIN_ALLOWED_EMAILS,
+      bypassAuth,
+    },
+  )
+
+  if (result.status === 405) {
+    res.setHeader('Allow', 'GET')
+  }
+
+  res.status(result.status).json(result.body)
+}

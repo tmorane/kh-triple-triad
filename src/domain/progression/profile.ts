@@ -14,9 +14,11 @@ import type {
   RankedState,
   RankedTierId,
   Rarity,
+  TrackedPokemonState,
 } from '../types'
 import { evaluateAchievements, isAchievementId } from './achievements'
-import { createInitialMissionsProgress } from './missions'
+import { createInitialMissionsProgress, missionIds } from './missionCatalog'
+import { createInitialTrackedPokemonState } from './pokedexProgression'
 import { createInitialRankedState } from './ranked'
 
 export const PROFILE_STORAGE_KEY = 'kh-triple-triad-v1-profile'
@@ -32,7 +34,6 @@ const DEFAULT_DECK_SLOT_MODE: MatchMode = '4x4'
 const LEGENDARY_FOCUS_PITY_BASE_CHANCE_PERCENT = 1
 const LEGENDARY_FOCUS_PITY_MAX_CHANCE_PERCENT = 100
 const packInventoryRarities: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary']
-const missionIds: MissionId[] = ['m1_type_specialist', 'm2_combo_practitioner', 'm3_corner_tactician']
 const tutorialElementIds = new Set<string>(ELEMENT_EFFECT_ORDERED_IDS)
 const legacyRankIds = new Set(['R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7', 'R8'])
 const rankedTierIds = new Set<RankedTierId>([
@@ -302,6 +303,7 @@ function createProfileFromStarterCards(initialOwnedCardIds: CardId[], initialDec
       '3x3': { ...initialRanked, resultStreak: { ...initialRanked.resultStreak } },
       '4x4': { ...initialRanked, resultStreak: { ...initialRanked.resultStreak } },
     },
+    trackedPokemon: createInitialTrackedPokemonState(),
     tutorialProgress: createDefaultTutorialProgress(),
     settings: {
       audioEnabled: true,
@@ -1140,7 +1142,9 @@ function finalizeLoadedProfile(profile: PlayerProfile): { profile: PlayerProfile
       syncTutorialProgress(
         syncMissions(
           syncMissionRewardsGrantedById(
-            syncAchievementRewardsClaimedById(syncAchievementProgress(syncCardFragmentsById(syncDeckSlots(syncPlayerName(profile))))),
+            syncTrackedPokemon(
+              syncAchievementRewardsClaimedById(syncAchievementProgress(syncCardFragmentsById(syncDeckSlots(syncPlayerName(profile))))),
+            ),
           ),
         ),
       ),
@@ -1232,6 +1236,17 @@ function syncAchievementRewardsClaimedById(profile: PlayerProfile): PlayerProfil
   return {
     ...profile,
     achievementRewardsClaimedById: next,
+  }
+}
+
+function syncTrackedPokemon(profile: PlayerProfile): PlayerProfile {
+  if (isTrackedPokemonState(profile.trackedPokemon)) {
+    return profile
+  }
+
+  return {
+    ...profile,
+    trackedPokemon: createInitialTrackedPokemonState(),
   }
 }
 
@@ -1395,6 +1410,11 @@ function syncMissions(profile: PlayerProfile): PlayerProfile {
 
   for (const missionId of missionIds) {
     const current = profile.missions[missionId]
+    if (!current) {
+      changed = true
+      continue
+    }
+
     const target = nextMissions[missionId].target
     const progress = Math.max(0, Math.min(target, Math.floor(current.progress)))
     const completed = progress >= target
@@ -1535,6 +1555,7 @@ function isPlayerProfile(value: unknown): value is PlayerProfile {
     isMissionProgressMap(candidate.missions) &&
     isMissionRewardsGrantedById(candidate.missionRewardsGrantedById) &&
     isRankedByMode(candidate.rankedByMode) &&
+    (candidate.trackedPokemon === undefined || isTrackedPokemonState(candidate.trackedPokemon)) &&
     (candidate.tutorialProgress === undefined || isTutorialProgress(candidate.tutorialProgress)) &&
     typeof candidate.settings?.audioEnabled === 'boolean'
   )
@@ -2016,7 +2037,7 @@ function isRankedState(value: unknown): value is RankedState {
   return (
     Number.isInteger(candidate.lp) &&
     Number(candidate.lp) >= 0 &&
-    Number(candidate.lp) <= 99 &&
+    Number(candidate.lp) <= 100 &&
     Number.isInteger(candidate.wins) &&
     Number(candidate.wins) >= 0 &&
     Number.isInteger(candidate.losses) &&
@@ -2029,7 +2050,39 @@ function isRankedState(value: unknown): value is RankedState {
     Number.isInteger(candidate.resultStreak?.count) &&
     Number(candidate.resultStreak?.count) >= 0 &&
     Number.isInteger(candidate.demotionShieldLosses) &&
-    Number(candidate.demotionShieldLosses) >= 0
+    Number(candidate.demotionShieldLosses) >= 0 &&
+    (candidate.promotionSeries === undefined ||
+      candidate.promotionSeries === null ||
+      (typeof candidate.promotionSeries === 'object' &&
+        !Array.isArray(candidate.promotionSeries) &&
+        Number.isInteger(candidate.promotionSeries.wins) &&
+        Number(candidate.promotionSeries.wins) >= 0 &&
+        Number.isInteger(candidate.promotionSeries.losses) &&
+        Number(candidate.promotionSeries.losses) >= 0)) &&
+    (candidate.seasonId === undefined || typeof candidate.seasonId === 'string') &&
+    (candidate.seasonLeagueRewardsClaimed === undefined ||
+      (isRecord(candidate.seasonLeagueRewardsClaimed) &&
+        Object.entries(candidate.seasonLeagueRewardsClaimed).every(
+          ([tierId, claimed]) => rankedTierIds.has(tierId as RankedTierId) && claimed === true,
+        )))
+  )
+}
+
+function isTrackedPokemonState(value: unknown): value is TrackedPokemonState {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false
+  }
+
+  const candidate = value as Partial<TrackedPokemonState>
+  return (
+    (candidate.targetCardId === null || typeof candidate.targetCardId === 'string') &&
+    Number.isInteger(candidate.gaugePoints) &&
+    Number(candidate.gaugePoints) >= 0 &&
+    Number(candidate.gaugePoints) <= 99 &&
+    Number.isInteger(candidate.completedGaugesInWindow) &&
+    Number(candidate.completedGaugesInWindow) >= 0 &&
+    Number(candidate.completedGaugesInWindow) <= 10 &&
+    (candidate.windowStartedAt === null || typeof candidate.windowStartedAt === 'string')
   )
 }
 
@@ -2037,6 +2090,8 @@ function cloneRankedState(state: RankedState): RankedState {
   return {
     ...state,
     resultStreak: { ...state.resultStreak },
+    promotionSeries: state.promotionSeries ? { ...state.promotionSeries } : state.promotionSeries,
+    seasonLeagueRewardsClaimed: state.seasonLeagueRewardsClaimed ? { ...state.seasonLeagueRewardsClaimed } : state.seasonLeagueRewardsClaimed,
   }
 }
 
@@ -2073,14 +2128,17 @@ function isMissionProgressMap(value: unknown): value is PlayerProfile['missions'
   }
 
   const candidate = value as Record<string, unknown>
-  return missionIds.every((missionId) => {
-    const mission = candidate[missionId]
+  for (const [missionIdText, mission] of Object.entries(candidate)) {
+    if (!missionIds.includes(missionIdText as MissionId)) {
+      return false
+    }
+
     if (!mission || typeof mission !== 'object' || Array.isArray(mission)) {
       return false
     }
 
     const entry = mission as Partial<PlayerProfile['missions'][MissionId]>
-    if (entry.id !== missionId) {
+    if (entry.id !== missionIdText) {
       return false
     }
     if (!Number.isInteger(entry.progress) || Number(entry.progress) < 0) {
@@ -2092,9 +2150,9 @@ function isMissionProgressMap(value: unknown): value is PlayerProfile['missions'
     if (typeof entry.completed !== 'boolean' || typeof entry.claimed !== 'boolean') {
       return false
     }
+  }
 
-    return true
-  })
+  return true
 }
 
 function doesOwnershipMatchCopies(

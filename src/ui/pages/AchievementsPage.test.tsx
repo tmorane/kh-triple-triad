@@ -71,7 +71,7 @@ function renderAchievements(valueOverrides: Partial<GameContextValue> = {}) {
     buySpecialPack: () => {
       throw new Error('Not implemented in test.')
     },
-    addTestGold: () => {
+    addTestOr: () => {
       throw new Error('Not implemented in test.')
     },
     createStoredProfile: () => {

@@ -85,7 +85,7 @@ function renderPacksWithContext(options: {
     buySpecialPack: () => {
       throw new Error('Not implemented in test.')
     },
-    addTestGold: () => {
+    addTestOr: () => {
       throw new Error('Not implemented in test.')
     },
     createStoredProfile: () => {
@@ -288,7 +288,7 @@ describe('PacksPage', () => {
     expect(openOwnedPack).not.toHaveBeenCalled()
     expect(screen.getAllByTestId(/^packs-reveal-triad-/)).toHaveLength(6)
     expect(screen.queryByTestId('packs-reveal-placeholder-0')).not.toBeInTheDocument()
-    expect(screen.getByText('Opened x2 | Remaining: x1')).toBeInTheDocument()
+    expect(screen.getByText('Ouverts x2 | Restants: x1')).toBeInTheDocument()
   })
 })
 

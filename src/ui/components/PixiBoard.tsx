@@ -3,7 +3,7 @@ import type { Texture } from 'pixi.js'
 import { getCard } from '../../domain/cards/cardPool'
 import type { Actor, CardElementId, CardId } from '../../domain/types'
 import type { DisplayCardStats, EffectIndicator, MatchEffectsViewModel } from '../../domain/match/effectsViewModel'
-import type { MoveFlipEvent } from '../../domain/match/types'
+import type { MoveDuelEvent, MoveFlipEvent } from '../../domain/match/types'
 import { getCardArtCandidates } from './cardArt'
 import { getElementLogoMeta } from './elementLogos'
 
@@ -28,6 +28,7 @@ interface PixiBoardProps {
   transientFreezeBlockedCells?: number[]
   transientWaterPenaltyCells?: number[]
   transientClashCells?: number[]
+  duelEvents?: MoveDuelEvent[]
   flipEvents?: MoveFlipEvent[]
   flipEventVersion?: number
   targetableCells?: number[]
@@ -46,10 +47,10 @@ const defaultBoardInset = 30
 const defaultBoardGap = 10
 const neutralBoardInset = 78
 const neutralBoardGap = 4
-const GROUND_BOARD_EFFECT_TEXTURE_SRC = '/ui/match/board-effects/Sol.png'
-const PLANTE_BOARD_EFFECT_TEXTURE_SRC = '/ui/match/board-effects/plante-territory.png'
-const WATER_BOARD_EFFECT_TEXTURE_SRC = '/ui/match/board-effects/water.png'
-const ICE_BOARD_EFFECT_TEXTURE_SRC = '/ui/match/board-effects/glace.png'
+const GROUND_BOARD_EFFECT_TEXTURE_SRC = '/ui/match/board-effects/runtime/Sol.webp'
+const PLANTE_BOARD_EFFECT_TEXTURE_SRC = '/ui/match/board-effects/runtime/plante-territory.webp'
+const WATER_BOARD_EFFECT_TEXTURE_SRC = '/ui/match/board-effects/runtime/water.webp'
+const ICE_BOARD_EFFECT_TEXTURE_SRC = '/ui/match/board-effects/runtime/glace.webp'
 
 type BoardLayout = {
   inset: number
@@ -327,7 +328,7 @@ const viteBaseUrl =
   typeof import.meta !== 'undefined' && typeof import.meta.env !== 'undefined' && typeof import.meta.env.BASE_URL === 'string'
     ? import.meta.env.BASE_URL
     : '/'
-const neutralBoardTextureUrl = `${viteBaseUrl}ui/match/boards/neutral-board.png`
+const neutralBoardTextureUrl = `${viteBaseUrl}ui/match/boards/neutral-board.webp`
 let neutralBoardTexturePromise: Promise<Texture | null> | null = null
 
 type BoardStatChangeLine = {
@@ -337,6 +338,15 @@ type BoardStatChangeLine = {
   summary: string
   tone: EffectIndicator['tone']
   durationText?: string
+}
+
+type BoardEffectBadgeItem = {
+  key: string
+  cell: number
+  slotIndex: number
+  icon: string
+  label: string
+  tone: EffectIndicator['tone']
 }
 
 type HoverAnchor = {
@@ -498,6 +508,15 @@ function mapIndicatorToStatChangeLine(indicator: EffectIndicator): BoardStatChan
         summary: '+2 / -1',
         tone: indicator.tone,
       }
+    case 'card-combat-attack':
+      return {
+        key: indicator.key,
+        elementId: 'combat',
+        iconText: indicator.icon,
+        summary: 'ATK +1',
+        tone: indicator.tone,
+        durationText: 'attaque',
+      }
     default:
       break
   }
@@ -599,7 +618,7 @@ function buildBoardStatChangeLines(params: {
       key: 'transient-water-penalty',
       elementId: 'eau',
       iconText: 'EAU',
-      summary: '-2 MAX',
+      summary: '-3 MAX',
       tone: 'debuff',
       durationText: '1 tour',
     })
@@ -610,6 +629,33 @@ function buildBoardStatChangeLines(params: {
   }
 
   return lines
+}
+
+function buildBoardEffectBadgeItems(params: {
+  board: Array<BoardSlot | null>
+  effectsView?: MatchEffectsViewModel
+}): BoardEffectBadgeItem[] {
+  const items: BoardEffectBadgeItem[] = []
+  if (!params.effectsView) {
+    return items
+  }
+
+  params.board.forEach((slot, cell) => {
+    const indicators = slot ? (params.effectsView?.boardCardIndicators[cell] ?? []) : (params.effectsView?.cellIndicators[cell] ?? [])
+    const visibleIndicators = indicators.filter((indicator) => indicator.key !== 'card-poison-first-combat').slice(0, 2)
+    visibleIndicators.forEach((indicator, slotIndex) => {
+      items.push({
+        key: `${cell}:${indicator.key}`,
+        cell,
+        slotIndex,
+        icon: indicator.icon,
+        label: indicator.label,
+        tone: indicator.tone,
+      })
+    })
+  })
+
+  return items
 }
 
 function resolvePointerCellIndex(params: {
@@ -667,6 +713,7 @@ export function PixiBoard({
   transientFreezeBlockedCells = [],
   transientWaterPenaltyCells = [],
   transientClashCells = [],
+  duelEvents = [],
   flipEvents = [],
   flipEventVersion = 0,
   targetableCells = [],
@@ -726,6 +773,14 @@ export function PixiBoard({
   const transientWaterPenaltySet = useMemo(() => new Set(transientWaterPenaltyCells), [transientWaterPenaltyCells])
   const transientClashSet = useMemo(() => new Set(transientClashCells), [transientClashCells])
   const targetableSet = useMemo(() => new Set(targetableCells), [targetableCells])
+  const duelStatHighlightSet = useMemo(() => {
+    const highlights = new Set<string>()
+    for (const event of duelEvents) {
+      highlights.add(`${event.attackerCell}:${event.attackerSide}`)
+      highlights.add(`${event.defenderCell}:${event.defenderSide}`)
+    }
+    return highlights
+  }, [duelEvents])
   const planteTerritoryActiveSet = useMemo(
     () =>
       collectPlanteTerritoryActiveCells({
@@ -733,6 +788,10 @@ export function PixiBoard({
         boardCardIndicators: effectsView?.boardCardIndicators,
       }),
     [board, effectsView?.boardCardIndicators],
+  )
+  const pixiBoardEffectBadges = useMemo(
+    () => buildBoardEffectBadgeItems({ board, effectsView }),
+    [board, effectsView],
   )
   const flipEventByCell = useMemo(() => {
     const byCell = new Map<number, MoveFlipEvent>()
@@ -2003,7 +2062,7 @@ export function PixiBoard({
         }
 
         const floodTargetLabel = new Text({
-          text: 'CIBLE -2 MAX',
+          text: 'CIBLE -3 MAX',
           style: {
             fill: 0xeafaff,
             fontSize: 8.6,
@@ -2057,7 +2116,7 @@ export function PixiBoard({
         }
 
         const floodCastLabel = new Text({
-          text: 'INONDE -2 MAX',
+          text: 'INONDE -3 MAX',
           style: {
             fill: 0xe7f7ff,
             fontSize: 8.6,
@@ -2205,7 +2264,7 @@ export function PixiBoard({
           app.stage.addChild(waterPenaltyLogo)
 
           const waterPenaltyValue = new Text({
-            text: '-2 MAX',
+            text: '-3 MAX',
             style: {
               fill: 0xeeffff,
               fontSize: 11.5,
@@ -2644,12 +2703,12 @@ export function PixiBoard({
             ...(isGroundDebuffedCell ? ['Sol: -1 sur toutes les stats pour ce combat.'] : []),
             ...(isFireTargetCell ? ['Feu: choisissez la carte ennemie a bruler.'] : []),
             ...(isFireCastCell ? ['Feu: brulure appliquee.'] : []),
-            ...(isFloodTargetCell ? ['Eau: choisissez la case inondée (-2 sur la stat la plus haute).'] : []),
-            ...(isFloodCastCell ? ['Eau: case inondée (-2 sur la stat la plus haute).'] : []),
+            ...(isFloodTargetCell ? ['Eau: choisissez la case inondée (-3 sur la stat la plus haute).'] : []),
+            ...(isFloodCastCell ? ['Eau: case inondée (-3 sur la stat la plus haute).'] : []),
             ...(isFreezeTargetCell ? ['Glace: choisissez la case gelée.'] : []),
             ...(isFreezeCastCell ? ['Glace: case gelée.'] : []),
             ...(isFreezeBlockedCell ? ['Glace: case bloquée pour ce tour.'] : []),
-            ...(isWaterPenaltyCell ? ['Eau: -2 sur la plus haute stat.'] : []),
+            ...(isWaterPenaltyCell ? ['Eau: -3 sur la plus haute stat.'] : []),
             ...(isClashCell ? ['Duel en cours.'] : []),
           ].join(' • ')
           const isFloodedCell = cellIndicators.some((indicator) => indicator.key === 'cell-flooded')
@@ -2752,25 +2811,33 @@ export function PixiBoard({
               {card ? (
                 <>
                   <span
-                    className={`fallback-cell__stat fallback-cell__stat--top effect-stat--${displayStats?.top.trend ?? 'neutral'}`}
+                    className={`fallback-cell__stat fallback-cell__stat--top effect-stat--${displayStats?.top.trend ?? 'neutral'} ${
+                      duelStatHighlightSet.has(`${index}:up`) ? 'is-duel-stat' : ''
+                    }`}
                     data-testid={`board-cell-${index}-stat-top`}
                   >
                     {displayStats?.top.value ?? card.top}
                   </span>
                   <span
-                    className={`fallback-cell__stat fallback-cell__stat--right effect-stat--${displayStats?.right.trend ?? 'neutral'}`}
+                    className={`fallback-cell__stat fallback-cell__stat--right effect-stat--${displayStats?.right.trend ?? 'neutral'} ${
+                      duelStatHighlightSet.has(`${index}:right`) ? 'is-duel-stat' : ''
+                    }`}
                     data-testid={`board-cell-${index}-stat-right`}
                   >
                     {displayStats?.right.value ?? card.right}
                   </span>
                   <span
-                    className={`fallback-cell__stat fallback-cell__stat--bottom effect-stat--${displayStats?.bottom.trend ?? 'neutral'}`}
+                    className={`fallback-cell__stat fallback-cell__stat--bottom effect-stat--${displayStats?.bottom.trend ?? 'neutral'} ${
+                      duelStatHighlightSet.has(`${index}:down`) ? 'is-duel-stat' : ''
+                    }`}
                     data-testid={`board-cell-${index}-stat-bottom`}
                   >
                     {displayStats?.bottom.value ?? card.bottom}
                   </span>
                   <span
-                    className={`fallback-cell__stat fallback-cell__stat--left effect-stat--${displayStats?.left.trend ?? 'neutral'}`}
+                    className={`fallback-cell__stat fallback-cell__stat--left effect-stat--${displayStats?.left.trend ?? 'neutral'} ${
+                      duelStatHighlightSet.has(`${index}:left`) ? 'is-duel-stat' : ''
+                    }`}
                     data-testid={`board-cell-${index}-stat-left`}
                   >
                     {displayStats?.left.value ?? card.left}
@@ -2875,7 +2942,7 @@ export function PixiBoard({
                   ) : (
                     <span className="fallback-cell__water-effect-label">EAU</span>
                   )}
-                  <span className="fallback-cell__water-effect-label">INONDE -2 MAX</span>
+                  <span className="fallback-cell__water-effect-label">INONDE -3 MAX</span>
                 </span>
               ) : null}
               {isFloodTargetCell ? (
@@ -2898,7 +2965,7 @@ export function PixiBoard({
                   ) : (
                     <span className="fallback-cell__water-effect-label">EAU</span>
                   )}
-                  <span className="fallback-cell__water-effect-label">CIBLE -2 MAX</span>
+                  <span className="fallback-cell__water-effect-label">CIBLE -3 MAX</span>
                 </span>
               ) : null}
               {isFreezeCastCell ? (
@@ -2967,6 +3034,11 @@ export function PixiBoard({
                   {frozenTurnsCounter}
                 </span>
               ) : null}
+              {isFloodedCell || isFrozenCell ? (
+                <span className="fallback-cell__hazard-label" aria-hidden="true" data-testid={`board-cell-${index}-hazard-label`}>
+                  {frozenCellIndicator?.label ?? cellIndicators.find((indicator) => indicator.key === 'cell-flooded')?.label}
+                </span>
+              ) : null}
               {isWaterPenaltyCell ? (
                 <span
                   className="fallback-cell__water-penalty-badge"
@@ -2987,7 +3059,7 @@ export function PixiBoard({
                   ) : (
                     <span className="fallback-cell__water-effect-label">EAU</span>
                   )}
-                  <span className="fallback-cell__water-effect-value">-2 MAX</span>
+                  <span className="fallback-cell__water-effect-value">-3 MAX</span>
                 </span>
               ) : null}
               {isClashCell ? (
@@ -2996,7 +3068,7 @@ export function PixiBoard({
                 </span>
               ) : null}
               {secondaryIndicators.length > 0 || isGroundDebuffedCell ? (
-                <span className="fallback-cell__effect-chips" aria-hidden="true">
+                <span className="fallback-cell__effect-chips" aria-hidden="true" data-testid={`board-cell-${index}-effect-chips`}>
                   {isGroundDebuffedCell ? (
                     <span className="effect-chip effect-chip--ground" data-testid={`board-cell-${index}-ground-badge`}>
                       <img
@@ -3009,7 +3081,7 @@ export function PixiBoard({
                         decoding="async"
                         data-testid={`board-cell-${index}-ground-badge-logo`}
                       />
-                      <span>-1 ALL</span>
+                      <span>-1 1T</span>
                     </span>
                   ) : null}
                   {secondaryIndicators
@@ -3018,8 +3090,10 @@ export function PixiBoard({
                     <span
                       key={indicator.key}
                       className={`effect-chip effect-chip--${indicator.tone}`}
+                      data-testid={`board-cell-${index}-effect-chip-${indicator.key}`}
                     >
-                      {indicator.icon}
+                      <span aria-hidden="true">{indicator.icon}</span>
+                      <span>{indicator.label}</span>
                     </span>
                     ))}
                 </span>
@@ -3041,6 +3115,29 @@ export function PixiBoard({
         onPointerMove={handlePixiPointerMove}
         onPointerLeave={clearHoveredCell}
       />
+      {pixiBoardEffectBadges.length > 0 ? (
+        <div className="pixi-board-effect-overlay" aria-hidden="true">
+          {pixiBoardEffectBadges.map((badge) => {
+            const row = Math.floor(badge.cell / boardDimension)
+            const col = badge.cell % boardDimension
+            const x = boardLayout.inset + col * (cellSize + boardLayout.gap) + cellSize - 6
+            const y = boardLayout.inset + row * (cellSize + boardLayout.gap) + 7 + badge.slotIndex * Math.max(15, cellSize * 0.16)
+            return (
+              <span
+                key={badge.key}
+                className={`pixi-board-effect-badge effect-chip effect-chip--${badge.tone}`}
+                style={{
+                  left: `${(x / boardSize) * 100}%`,
+                  top: `${(y / boardSize) * 100}%`,
+                }}
+              >
+                <span aria-hidden="true">{badge.icon}</span>
+                <span>{badge.label}</span>
+              </span>
+            )
+          })}
+        </div>
+      ) : null}
       {hoverPanel}
     </div>
   )

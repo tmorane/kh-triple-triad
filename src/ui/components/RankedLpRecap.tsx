@@ -14,12 +14,12 @@ interface RankedLpRecapProps {
 }
 
 const tierNames: Record<RankedTierId, string> = {
-  iron: 'Iron',
+  iron: 'Fer',
   bronze: 'Bronze',
-  silver: 'Silver',
-  gold: 'Gold',
-  platinum: 'Platinum',
-  diamond: 'Diamond',
+  silver: 'Argent',
+  gold: 'Or',
+  platinum: 'Platine',
+  diamond: 'Diamant',
   challenger: 'Challenger',
 }
 
@@ -85,11 +85,10 @@ export function RankedLpRecap({ mode, update, animated, context, testIdPrefix }:
   const targetLp = clampLp(update.next.lp)
   const shouldAnimate = animated && !getPrefersReducedMotion()
   const startLp = shouldAnimate ? getStartLp(update) : targetLp
-  const [displayedLp, setDisplayedLp] = useState<number>(() => startLp)
+  const [animatedLp, setAnimatedLp] = useState<number>(() => startLp)
 
   useEffect(() => {
     if (!shouldAnimate || startLp === targetLp) {
-      setDisplayedLp(targetLp)
       return
     }
 
@@ -107,7 +106,7 @@ export function RankedLpRecap({ mode, update, animated, context, testIdPrefix }:
       const eased = 1 - (1 - progress) ** 3
       const value = Math.round(startLp + (targetLp - startLp) * eased)
 
-      setDisplayedLp(clampLp(value))
+      setAnimatedLp(clampLp(value))
 
       if (progress < 1) {
         frameId = window.requestAnimationFrame(animateStep)
@@ -123,22 +122,23 @@ export function RankedLpRecap({ mode, update, animated, context, testIdPrefix }:
     }
   }, [shouldAnimate, startLp, targetLp])
 
+  const displayedLp = shouldAnimate && startLp !== targetLp ? animatedLp : targetLp
   const currentLpLabel = useMemo(() => `${clampLp(displayedLp)} LP`, [displayedLp])
 
   return (
     <section
       className={`ranked-lp-recap ranked-lp-recap--${context} ${shouldAnimate ? 'is-animated' : ''}`}
       data-testid={`${testIdPrefix}-recap`}
-      aria-label="Ranked LP recap"
+      aria-label="Récap des points classés"
     >
       <header className="ranked-lp-recap__header">
         <img
           src={getRankEmblemSrc(update.next.tier)}
-          alt={`${formatRankLabel(update.next.tier, update.next.division)} rank emblem`}
+          alt={`Emblème du rang ${formatRankLabel(update.next.tier, update.next.division)}`}
           className="ranked-lp-recap__emblem"
           data-testid={`${testIdPrefix}-emblem`}
         />
-        <h3 className="ranked-lp-recap__title">{`Ranked LP · ${mode.toUpperCase()}`}</h3>
+        <h3 className="ranked-lp-recap__title">{`Points classés · ${mode.toUpperCase()}`}</h3>
         <p
           className={`ranked-lp-recap__delta ranked-lp-recap__delta--${deltaClass}`}
           data-testid={`${testIdPrefix}-delta`}
@@ -149,10 +149,10 @@ export function RankedLpRecap({ mode, update, animated, context, testIdPrefix }:
 
       <div className="ranked-lp-recap__ranks">
         <p className="ranked-lp-recap__line" data-testid={`${testIdPrefix}-before`}>
-          Before: {formatRankLabel(update.previous.tier, update.previous.division)} • {update.previous.lp} LP
+          Avant: {formatRankLabel(update.previous.tier, update.previous.division)} • {update.previous.lp} LP
         </p>
         <p className="ranked-lp-recap__line" data-testid={`${testIdPrefix}-after`}>
-          After: {formatRankLabel(update.next.tier, update.next.division)} • {update.next.lp} LP
+          Après: {formatRankLabel(update.next.tier, update.next.division)} • {update.next.lp} LP
         </p>
       </div>
 
@@ -160,7 +160,7 @@ export function RankedLpRecap({ mode, update, animated, context, testIdPrefix }:
         <div
           className="ranked-lp-recap__progress"
           role="progressbar"
-          aria-label="Ranked LP progress"
+          aria-label="Progression des points classés"
           aria-valuemin={0}
           aria-valuemax={99}
           aria-valuenow={clampLp(displayedLp)}
@@ -186,7 +186,7 @@ export function RankedLpRecap({ mode, update, animated, context, testIdPrefix }:
           className="ranked-lp-recap__event ranked-lp-recap__event--demotion"
           data-testid={`${testIdPrefix}-event`}
         >
-          DEMOTION
+          RÉTROGRADATION
         </p>
       ) : null}
     </section>

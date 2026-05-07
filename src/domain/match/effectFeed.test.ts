@@ -82,7 +82,7 @@ describe('deriveEffectFeedEntries', () => {
     const entries = deriveEffectFeedEntries(previous, next, move)
     const text = entries.map((entry) => entry.text).join(' ')
 
-    expect(text).toContain('empoisonnée')
+    expect(text).toContain('-1 partout après pose')
     expect(text).toContain('Poison')
   })
 
@@ -127,7 +127,7 @@ describe('deriveEffectFeedEntries', () => {
 
     const entries = deriveEffectFeedEntries(previous, next, move)
 
-    expect(entries.some((entry) => entry.text.includes('gagne un bouclier'))).toBe(true)
+    expect(entries.some((entry) => entry.text.includes('gagne SHIELD 1'))).toBe(true)
   })
 
   test('reports roche shield consumption when charge is spent', () => {
@@ -187,6 +187,7 @@ describe('deriveEffectFeedEntries', () => {
 
     const entries = deriveEffectFeedEntries(previous, next, move)
 
-    expect(entries.some((entry) => entry.text.includes('malus temporaire de Sol'))).toBe(true)
+    expect(entries.some((entry) => entry.text.includes('Sol:'))).toBe(true)
+    expect(entries.some((entry) => entry.text.includes('-1 partout 1T'))).toBe(true)
   })
 })

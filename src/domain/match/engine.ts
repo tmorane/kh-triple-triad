@@ -12,9 +12,19 @@ import type {
   MovePowerTarget,
 } from '../types'
 import { getModeSpec } from './modeSpec'
-import type { AllStatsMinusOneStack, CardBoardEffects, FrozenCellEffect, MatchElementState, MatchState, MoveFlipEvent, SideDelta } from './types'
+import type {
+  AllStatsMinusOneStack,
+  CardBoardEffects,
+  FrozenCellEffect,
+  MatchElementState,
+  MatchState,
+  MoveDuelEvent,
+  MoveDuelSide,
+  MoveFlipEvent,
+  SideDelta,
+} from './types'
 
-type Direction = 'up' | 'right' | 'down' | 'left'
+type Direction = MoveDuelSide
 type DirectionalBonus = Record<Direction, number>
 
 interface AdjacentEnemy {
@@ -29,6 +39,8 @@ interface ImmediateFlipCandidate {
   cell: number
   directionFromSource: Direction
   kind: ImmediateFlipKind
+  attackerValue: number
+  defenderValue: number
 }
 
 interface PowerTargetSpec {
@@ -47,6 +59,7 @@ export interface MoveResolutionDetails {
   immediateFlips: number
   wasSpecialRuleTrigger: boolean
   flipEvents: MoveFlipEvent[]
+  duelEvents: MoveDuelEvent[]
   groundDebuffedCells: number[]
   combatCells: number[]
 }
@@ -298,6 +311,29 @@ export function listLegalMoves(state: MatchState): Move[] {
   return legalMoves
 }
 
+function hasLegalMoveForActorWithFrozenCell(state: MatchState, actor: Actor, frozenCell: number | undefined): boolean {
+  const emptyCells = state.board
+    .map((slot, index) => ({ slot, index }))
+    .filter((entry) => entry.slot === null)
+    .map((entry) => entry.index)
+
+  if (emptyCells.length === 0) {
+    return false
+  }
+
+  for (const cardId of state.hands[actor]) {
+    const canIgnoreFrozenCell = frozenCell !== undefined && getCard(cardId).elementId === 'spectre'
+    for (const cell of emptyCells) {
+      if (frozenCell === cell && !canIgnoreFrozenCell) {
+        continue
+      }
+      return true
+    }
+  }
+
+  return false
+}
+
 export function listMovePowerTargetOptions(state: MatchState, move: Move): MovePowerTargetOptions | null {
   if (!isElementEffectsActive(state)) {
     return null
@@ -372,6 +408,7 @@ export function applyMoveDetailed(state: MatchState, move: Move): MoveResolution
   }
   const appliedFlipSet = new Set<number>()
   const primaryFlipEvents: MoveFlipEvent[] = []
+  const duelEvents: MoveDuelEvent[] = []
 
   for (const candidate of immediateFlipCandidatesByCell.values()) {
     if (attemptFlip(nextState, candidate.cell, actor)) {
@@ -381,6 +418,17 @@ export function applyMoveDetailed(state: MatchState, move: Move): MoveResolution
         kind: candidate.kind,
         axis: resolveFlipAxis(candidate.directionFromSource),
         phase: 'primary',
+      })
+      duelEvents.push({
+        attacker: actor,
+        defender: opponent,
+        attackerCell: move.cell,
+        defenderCell: candidate.cell,
+        attackerSide: candidate.directionFromSource,
+        defenderSide: oppositeDirection[candidate.directionFromSource],
+        attackerValue: candidate.attackerValue,
+        defenderValue: candidate.defenderValue,
+        result: 'capture',
       })
     }
   }
@@ -409,6 +457,7 @@ export function applyMoveDetailed(state: MatchState, move: Move): MoveResolution
     immediateFlips: appliedFlipSet.size,
     wasSpecialRuleTrigger,
     flipEvents: [...primaryFlipEvents],
+    duelEvents: [...duelEvents],
     groundDebuffedCells: [...groundDebuffedCells].sort((left, right) => left - right),
     combatCells: [...participatingCells].sort((left, right) => left - right),
   }
@@ -813,6 +862,9 @@ function applyOnPosePowerIfNeeded(
 
   if (element === 'glace') {
     const opponent: Actor = move.actor === 'player' ? 'cpu' : 'player'
+    if (!hasLegalMoveForActorWithFrozenCell(state, opponent, targetCell)) {
+      return
+    }
     elementState.frozenCellByActor[opponent] = { cell: targetCell, turnsRemaining: freezeDurationTurns }
     return
   }
@@ -1000,6 +1052,8 @@ function collectNormalFlipCandidates(
         cell: adjacent.cell,
         directionFromSource: adjacent.directionFromSource,
         kind: 'flipped',
+        attackerValue,
+        defenderValue,
       })
     }
   }

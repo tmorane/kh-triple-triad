@@ -33,11 +33,25 @@ export type MoveFlipAxis = 'horizontal' | 'vertical'
 
 export type MoveFlipPhase = 'primary' | 'combo'
 
+export type MoveDuelSide = 'up' | 'right' | 'down' | 'left'
+
 export interface MoveFlipEvent {
   cell: number
   kind: MoveFlipKind
   axis: MoveFlipAxis
   phase: MoveFlipPhase
+}
+
+export interface MoveDuelEvent {
+  attacker: Actor
+  defender: Actor
+  attackerCell: number
+  defenderCell: number
+  attackerSide: MoveDuelSide
+  defenderSide: MoveDuelSide
+  attackerValue: number
+  defenderValue: number
+  result: 'capture'
 }
 
 export type ElementMode = 'normal' | 'effects'

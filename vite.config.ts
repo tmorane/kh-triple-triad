@@ -2,9 +2,11 @@ import type { IncomingMessage } from 'node:http'
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import { handleAdminImageDeleteRequest } from './src/app/admin/adminImageDeleteApi'
+import { handleAdminImageGalleryRequest } from './src/app/admin/adminImageGalleryApi'
 import { handleAdminImageGenerateRequest } from './src/app/admin/adminImageApi'
 import { handleAdminImageMoveRequest } from './src/app/admin/adminImageMoveApi'
 import { handleAdminImageRenameRequest } from './src/app/admin/adminImageRenameApi'
+import { isAdminAuthBypassEnabled } from './api/admin/images/adminAuthPolicy'
 import {
   deletePublicImage,
   listAllPublicImages,
@@ -12,20 +14,6 @@ import {
   persistGeneratedImagesToPublic,
   renamePublicImage,
 } from './api/admin/images/publicGalleryStore'
-
-function readBooleanEnv(value: string | undefined): boolean | null {
-  if (!value) {
-    return null
-  }
-  const normalized = value.trim().toLowerCase()
-  if (normalized === 'true' || normalized === '1') {
-    return true
-  }
-  if (normalized === 'false' || normalized === '0') {
-    return false
-  }
-  return null
-}
 
 function readRequestBody(req: IncomingMessage): Promise<unknown> {
   return new Promise((resolve) => {
@@ -56,7 +44,10 @@ export default defineConfig(({ mode }) => {
     process.env.AI_GATEWAY_API_KEY = env.AI_GATEWAY_API_KEY
   }
 
-  const bypassAuth = readBooleanEnv(env.ADMIN_BYPASS_LOCAL_AUTH) ?? true
+  const bypassAuth = isAdminAuthBypassEnabled({
+    rawBypassValue: env.ADMIN_BYPASS_LOCAL_AUTH,
+    nodeEnv: mode === 'production' ? 'production' : 'development',
+  })
 
   return {
     plugins: [
@@ -65,24 +56,27 @@ export default defineConfig(({ mode }) => {
         name: 'admin-images-dev-api',
         configureServer(server) {
           server.middlewares.use('/api/admin/images/gallery', async (req, res) => {
-            if (req.method !== 'GET') {
-              res.statusCode = 405
-              res.setHeader('allow', 'GET')
-              res.setHeader('content-type', 'application/json; charset=utf-8')
-              res.end(JSON.stringify({ error: 'Method Not Allowed' }))
-              return
-            }
+            const result = await handleAdminImageGalleryRequest(
+              {
+                method: req.method,
+                headers: {
+                  authorization: typeof req.headers.authorization === 'string' ? req.headers.authorization : undefined,
+                },
+              },
+              {
+                verifyAccessToken: async () => ({ email: null }),
+                listImages: listAllPublicImages,
+                allowedEmailsRaw: env.ADMIN_ALLOWED_EMAILS,
+                bypassAuth,
+              },
+            )
 
-            try {
-              const images = await listAllPublicImages()
-              res.statusCode = 200
-              res.setHeader('content-type', 'application/json; charset=utf-8')
-              res.end(JSON.stringify({ images }))
-            } catch {
-              res.statusCode = 500
-              res.setHeader('content-type', 'application/json; charset=utf-8')
-              res.end(JSON.stringify({ error: 'Unable to read public gallery.' }))
+            res.statusCode = result.status
+            res.setHeader('content-type', 'application/json; charset=utf-8')
+            if (result.status === 405) {
+              res.setHeader('allow', 'GET')
             }
+            res.end(JSON.stringify(result.body))
           })
 
           server.middlewares.use('/api/admin/images/generate', async (req, res) => {

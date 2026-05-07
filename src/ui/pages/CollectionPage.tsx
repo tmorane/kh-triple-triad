@@ -9,6 +9,7 @@ import {
   getCardFragmentCost,
   getCardFragments,
 } from '../../domain/progression/fragments'
+import { createInitialTrackedPokemonState, TRACKED_GAUGE_MAX_COMPLETIONS_PER_WINDOW } from '../../domain/progression/pokedexProgression'
 import { hasUnlockedAllAchievements } from '../../domain/progression/achievementRewards'
 import { getNormalCopies, getShinyCraftCost, getShinyCopies, getTotalCopies, hasShinyCopy } from '../../domain/progression/shiny'
 import type { CardDef, CardElementId, CardId, Rarity } from '../../domain/types'
@@ -286,7 +287,8 @@ function CollectionStatusSection({
   const cardsPerPage = useMemo(() => getCollectionCardsPerPage(), [])
   const [page, setPage] = useState(1)
   const totalPages = Math.max(1, Math.ceil(section.cards.length / cardsPerPage))
-  const pageStartIndex = (page - 1) * cardsPerPage
+  const clampedPage = Math.min(page, totalPages)
+  const pageStartIndex = (clampedPage - 1) * cardsPerPage
   const pageEndIndex = Math.min(section.cards.length, pageStartIndex + cardsPerPage)
   const pagedCards = useMemo(
     () => section.cards.slice(pageStartIndex, pageEndIndex),
@@ -303,10 +305,6 @@ function CollectionStatusSection({
     topSpacerHeight: 0,
     bottomSpacerHeight: 0,
   }))
-
-  useEffect(() => {
-    setPage((current) => Math.min(current, totalPages))
-  }, [totalPages])
 
   const measureGridLayout = useCallback(() => {
     if (!useVirtualization || typeof window === 'undefined') {
@@ -457,20 +455,20 @@ function CollectionStatusSection({
           <button
             type="button"
             className="collection-pagination-button"
-            onClick={() => setPage((current) => Math.max(1, current - 1))}
-            disabled={page === 1}
+            onClick={() => setPage((current) => Math.max(1, Math.min(current, totalPages) - 1))}
+            disabled={clampedPage === 1}
             data-testid={`collection-pagination-prev-${section.id}`}
           >
             Precedent
           </button>
           <span className="collection-pagination-status" data-testid={`collection-pagination-status-${section.id}`}>
-            Page {page}/{totalPages}
+            Page {clampedPage}/{totalPages}
           </span>
           <button
             type="button"
             className="collection-pagination-button"
-            onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
-            disabled={page === totalPages}
+            onClick={() => setPage((current) => Math.min(totalPages, Math.min(current, totalPages) + 1))}
+            disabled={clampedPage === totalPages}
             data-testid={`collection-pagination-next-${section.id}`}
           >
             Suivant
@@ -502,7 +500,7 @@ function CollectionStatusSection({
               selected={selectedCardId === card.id}
               showNew={isNew}
               interactive
-              deferArtLoading={false}
+              deferArtLoading
               onClick={selectCardHandlers.get(card.id)}
               testId={`collection-card-${card.id}`}
             />
@@ -521,7 +519,8 @@ function CollectionStatusSection({
 }
 
 export function CollectionPage() {
-  const { profile, lastMatchSummary, craftCardFromFragments, craftShinyCard } = useGame()
+  const { profile, lastMatchSummary, craftCardFromFragments, craftShinyCard, setTrackedPokemonTarget } = useGame()
+  const [trackedTargetError, setTrackedTargetError] = useState<string | null>(null)
   const [virtualizationEnabled] = useState(false)
   const viewport = useViewportSnapshot(virtualizationEnabled)
   const owned = useMemo(() => new Set(profile.ownedCardIds), [profile.ownedCardIds])
@@ -651,6 +650,10 @@ export function CollectionPage() {
   const selectedCardFragmentCost = selectedCard ? getCardFragmentCost(selectedCard.id) : 0
   const selectedTotalCopies = selectedNormalCopies + selectedShinyCopies
   const selectedDisplayShiny = selectedCard ? hasShinyCopy(profile, selectedCard.id) : false
+  const trackedPokemon = profile.trackedPokemon ?? createInitialTrackedPokemonState()
+  const trackedTargetCard = trackedPokemon.targetCardId ? cardPool.find((card) => card.id === trackedPokemon.targetCardId) ?? null : null
+  const trackedTargetLabel = trackedTargetCard?.name ?? trackedPokemon.targetCardId?.toUpperCase() ?? 'Aucun'
+  const isSelectedCardTracked = selectedCard?.id === trackedPokemon.targetCardId
   const shinyCraftCost = getShinyCraftCost(profile)
   const chromaCharmActive = hasUnlockedAllAchievements(profile)
   const canCraftSelectedFromFragments =
@@ -700,6 +703,18 @@ export function CollectionPage() {
     setSelectedTypes(availableTypesInPool)
     setDiscoveryFilter('all')
     setFinishFilter('all')
+  }
+
+  const handleSetTrackedTarget = (cardId: CardId | null) => {
+    if (!setTrackedPokemonTarget) {
+      return
+    }
+    const result = setTrackedPokemonTarget(cardId)
+    if (!result.valid) {
+      setTrackedTargetError(result.reason ?? 'Impossible de mettre à jour la traque.')
+      return
+    }
+    setTrackedTargetError(null)
   }
 
   return (
@@ -937,6 +952,37 @@ export function CollectionPage() {
                 </button>
               </div>
 
+              <div className="collection-shiny-craft" data-testid="collection-tracked-target">
+                <p className="small" data-testid="collection-tracked-target-label">
+                  Cible traquée: {trackedTargetLabel}
+                </p>
+                <p className="small" data-testid="collection-tracked-target-gauge">
+                  Jauge: {trackedPokemon.gaugePoints}/100 · Gauges pleines 12h: {trackedPokemon.completedGaugesInWindow}/
+                  {TRACKED_GAUGE_MAX_COMPLETIONS_PER_WINDOW}
+                </p>
+                <div className="actions">
+                  <button
+                    type="button"
+                    className="button"
+                    onClick={() => handleSetTrackedTarget(selectedCard.id)}
+                    disabled={!setTrackedPokemonTarget || isSelectedCardTracked}
+                    data-testid="collection-track-selected-button"
+                  >
+                    {isSelectedCardTracked ? 'Déjà traqué' : 'Traquer ce Pokémon'}
+                  </button>
+                  <button
+                    type="button"
+                    className="button"
+                    onClick={() => handleSetTrackedTarget(null)}
+                    disabled={!setTrackedPokemonTarget || trackedPokemon.targetCardId === null}
+                    data-testid="collection-clear-tracked-button"
+                  >
+                    Retirer la traque
+                  </button>
+                </div>
+                {trackedTargetError ? <p className="error">{trackedTargetError}</p> : null}
+              </div>
+
               {selectedOwned ? (
                 <div className="collection-shiny-craft" data-testid="collection-shiny-craft">
                   {chromaCharmActive ? (
@@ -975,10 +1021,10 @@ export function CollectionPage() {
 
       <div className="actions">
         <Link className="button button-primary" to="/setup">
-          Start Match
+          Lancer un match
         </Link>
         <Link className="button" to="/">
-          Home
+          Accueil
         </Link>
       </div>
     </section>

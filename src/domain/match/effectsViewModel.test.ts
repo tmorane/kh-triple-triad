@@ -61,13 +61,22 @@ describe('buildMatchEffectsViewModel', () => {
     state.elementState.floodedCell = 4
     state.elementState.frozenCellByActor.player = { cell: 2, turnsRemaining: 2 }
     state.elementState.poisonedHandByActor.player = ['c42']
+    state.board[4] = { owner: 'player', cardId: 'c09' }
 
     const view = buildMatchEffectsViewModel(state)
+    const normalModeIndicator = view.globalIndicators.find((item) => item.key === 'mode-normal')
+    const normalCardIndicators = view.boardCardIndicators[4] ?? []
+    const normalCardStats = view.displayStatsByCell[4]
+    const normalCard = getCard('c09')
 
     expect(view.mode).toBe('normal')
-    expect(view.globalIndicators.some((item) => item.key === 'mode-normal')).toBe(true)
+    expect(normalModeIndicator?.label).toBe('NORMAL +1')
+    expect(normalModeIndicator?.tooltip).toBe('Mode normal: cartes Normal +1 partout, pouvoirs de type désactivés.')
     expect(Object.keys(view.cellIndicators)).toHaveLength(0)
-    expect(Object.keys(view.boardCardIndicators)).toHaveLength(0)
+    expect(normalCardIndicators.some((item) => item.key === 'card-normal-mode-bonus')).toBe(true)
+    expect(normalCardIndicators.find((item) => item.key === 'card-normal-mode-bonus')?.label).toBe('+1')
+    expect(normalCardStats?.top.value).toBe(normalCard.top + 1)
+    expect(normalCardStats?.top.trend).toBe('buff')
     expect(view.handIndicatorsByActor.player.c42).toBeUndefined()
     expect(view.laneTypeSlotsByActor.player).toHaveLength(5)
     expect(view.laneTypeSlotsByActor.cpu).toHaveLength(5)
@@ -108,6 +117,35 @@ describe('buildMatchEffectsViewModel', () => {
     expect(stats?.top.value).toBe(1)
     expect(stats?.top.trend).toBe('debuff')
     expect(stats?.right.trend).toBe('debuff')
+  })
+
+  test('uses compact combat badges for hazards and temporary stat changes', () => {
+    const state = makeBaseState()
+    if (!state.elementState) {
+      throw new Error('Expected element state.')
+    }
+    state.elementState.floodedCell = 6
+    state.elementState.frozenCellByActor.player = { cell: 5, turnsRemaining: 2 }
+    state.board[0] = { owner: 'cpu', cardId: 'c02' }
+    state.elementState.boardEffectsByCell[0] = {
+      permanentDelta: { top: -1, right: -1, bottom: -1, left: -1 },
+      burnTicksRemaining: 2,
+      allStatsMinusOneStacks: [],
+      unflippableUntilEndOfOpponentNextTurn: null,
+      swappedHighLowUntilMatchEnd: false,
+      rockShieldCharges: 0,
+      poisonFirstCombatPending: false,
+      insectEntryStacks: 0,
+      dragonApplied: false,
+    }
+
+    const view = buildMatchEffectsViewModel(state)
+
+    expect(view.cellIndicators[6]?.find((indicator) => indicator.key === 'cell-flooded')?.label).toBe('EAU')
+    expect(view.cellIndicators[5]?.find((indicator) => indicator.key === 'cell-frozen')?.label).toBe('GEL 2T')
+    expect(view.cellIndicators[5]?.find((indicator) => indicator.key === 'cell-frozen')?.valueText).toBe('2T')
+    expect(view.boardCardIndicators[0]?.find((indicator) => indicator.key === 'card-burn')?.label).toBe('-1 2T')
+    expect(view.boardCardIndicators[0]?.find((indicator) => indicator.key === 'card-burn')?.valueText).toBe('2T')
   })
 
   test('shows separate temporary -1 indicators for vol and sol when both stacks are active', () => {
@@ -154,6 +192,7 @@ describe('buildMatchEffectsViewModel', () => {
     const poisonedBaseTop = getCard('c42').top
 
     expect(poisonedIndicators.some((item) => item.key === 'hand-poisoned')).toBe(true)
+    expect(poisonedIndicators.find((item) => item.key === 'hand-poisoned')?.label).toBe('POISON -1')
     expect(usedPowerIndicators.some((item) => item.key === 'hand-power-used')).toBe(true)
     expect(poisonedPlayerStats?.top.value).toBe(poisonedBaseTop - 1)
     expect(poisonedPlayerStats?.top.trend).toBe('debuff')
@@ -321,7 +360,7 @@ describe('buildMatchEffectsViewModel', () => {
     const withShieldView = buildMatchEffectsViewModel(state)
     const withShieldIndicators = withShieldView.boardCardIndicators[4] ?? []
     const shieldIndicator = withShieldIndicators.find((indicator) => indicator.key === 'card-rock-shield')
-    expect(shieldIndicator?.label).toBe('Bouclier x1')
+    expect(shieldIndicator?.label).toBe('SHIELD 1')
 
     state.elementState.boardEffectsByCell[4] = {
       ...state.elementState.boardEffectsByCell[4]!,

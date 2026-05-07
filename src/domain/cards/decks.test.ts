@@ -3,6 +3,7 @@ import { cardPool, getCard } from './cardPool'
 import {
   getCpuDeckForMatch,
   getDeckForMode,
+  starterDeck,
   starterOwnedCardIds,
   toggleCardInDeck,
   validateDeck,
@@ -10,6 +11,11 @@ import {
 import type { DeckSlot } from '../types'
 
 describe('decks helpers', () => {
+  test('uses the fixed first-launch starter deck', () => {
+    expect(starterDeck).toEqual(['c02', 'c03', 'c01', 'c12', 'c87'])
+    expect(starterOwnedCardIds).toEqual(starterDeck)
+  })
+
   test('returns deck by selected mode', () => {
     const slot: DeckSlot = {
       id: 'slot-1',
@@ -26,13 +32,18 @@ describe('decks helpers', () => {
 
   test('toggleCardInDeck enforces max size cap', () => {
     const fullDeck = starterOwnedCardIds.slice(0, 5)
+    const nonStarterCard = cardPool.find((card) => !starterOwnedCardIds.includes(card.id))?.id
+    expect(nonStarterCard).toBeTruthy()
+    if (!nonStarterCard) {
+      return
+    }
 
-    expect(toggleCardInDeck(fullDeck, starterOwnedCardIds[5]!, 5)).toEqual(fullDeck)
+    expect(toggleCardInDeck(fullDeck, nonStarterCard, 5)).toEqual(fullDeck)
     expect(toggleCardInDeck(fullDeck, starterOwnedCardIds[4]!, 5)).toEqual(starterOwnedCardIds.slice(0, 4))
   })
 
   test('validateDeck uses 3x3 and 4x4 size requirements', () => {
-    const owned = [...starterOwnedCardIds]
+    const owned = cardPool.slice(0, 8).map((card) => card.id)
 
     const valid3x3 = owned.slice(0, 5)
     const valid4x4 = owned.slice(0, 8)

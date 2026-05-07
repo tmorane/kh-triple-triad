@@ -35,6 +35,8 @@ function makeUpdate(overrides: RankedMatchResultSummaryOverrides = {}): RankedMa
     deltaLp: 20,
     promoted: true,
     demoted: false,
+    seasonReset: false,
+    awardedLeagueReward: null,
   }
 
   return {
@@ -67,9 +69,9 @@ describe('RankedLpRecap', () => {
   test('renders next tier emblem and before/after labels', () => {
     render(<RankedLpRecap mode="4x4" update={makeUpdate()} animated={false} context="results" testIdPrefix="ranked" />)
 
-    expect(screen.getByTestId('ranked-emblem')).toHaveAttribute('src', '/ranks/iron.png')
-    expect(screen.getByTestId('ranked-before')).toHaveTextContent('Before: Iron IV • 95 LP')
-    expect(screen.getByTestId('ranked-after')).toHaveTextContent('After: Iron III • 15 LP')
+    expect(screen.getByTestId('ranked-emblem')).toHaveAttribute('src', '/ranks/iron.svg')
+    expect(screen.getByTestId('ranked-before')).toHaveTextContent('Avant: Fer IV • 95 LP')
+    expect(screen.getByTestId('ranked-after')).toHaveTextContent('Après: Fer III • 15 LP')
   })
 
   test('renders promotion and demotion badges from flags', () => {
@@ -81,7 +83,7 @@ describe('RankedLpRecap', () => {
     rerender(
       <RankedLpRecap mode="4x4" update={makeUpdate({ promoted: false, demoted: true })} animated={false} context="results" testIdPrefix="ranked" />,
     )
-    expect(screen.getByTestId('ranked-event')).toHaveTextContent('DEMOTION')
+    expect(screen.getByTestId('ranked-event')).toHaveTextContent('RÉTROGRADATION')
   })
 
   test('does not mark recap as animated when animated is false', () => {

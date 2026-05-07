@@ -49,7 +49,7 @@ describe('SetupPage (Play lobby)', () => {
   test('shows only 3x3 mode choices before selection', () => {
     renderSetup()
 
-    expect(screen.queryByRole('heading', { name: 'Play' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Jouer' })).not.toBeInTheDocument()
     expect(screen.getByTestId('setup-mode-stage')).toBeInTheDocument()
     expect(screen.queryByTestId('setup-mode-background')).not.toBeInTheDocument()
     expect(screen.getByTestId('setup-preset-grid')).toBeInTheDocument()
@@ -59,7 +59,7 @@ describe('SetupPage (Play lobby)', () => {
     expect(screen.queryByTestId('setup-mode-4x4-ranked')).not.toBeInTheDocument()
     expect(screen.queryByTestId('setup-mode-tower')).not.toBeInTheDocument()
     expect(screen.queryByTestId('start-match-button')).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('Deck slots')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Emplacements de deck')).not.toBeInTheDocument()
   })
 
   test('selecting a preset reveals deck/deckmode/opponent/start controls', async () => {
@@ -72,7 +72,7 @@ describe('SetupPage (Play lobby)', () => {
     const selectedLeftStack = screen.getByTestId('setup-selected-left-stack')
     expect(within(selectedModeHead).getByTestId('setup-selected-preset')).toHaveTextContent('3X3 NORMAL')
     expect(within(selectedModeHead).getByTestId('setup-change-mode')).toBeInTheDocument()
-    expect(within(selectedLeftStack).getByLabelText('Deck slots')).toBeInTheDocument()
+    expect(within(selectedLeftStack).getByLabelText('Emplacements de deck')).toBeInTheDocument()
     expect(screen.getByTestId('setup-deck-mode-manual')).toBeInTheDocument()
     expect(screen.getByTestId('setup-rule-open-visible')).toBeInTheDocument()
     expect(screen.getByTestId('setup-rule-open-hidden')).toBeInTheDocument()
@@ -84,7 +84,7 @@ describe('SetupPage (Play lobby)', () => {
     expect(screen.getByTestId('setup-opponent-ai')).toBeInTheDocument()
     expect(screen.getByTestId('setup-opponent-rarity')).toBeInTheDocument()
     expect(screen.queryByText('Next Opponent')).not.toBeInTheDocument()
-    expect(screen.getByTestId('start-match-button')).toHaveTextContent('Start 3x3 Normal')
+    expect(screen.getByTestId('start-match-button')).toHaveTextContent('Lancer 3x3 normal')
     expect(screen.getByTestId('start-match-button')).toBeEnabled()
   })
 
@@ -112,13 +112,13 @@ describe('SetupPage (Play lobby)', () => {
 
     await user.click(screen.getByTestId('setup-mode-3x3-ranked'))
 
-    expect(screen.getByTestId('setup-selected-preset')).toHaveTextContent('3X3 RANKED')
+    expect(screen.getByTestId('setup-selected-preset')).toHaveTextContent('3X3 CLASSÉ')
     expect(screen.getByTestId('setup-ranked-note')).toBeInTheDocument()
     expect(screen.getByTestId('setup-opponent-ranked-lock')).toBeInTheDocument()
-    expect(screen.getByTestId('setup-opponent-rank-bonus')).toHaveTextContent('Rank bonus: +0 score')
+    expect(screen.getByTestId('setup-opponent-rank-bonus')).toHaveTextContent('Bonus de rang: +0 score')
     expect(screen.queryByTestId('setup-opponent-level-option-1')).not.toBeInTheDocument()
     expect(screen.queryByTestId('setup-opponent-level-option-10')).not.toBeInTheDocument()
-    expect(screen.getByTestId('start-match-button')).toHaveTextContent('Start 3x3 Ranked')
+    expect(screen.getByTestId('start-match-button')).toHaveTextContent('Lancer 3x3 classé')
     expect(within(screen.getByTestId('setup-selected-cards')).getAllByTestId(/^setup-selected-card-/)).toHaveLength(5)
   })
 
@@ -133,16 +133,16 @@ describe('SetupPage (Play lobby)', () => {
     renderSetup()
 
     await user.click(screen.getByTestId('setup-mode-3x3'))
-    expect(screen.getByText('Deck: 5/5 selected (3x3)')).toBeInTheDocument()
+    expect(screen.getByText('Deck: 5/5 sélectionnées (3x3)')).toBeInTheDocument()
     expect(screen.getByTestId('start-match-button')).toBeEnabled()
 
     await user.click(screen.getByTestId('deck-slot-slot-3'))
-    expect(screen.getByText('Deck: 0/5 selected (3x3)')).toBeInTheDocument()
+    expect(screen.getByText('Deck: 0/5 sélectionnées (3x3)')).toBeInTheDocument()
     expect(screen.getByTestId('start-match-button')).toBeDisabled()
 
     await user.click(screen.getByTestId('deck-slot-slot-2'))
 
-    expect(screen.getByText('Deck: 5/5 selected (3x3)')).toBeInTheDocument()
+    expect(screen.getByText('Deck: 5/5 sélectionnées (3x3)')).toBeInTheDocument()
     expect(screen.getByTestId('start-match-button')).toBeEnabled()
   })
 
@@ -154,12 +154,12 @@ describe('SetupPage (Play lobby)', () => {
     await user.click(screen.getByTestId('deck-slot-slot-3'))
 
     expect(screen.getByTestId('start-match-button')).toBeDisabled()
-    expect(screen.getByText('Deck: 0/5 selected (3x3)')).toBeInTheDocument()
+    expect(screen.getByText('Deck: 0/5 sélectionnées (3x3)')).toBeInTheDocument()
     expect(screen.getByTestId('setup-selected-cards')).toBeInTheDocument()
 
     await user.click(screen.getByTestId('setup-deck-mode-auto'))
     expect(screen.getByTestId('start-match-button')).toBeEnabled()
-    expect(screen.queryByText('Deck: 0/5 selected (3x3)')).not.toBeInTheDocument()
+    expect(screen.queryByText('Deck: 0/5 sélectionnées (3x3)')).not.toBeInTheDocument()
     expect(screen.queryByTestId('setup-selected-cards')).not.toBeInTheDocument()
   })
 
@@ -178,7 +178,7 @@ describe('SetupPage (Play lobby)', () => {
 
     const autoDeckInput = screen.getByTestId('setup-deck-mode-auto')
     expect(autoDeckInput).toBeDisabled()
-    expect(screen.getByTestId('setup-auto-deck-note')).toHaveTextContent('Auto Deck requires at least 5 owned cards for 3X3.')
+    expect(screen.getByTestId('setup-auto-deck-note')).toHaveTextContent('Le deck auto demande au moins 5 cartes possédées pour 3X3.')
     expect(screen.getByTestId('start-match-button')).toBeDisabled()
   })
 
@@ -187,7 +187,7 @@ describe('SetupPage (Play lobby)', () => {
     renderSetup()
 
     await user.click(screen.getByTestId('setup-mode-3x3-ranked'))
-    expect(screen.getByTestId('setup-selected-preset')).toHaveTextContent('3X3 RANKED')
+    expect(screen.getByTestId('setup-selected-preset')).toHaveTextContent('3X3 CLASSÉ')
 
     await user.click(screen.getByTestId('setup-change-mode'))
 

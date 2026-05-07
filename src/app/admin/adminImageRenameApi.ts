@@ -1,4 +1,4 @@
-import { isAdminEmailAllowed, parseAdminAllowedEmails } from './adminAllowlist'
+import { isAdminEmailAllowed, parseAdminAllowedEmails } from './adminAllowlist.js'
 
 interface AdminImageRenameApiRequest {
   method?: string
@@ -145,7 +145,7 @@ export async function handleAdminImageRenameRequest(
 
   const payload = parseBody(request.body)
   const validation = validatePayload(payload)
-  if (!validation.ok) {
+  if (validation.ok === false) {
     return { status: 400, body: { error: validation.message } }
   }
 

@@ -1,6 +1,8 @@
 import { cardPool } from './cardPool'
-import type { CardId, DeckSlot, DeckSlotId, MatchMode, PlayerProfile, Rarity } from '../types'
+import type { CardId, DeckSlot, DeckSlotId, MatchMode, PlayerProfile } from '../types'
 import { getModeSpec } from '../match/modeSpec'
+
+const fixedStarterDeck: CardId[] = ['c02', 'c03', 'c01', 'c12', 'c87']
 
 function getStarterCardsFromPool(): {
   starterOwnedCardIds: CardId[]
@@ -16,9 +18,14 @@ function getStarterCardsFromPool(): {
     throw new Error('Card pool does not contain enough cards to build starter and CPU decks.')
   }
 
+  const missingStarterCards = fixedStarterDeck.filter((cardId) => !cardPool.some((card) => card.id === cardId))
+  if (missingStarterCards.length > 0) {
+    throw new Error(`Card pool is missing fixed starter cards: ${missingStarterCards.join(', ')}.`)
+  }
+
   return {
-    starterOwnedCardIds: commonIds.slice(0, 10),
-    starterDeck: commonIds.slice(0, 5),
+    starterOwnedCardIds: fixedStarterDeck,
+    starterDeck: fixedStarterDeck,
     cpuDeckRotation3x3: [commonIds.slice(5, 10), uncommonIds.slice(0, 5), rareIds.slice(0, 5)],
     cpuDeckRotation4x4: [
       commonIds.slice(5, 13),
@@ -39,66 +46,13 @@ const cpuDeckRotationByMode: Record<MatchMode, CardId[][]> = {
   '4x4': starterConfig.cpuDeckRotation4x4,
 }
 
-const resetStarterRarityCounts: ReadonlyArray<{ rarity: Rarity; count: number }> = [
-  { rarity: 'common', count: 6 },
-  { rarity: 'uncommon', count: 2 },
-  { rarity: 'rare', count: 1 },
-  { rarity: 'epic', count: 1 },
-]
-
-function getRandomIndex(max: number, random: () => number): number {
-  const raw = random()
-  const safe = Number.isFinite(raw) ? Math.abs(raw) : 0
-  return Math.floor(safe * max) % max
-}
-
-function pickRandomDistinct(cardIds: CardId[], count: number, random: () => number): CardId[] {
-  if (cardIds.length < count) {
-    throw new Error('Card pool does not contain enough cards for randomized reset starter selection.')
-  }
-
-  const remaining = [...cardIds]
-  const picked: CardId[] = []
-  while (picked.length < count) {
-    const index = getRandomIndex(remaining.length, random)
-    const [next] = remaining.splice(index, 1)
-    picked.push(next)
-  }
-
-  return picked
-}
-
-function shuffleCardIds(cardIds: CardId[], random: () => number): CardId[] {
-  const shuffled = [...cardIds]
-  for (let index = shuffled.length - 1; index > 0; index -= 1) {
-    const swapIndex = getRandomIndex(index + 1, random)
-    const current = shuffled[index]
-    shuffled[index] = shuffled[swapIndex]
-    shuffled[swapIndex] = current
-  }
-  return shuffled
-}
-
-export function createResetStarterCards(random: () => number = Math.random): {
+export function createResetStarterCards(): {
   starterOwnedCardIds: CardId[]
   starterDeck: CardId[]
 } {
-  const pickedByRarity = new Map<Rarity, CardId[]>()
-
-  for (const { rarity, count } of resetStarterRarityCounts) {
-    const candidates = cardPool.filter((card) => card.rarity === rarity).map((card) => card.id)
-    pickedByRarity.set(rarity, pickRandomDistinct(candidates, count, random))
-  }
-
-  const commonCards = pickedByRarity.get('common') ?? []
-  const uncommonCards = pickedByRarity.get('uncommon') ?? []
-  const rareCards = pickedByRarity.get('rare') ?? []
-  const epicCards = pickedByRarity.get('epic') ?? []
-  const ownedCardIds = shuffleCardIds([...commonCards, ...uncommonCards, ...rareCards, ...epicCards], random)
-
   return {
-    starterOwnedCardIds: ownedCardIds,
-    starterDeck: commonCards.slice(0, 5),
+    starterOwnedCardIds: fixedStarterDeck,
+    starterDeck: fixedStarterDeck,
   }
 }
 

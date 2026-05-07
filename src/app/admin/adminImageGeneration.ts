@@ -1,5 +1,5 @@
 import { generateImage } from 'ai'
-import { parseAdminAllowedEmails } from './adminAllowlist'
+import { parseAdminAllowedEmails } from './adminAllowlist.js'
 
 export { parseAdminAllowedEmails }
 
@@ -199,7 +199,7 @@ export async function generateAdminImages(
   deps: GenerateAdminImagesDeps = {},
 ): Promise<AdminImageGenerateResponse> {
   const validation = validateAdminImageGenerateRequest(input)
-  if (!validation.ok) {
+  if (validation.ok === false) {
     throw new AdminImageValidationError(validation.message)
   }
 

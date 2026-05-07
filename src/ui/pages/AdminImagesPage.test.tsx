@@ -84,13 +84,13 @@ describe('AdminImagesPage', () => {
     expect(screen.queryByTestId('admin-images-form')).not.toBeInTheDocument()
   })
 
-  test('allows access when client allowlist is empty and user is signed in', async () => {
+  test('blocks access when client allowlist is empty and user is signed in', async () => {
     import.meta.env.VITE_ADMIN_ALLOWED_EMAILS = ''
-    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ images: [] }))
 
     render(<AdminImagesPage />)
 
-    await waitFor(() => expect(screen.getByTestId('admin-images-form')).toBeInTheDocument())
+    expect(await screen.findByText('Accès admin requis.')).toBeInTheDocument()
+    expect(screen.queryByTestId('admin-images-form')).not.toBeInTheDocument()
   })
 
   test('submits generation request and allows image download', async () => {
@@ -122,7 +122,7 @@ describe('AdminImagesPage', () => {
 
     await waitFor(() => expect(screen.getByTestId('admin-images-form')).toBeInTheDocument())
 
-    setPromptValue('Legendary electric creature')
+    setPromptValue('Légendaire electric creature')
     fireEvent.change(screen.getByTestId('admin-images-variants-select'), { target: { value: '1' } })
     fireEvent.change(screen.getByTestId('admin-images-aspect-select'), { target: { value: '1:1' } })
     submitAdminImagesForm()
@@ -466,7 +466,7 @@ describe('AdminImagesPage', () => {
     render(<AdminImagesPage />)
 
     await waitFor(() => expect(screen.getByTestId('admin-images-form')).toBeInTheDocument())
-    setPromptValue('Legendary electric creature')
+    setPromptValue('Légendaire electric creature')
     submitAdminImagesForm()
 
     await waitFor(() => expect(screen.getByTestId('admin-image-preview-0')).toBeInTheDocument())
@@ -531,7 +531,7 @@ describe('AdminImagesPage', () => {
     render(<AdminImagesPage />)
 
     await waitFor(() => expect(screen.getByTestId('admin-images-form')).toBeInTheDocument())
-    setPromptValue('Legendary electric creature')
+    setPromptValue('Légendaire electric creature')
     submitAdminImagesForm()
 
     await waitFor(() => expect(screen.getByTestId('admin-image-preview-0')).toBeInTheDocument())
@@ -610,14 +610,17 @@ describe('AdminImagesPage', () => {
 
   test('shows connection error when no session token is available', async () => {
     vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ images: [] }))
-    vi.mocked(supabaseClient.getSupabaseClient).mockReturnValueOnce({
-      auth: {
-        getSession: vi.fn(async () => ({
-          data: { session: null },
-          error: null,
-        })),
-      },
-    } as unknown as ReturnType<typeof supabaseClient.getSupabaseClient>)
+    vi.mocked(supabaseClient.getSupabaseClient).mockImplementation(
+      () =>
+        ({
+          auth: {
+            getSession: vi.fn(async () => ({
+              data: { session: null },
+              error: null,
+            })),
+          },
+        }) as unknown as ReturnType<typeof supabaseClient.getSupabaseClient>,
+    )
 
     render(<AdminImagesPage />)
 
@@ -647,7 +650,7 @@ describe('AdminImagesPage', () => {
     render(<AdminImagesPage />)
 
     await waitFor(() => expect(screen.getByTestId('admin-images-form')).toBeInTheDocument())
-    setPromptValue('Legendary electric creature')
+    setPromptValue('Légendaire electric creature')
     submitAdminImagesForm()
 
     await waitFor(() => expect(generationCalls()).toHaveLength(1))
