@@ -73,6 +73,10 @@ function toDisplayStatValue(base: number, value: number): DisplayStatValue {
   }
 }
 
+function formatTurnsBadge(turns: number): string {
+  return `${turns}T`
+}
+
 function ensureIndicatorCollection(target: Partial<Record<number, EffectIndicator[]>>, cell: number): EffectIndicator[] {
   const existing = target[cell]
   if (existing) {
@@ -188,10 +192,10 @@ export function buildMatchEffectsViewModel(state: MatchState): MatchEffectsViewM
   if (mode === 'normal') {
     globalIndicators.push({
       key: 'mode-normal',
-      icon: '⛔',
-      label: 'Mode normal',
-      tooltip: 'Mode normal: effets désactivés.',
-      tone: 'info',
+      icon: '○',
+      label: 'NORMAL +1',
+      tooltip: 'Mode normal: cartes Normal +1 partout, pouvoirs de type désactivés.',
+      tone: 'buff',
     })
   } else {
     globalIndicators.push({
@@ -220,6 +224,18 @@ export function buildMatchEffectsViewModel(state: MatchState): MatchEffectsViewM
       }
     }
 
+    if (elementState?.enabled && mode === 'normal' && card.elementId === 'normal') {
+      const normalIndicators = ensureIndicatorCollection(boardCardIndicators, cell)
+      pushIndicator(normalIndicators, {
+        key: 'card-normal-mode-bonus',
+        icon: '○',
+        label: '+1',
+        tooltip: 'Normal: +1 partout en mode normal.',
+        tone: 'buff',
+        valueText: '+1',
+      })
+    }
+
     if (mode !== 'effects') {
       continue
     }
@@ -232,7 +248,7 @@ export function buildMatchEffectsViewModel(state: MatchState): MatchEffectsViewM
         key: 'card-combat-attack',
         icon: '⚔',
         label: 'ATK +1',
-        tooltip: '⚔️ +1 uniquement quand cette carte attaque.',
+        tooltip: 'Combat: +1 sur le côté utilisé quand cette carte attaque.',
         tone: 'buff',
       })
     }
@@ -241,7 +257,7 @@ export function buildMatchEffectsViewModel(state: MatchState): MatchEffectsViewM
       pushIndicator(indicators, {
         key: 'card-spectre-passive',
         icon: '👻',
-        label: 'Ignore cases',
+        label: 'IGNORE',
         tooltip: '👻 Ignore les malus, ignore les restrictions de case et gagne +1 sur toutes les stats.',
         tone: 'info',
       })
@@ -253,7 +269,7 @@ export function buildMatchEffectsViewModel(state: MatchState): MatchEffectsViewM
         pushIndicator(indicators, {
           key: 'card-plante-pack',
           icon: '🌿',
-          label: `Meute +${adjacentBonus}`,
+          label: `+${adjacentBonus}`,
           tooltip: `Plante: +${adjacentBonus} sur toutes les stats.`,
           tone: 'buff',
           valueText: `+${adjacentBonus}`,
@@ -266,13 +282,14 @@ export function buildMatchEffectsViewModel(state: MatchState): MatchEffectsViewM
     }
 
     if (effects.burnTicksRemaining > 0) {
+      const burnTurns = formatTurnsBadge(effects.burnTicksRemaining)
       pushIndicator(indicators, {
         key: 'card-burn',
         icon: '🔥',
-        label: `Brûlure ${effects.burnTicksRemaining}`,
+        label: `-1 ${burnTurns}`,
         tooltip: `Brûlure active (${effects.burnTicksRemaining} tour(s)).`,
         tone: 'debuff',
-        valueText: `${effects.burnTicksRemaining}`,
+        valueText: burnTurns,
       })
     }
 
@@ -284,9 +301,10 @@ export function buildMatchEffectsViewModel(state: MatchState): MatchEffectsViewM
       pushIndicator(indicators, {
         key: 'card-volatile',
         icon: '🕊️',
-        label: activeVolatileStacks.length > 1 ? `All -1 x${activeVolatileStacks.length}` : 'All -1',
+        label: activeVolatileStacks.length > 1 ? `-1 x${activeVolatileStacks.length} 1T` : '-1 1T',
         tooltip: 'Vol: -1 temporaire sur toutes les stats.',
         tone: 'debuff',
+        valueText: '1T',
       })
     }
     const activeGroundStacks = activeAllStatsMinusOneStacks.filter((stack) => stack.source === 'sol')
@@ -294,9 +312,10 @@ export function buildMatchEffectsViewModel(state: MatchState): MatchEffectsViewM
       pushIndicator(indicators, {
         key: 'card-ground-volatile',
         icon: '🪨',
-        label: activeGroundStacks.length > 1 ? `Sol -1 x${activeGroundStacks.length}` : 'Sol -1',
+        label: activeGroundStacks.length > 1 ? `-1 x${activeGroundStacks.length} 1T` : '-1 1T',
         tooltip: 'Sol: -1 temporaire sur toutes les stats.',
         tone: 'debuff',
+        valueText: '1T',
       })
     }
 
@@ -305,7 +324,7 @@ export function buildMatchEffectsViewModel(state: MatchState): MatchEffectsViewM
       pushIndicator(indicators, {
         key: 'card-unflippable',
         icon: '⚡',
-        label: 'Intouchable',
+        label: 'SHIELD 1T',
         tooltip: '⚡ Intouchable pendant le prochain tour adverse.',
         tone: 'buff',
       })
@@ -315,7 +334,7 @@ export function buildMatchEffectsViewModel(state: MatchState): MatchEffectsViewM
       pushIndicator(indicators, {
         key: 'card-psy-swap',
         icon: '🔄',
-        label: 'Confusion',
+        label: 'PSY',
         tooltip: '🔄 Meilleure/pire stat inversées.',
         tone: 'info',
       })
@@ -325,7 +344,7 @@ export function buildMatchEffectsViewModel(state: MatchState): MatchEffectsViewM
       pushIndicator(indicators, {
         key: 'card-rock-shield',
         icon: '🪨',
-        label: `Bouclier x${effects.rockShieldCharges}`,
+        label: `SHIELD ${effects.rockShieldCharges}`,
         tooltip: `🛡️ Annule ${effects.rockShieldCharges} défaite(s) en duel.`,
         tone: 'buff',
         valueText: `${effects.rockShieldCharges}`,
@@ -336,7 +355,7 @@ export function buildMatchEffectsViewModel(state: MatchState): MatchEffectsViewM
       pushIndicator(indicators, {
         key: 'card-poison-first-combat',
         icon: '☠️',
-        label: 'Poison',
+        label: '-1',
         tooltip: '☠️ Poison actif: -1 sur toutes les stats.',
         tone: 'debuff',
       })
@@ -346,7 +365,7 @@ export function buildMatchEffectsViewModel(state: MatchState): MatchEffectsViewM
       pushIndicator(indicators, {
         key: 'card-insect-stack',
         icon: '🐞',
-        label: `Essaim +${effects.insectEntryStacks}`,
+        label: `+${effects.insectEntryStacks}`,
         tooltip: `Insecte: bonus d'entrée +${effects.insectEntryStacks}.`,
         tone: 'buff',
         valueText: `+${effects.insectEntryStacks}`,
@@ -357,7 +376,7 @@ export function buildMatchEffectsViewModel(state: MatchState): MatchEffectsViewM
       pushIndicator(indicators, {
         key: 'card-dragon-transform',
         icon: '🐉',
-        label: 'Draconique',
+        label: '+2/-1',
         tooltip: 'Dragon: +1 sur 2 stats et -1 sur 1 stat.',
         tone: 'info',
       })
@@ -370,8 +389,8 @@ export function buildMatchEffectsViewModel(state: MatchState): MatchEffectsViewM
       pushIndicator(floodedIndicators, {
         key: 'cell-flooded',
         icon: '🌊',
-        label: 'Inondée',
-        tooltip: '🌊 Prochaine non-Spectre: -2 meilleure stat.',
+        label: 'EAU',
+        tooltip: '🌊 Prochaine non-Spectre: -3 meilleure stat.',
         tone: 'debuff',
       })
     }
@@ -383,13 +402,14 @@ export function buildMatchEffectsViewModel(state: MatchState): MatchEffectsViewM
         continue
       }
       const blockedIndicators = ensureIndicatorCollection(cellIndicators, frozenEffect.cell)
+      const frozenTurns = formatTurnsBadge(frozenEffect.turnsRemaining)
       pushIndicator(blockedIndicators, {
         key: 'cell-frozen',
         icon: '❄️',
-        label: `Gelée ${frozenEffect.turnsRemaining}`,
+        label: `GEL ${frozenTurns}`,
         tooltip: `❄️ ${targetActor === 'player' ? 'Joueur' : 'CPU'}: case bloquée (${frozenEffect.turnsRemaining} tour(s) restant(s)).`,
         tone: 'debuff',
-        valueText: `${frozenEffect.turnsRemaining}`,
+        valueText: frozenTurns,
       })
     }
 
@@ -402,7 +422,7 @@ export function buildMatchEffectsViewModel(state: MatchState): MatchEffectsViewM
           indicators.push({
             key: 'hand-poisoned',
             icon: '☠️',
-            label: 'Empoisonnée',
+            label: 'POISON -1',
             tooltip: '☠️ En main: -1 toutes stats quand elle est posée.',
             tone: 'debuff',
           })
@@ -418,7 +438,7 @@ export function buildMatchEffectsViewModel(state: MatchState): MatchEffectsViewM
           indicators.push({
             key: 'hand-power-used',
             icon: '⏳',
-            label: 'Pouvoir utilisé',
+            label: 'UTILISÉ',
             tooltip: `⏳ ${getElementLabel(elementId)}: pouvoir déjà utilisé.`,
             tone: 'info',
           })

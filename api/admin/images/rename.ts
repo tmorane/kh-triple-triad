@@ -1,7 +1,8 @@
 /* global process */
 import { createClient } from '@supabase/supabase-js'
-import { handleAdminImageRenameRequest } from '../../../src/app/admin/adminImageRenameApi'
-import { renamePublicImage } from './publicGalleryStore'
+import { handleAdminImageRenameRequest } from '../../../src/app/admin/adminImageRenameApi.js'
+import { isAdminAuthBypassEnabled } from './adminAuthPolicy.js'
+import { renamePublicImage } from './publicGalleryStore.js'
 
 const DEFAULT_SUPABASE_URL = 'https://dufnghfphczftetkpcqf.supabase.co'
 const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_RyP064ovRl0TW8yypqtyag_xuZ-TsQL'
@@ -16,22 +17,6 @@ interface NodeResponseLike {
   status: (code: number) => NodeResponseLike
   json: (body: unknown) => void
   setHeader: (name: string, value: string) => void
-}
-
-function readBooleanEnv(name: string): boolean | null {
-  const value = process.env[name]
-  if (typeof value !== 'string') {
-    return null
-  }
-
-  const normalized = value.trim().toLowerCase()
-  if (normalized === 'true' || normalized === '1') {
-    return true
-  }
-  if (normalized === 'false' || normalized === '0') {
-    return false
-  }
-  return null
 }
 
 function readEnv(name: string, fallback?: string): string {
@@ -57,15 +42,6 @@ function headerValue(value: string | string[] | undefined): string | undefined {
   return undefined
 }
 
-function isLocalAuthBypassEnabled(): boolean {
-  const explicit = readBooleanEnv('ADMIN_BYPASS_LOCAL_AUTH')
-  if (explicit !== null) {
-    return explicit
-  }
-
-  return process.env.NODE_ENV !== 'production'
-}
-
 async function verifySupabaseAccessToken(token: string): Promise<{ email: string | null }> {
   const supabaseUrl = readEnv('VITE_SUPABASE_URL', DEFAULT_SUPABASE_URL)
   const supabaseAnonKey = readEnv('VITE_SUPABASE_ANON_KEY', DEFAULT_SUPABASE_ANON_KEY)
@@ -80,7 +56,10 @@ async function verifySupabaseAccessToken(token: string): Promise<{ email: string
 }
 
 export default async function handler(req: NodeRequestLike, res: NodeResponseLike): Promise<void> {
-  const bypassAuth = isLocalAuthBypassEnabled()
+  const bypassAuth = isAdminAuthBypassEnabled({
+    rawBypassValue: process.env.ADMIN_BYPASS_LOCAL_AUTH,
+    nodeEnv: process.env.NODE_ENV,
+  })
 
   const result = await handleAdminImageRenameRequest(
     {

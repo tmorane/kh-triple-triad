@@ -66,6 +66,16 @@ describe('background mode resolution', () => {
     expect(resolveBackgroundMode()).toBe('dark')
   })
 
+  test('migrates the old KH background preference into PokeTriad storage', () => {
+    const legacyBackgroundModeStorageKey = 'kh-triple-triad-background-mode-v1'
+    setMatchMedia(false)
+    window.localStorage.setItem(legacyBackgroundModeStorageKey, 'dark')
+
+    expect(BACKGROUND_MODE_STORAGE_KEY).toBe('poketriad-background-mode-v1')
+    expect(resolveBackgroundMode()).toBe('dark')
+    expect(window.localStorage.getItem(BACKGROUND_MODE_STORAGE_KEY)).toBe('dark')
+  })
+
   test('ignores invalid stored values', () => {
     setMatchMedia(true)
     window.localStorage.setItem(BACKGROUND_MODE_STORAGE_KEY, 'neon' as BackgroundMode)

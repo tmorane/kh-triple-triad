@@ -1,35 +1,24 @@
 import type { FormEvent } from 'react'
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { PRIMARY_MATCH_MODE } from '../../app/matchUiConfig'
 import { useGame } from '../../app/useGame'
-import {
-  getCloudSessionUser,
-  isCloudAuthEnabled,
-  onCloudAuthStateChange,
-  signInCloud,
-  signOutCloud,
-  signUpCloud,
-  type CloudSessionUser,
-} from '../../app/cloud/cloudAuth'
-import { fetchCloudProfile, saveCloudProfile } from '../../app/cloud/cloudProfileStore'
 import { cardPool } from '../../domain/cards/cardPool'
 import { getDeckForMode } from '../../domain/cards/decks'
 import { getModeSpec } from '../../domain/match/modeSpec'
 import { achievementCatalog } from '../../domain/progression/achievements'
-import { resolveProfileForCloudSession } from '../../app/cloud/resolveCloudProfile'
-import { saveProfile } from '../../domain/progression/profile'
 import type { RankedTierId } from '../../domain/types'
 
 const GOLD_MILESTONES = [150, 200, 300, 450, 600, 800, 1000]
-const numberFormat = new Intl.NumberFormat('en-US')
+const numberFormat = new Intl.NumberFormat('fr-FR')
 
 const tierNames: Record<RankedTierId, string> = {
-  iron: 'Iron',
+  iron: 'Fer',
   bronze: 'Bronze',
-  silver: 'Silver',
-  gold: 'Gold',
-  platinum: 'Platinum',
-  diamond: 'Diamond',
+  silver: 'Argent',
+  gold: 'Or',
+  platinum: 'Platine',
+  diamond: 'Diamant',
   challenger: 'Challenger',
 }
 
@@ -41,8 +30,9 @@ interface DetailedMetric {
   progress?: number
 }
 
-function isEmailValid(email: string): boolean {
-  return /^\S+@\S+\.\S+$/.test(email)
+interface PlayerNameFormProps {
+  initialName: string
+  onRename(name: string): { valid: boolean; reason?: string }
 }
 
 function clampPercent(value: number): number {
@@ -57,19 +47,50 @@ function formatTierLabel(tier: RankedTierId, division: string | null): string {
   return tierLabel
 }
 
+function PlayerNameForm({ initialName, onRename }: PlayerNameFormProps) {
+  const [playerNameDraft, setPlayerNameDraft] = useState(initialName)
+  const [playerNameError, setPlayerNameError] = useState<string | null>(null)
+
+  const submitPlayerName = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const result = onRename(playerNameDraft)
+    if (!result.valid) {
+      setPlayerNameError(result.reason ?? 'Nom de joueur invalide.')
+      return
+    }
+
+    setPlayerNameError(null)
+  }
+
+  return (
+    <>
+      <form className="account-local-form" onSubmit={submitPlayerName}>
+        <label className="account-label" htmlFor="account-player-name-input">
+          Nom du joueur
+          <input
+            id="account-player-name-input"
+            data-testid="account-player-name-input"
+            type="text"
+            value={playerNameDraft}
+            onChange={(event) => setPlayerNameDraft(event.target.value)}
+          />
+        </label>
+        <button type="submit" className="button" data-testid="account-player-name-submit">
+          Enregistrer le nom
+        </button>
+      </form>
+      {playerNameError ? (
+        <p className="error" role="alert">
+          {playerNameError}
+        </p>
+      ) : null}
+    </>
+  )
+}
+
 export function AccountPage() {
   const { profile, storedProfiles, renamePlayer, setAudioEnabled, createStoredProfile, switchStoredProfile, deleteStoredProfile, resetProfile } = useGame()
-  const cloudEnabled = isCloudAuthEnabled()
 
-  const [sessionUser, setSessionUser] = useState<CloudSessionUser | null>(null)
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [isLoadingSession, setIsLoadingSession] = useState(cloudEnabled)
-  const [isBusy, setIsBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [info, setInfo] = useState<string | null>(null)
-  const [playerNameDraft, setPlayerNameDraft] = useState(profile.playerName)
-  const [playerNameError, setPlayerNameError] = useState<string | null>(null)
   const [newProfileName, setNewProfileName] = useState('')
   const [profilesError, setProfilesError] = useState<string | null>(null)
   const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false)
@@ -88,68 +109,63 @@ export function AccountPage() {
   const losses = Math.max(played - wins, 0)
   const ranked = profile.rankedByMode[PRIMARY_MATCH_MODE]
   const rankedTierLabel = formatTierLabel(ranked.tier, ranked.division)
-  const rankedRecordLabel = `${ranked.wins}W ${ranked.losses}L ${ranked.draws}D`
+  const rankedRecordLabel = `${ranked.wins}V ${ranked.losses}D ${ranked.draws}N`
   const nextGoldTarget = GOLD_MILESTONES.find((milestone) => profile.gold < milestone) ?? null
-
-  useEffect(() => {
-    setPlayerNameDraft(profile.playerName)
-    setPlayerNameError(null)
-  }, [profile.playerName])
 
   const detailedMetrics = useMemo<DetailedMetric[]>(
     () => [
       {
         icon: PRIMARY_MATCH_MODE === '4x4' ? '4' : '3',
-        label: `${rankedModeLabel} Ranked Tier`,
+        label: `Rang classé ${rankedModeLabel}`,
         value: rankedTierLabel,
         sub: `${ranked.lp} LP`,
         progress: ranked.lp,
       },
       {
         icon: 'G',
-        label: 'Gold Reserve',
+        label: "Réserve d'or",
         value: numberFormat.format(profile.gold),
-        sub: nextGoldTarget ? `${numberFormat.format(nextGoldTarget - profile.gold)} to next tier` : 'Top treasury tier reached',
+        sub: nextGoldTarget ? `${numberFormat.format(nextGoldTarget - profile.gold)} avant le prochain palier` : 'Palier max atteint',
         progress: nextGoldTarget ? clampPercent(Math.round((profile.gold / nextGoldTarget) * 100)) : 100,
       },
       {
         icon: 'C',
         label: 'Pokédex',
         value: `${ownedCards}/${totalCards}`,
-        sub: `${clampPercent(Math.round((ownedCards / totalCards) * 100))}% complete`,
+        sub: `${clampPercent(Math.round((ownedCards / totalCards) * 100))}% complété`,
         progress: clampPercent(Math.round((ownedCards / totalCards) * 100)),
       },
       {
         icon: 'A',
-        label: 'Achievements',
+        label: 'Succès',
         value: `${unlockedAchievements}/${totalAchievements}`,
-        sub: `${clampPercent(Math.round((unlockedAchievements / totalAchievements) * 100))}% unlocked`,
+        sub: `${clampPercent(Math.round((unlockedAchievements / totalAchievements) * 100))}% débloqué`,
         progress: clampPercent(Math.round((unlockedAchievements / totalAchievements) * 100)),
       },
       {
         icon: 'D',
         label: selectedDeck.name,
         value: `${activeDeckCount}/${activeDeckMaxSize}`,
-        sub: 'Active deck slots filled',
+        sub: 'Emplacements du deck actif remplis',
         progress: clampPercent(Math.round((activeDeckCount / activeDeckMaxSize) * 100)),
       },
       {
         icon: 'S',
-        label: 'Current Streak',
+        label: 'Série actuelle',
         value: `${profile.stats.streak}`,
-        sub: `Best streak: ${profile.stats.bestStreak}`,
+        sub: `Meilleure série: ${profile.stats.bestStreak}`,
       },
       {
         icon: 'R',
-        label: `${rankedModeLabel} Ranked Record`,
+        label: `Bilan classé ${rankedModeLabel}`,
         value: rankedRecordLabel,
-        sub: `${ranked.matchesPlayed} ranked matches`,
+        sub: `${ranked.matchesPlayed} matchs classés`,
       },
       {
         icon: 'M',
-        label: 'Battle Record',
-        value: `${wins}W / ${losses}L`,
-        sub: `${played} matches played`,
+        label: 'Bilan combat',
+        value: `${wins}V / ${losses}D`,
+        sub: `${played} matchs joués`,
       },
     ],
     [
@@ -175,61 +191,11 @@ export function AccountPage() {
     ],
   )
 
-  useEffect(() => {
-    if (!cloudEnabled) {
-      setIsLoadingSession(false)
-      return
-    }
-
-    let mounted = true
-
-    const loadSession = async () => {
-      try {
-        const user = await getCloudSessionUser()
-        if (!mounted) {
-          return
-        }
-        setSessionUser(user)
-      } catch (loadError) {
-        if (!mounted) {
-          return
-        }
-        setError(loadError instanceof Error ? loadError.message : 'Unable to load cloud session.')
-      } finally {
-        if (mounted) {
-          setIsLoadingSession(false)
-        }
-      }
-    }
-
-    void loadSession()
-
-    const unsubscribe = onCloudAuthStateChange((nextUser) => {
-      setSessionUser(nextUser)
-    })
-
-    return () => {
-      mounted = false
-      unsubscribe()
-    }
-  }, [cloudEnabled])
-
-  const submitPlayerName = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    const result = renamePlayer(playerNameDraft)
-    if (!result.valid) {
-      setPlayerNameError(result.reason ?? 'Invalid player name.')
-      return
-    }
-
-    setPlayerNameError(null)
-  }
-
   const submitNewProfile = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const result = createStoredProfile(newProfileName)
     if (!result.valid) {
-      setProfilesError(result.reason ?? 'Invalid profile name.')
+      setProfilesError(result.reason ?? 'Nom de profil invalide.')
       return
     }
 
@@ -237,162 +203,15 @@ export function AccountPage() {
     setNewProfileName('')
   }
 
-  const resolveCloudProfileAfterAuth = async (user: CloudSessionUser) => {
-    const cloudProfile = await fetchCloudProfile(user.id)
-    const resolved = resolveProfileForCloudSession(profile, cloudProfile)
-
-    if (resolved.shouldUploadLocal) {
-      await saveCloudProfile(user.id, resolved.profile)
-      setInfo('No cloud profile was found. Local profile uploaded.')
-      return
-    }
-
-    saveProfile(resolved.profile)
-    setInfo('Cloud profile downloaded. Click "Reload App" to apply it now.')
-  }
-
-  const submitSignIn = async () => {
-    if (!isEmailValid(email)) {
-      setError('Please enter a valid email address.')
-      return
-    }
-    if (password.length < 6) {
-      setError('Password must contain at least 6 characters.')
-      return
-    }
-
-    setError(null)
-    setInfo(null)
-    setIsBusy(true)
-
-    try {
-      const user = await signInCloud(email.trim(), password)
-      setSessionUser(user)
-      await resolveCloudProfileAfterAuth(user)
-    } catch (authError) {
-      setError(authError instanceof Error ? authError.message : 'Sign-in failed.')
-    } finally {
-      setIsBusy(false)
-    }
-  }
-
-  const submitSignUp = async () => {
-    if (!isEmailValid(email)) {
-      setError('Please enter a valid email address.')
-      return
-    }
-    if (password.length < 6) {
-      setError('Password must contain at least 6 characters.')
-      return
-    }
-
-    setError(null)
-    setInfo(null)
-    setIsBusy(true)
-
-    try {
-      await signUpCloud(email.trim(), password)
-      const currentUser = await getCloudSessionUser()
-      if (!currentUser) {
-        setSessionUser(null)
-        setInfo('Account created. Confirm your email, then sign in.')
-        return
-      }
-
-      setSessionUser(currentUser)
-      await resolveCloudProfileAfterAuth(currentUser)
-      setInfo('Account created and signed in.')
-    } catch (authError) {
-      setError(authError instanceof Error ? authError.message : 'Sign-up failed.')
-    } finally {
-      setIsBusy(false)
-    }
-  }
-
-  const uploadLocalProfile = async () => {
-    if (!sessionUser) {
-      return
-    }
-
-    setError(null)
-    setInfo(null)
-    setIsBusy(true)
-    try {
-      await saveCloudProfile(sessionUser.id, profile)
-      setInfo('Local profile uploaded.')
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Upload failed.')
-    } finally {
-      setIsBusy(false)
-    }
-  }
-
-  const downloadCloudProfile = async () => {
-    if (!sessionUser) {
-      return
-    }
-
-    setError(null)
-    setInfo(null)
-    setIsBusy(true)
-    try {
-      const cloudProfile = await fetchCloudProfile(sessionUser.id)
-      if (!cloudProfile) {
-        setInfo('No cloud profile found for this account.')
-        return
-      }
-      saveProfile(cloudProfile)
-      setInfo('Cloud profile downloaded. Click "Reload App" to apply it now.')
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Download failed.')
-    } finally {
-      setIsBusy(false)
-    }
-  }
-
-  const disconnectCloudAccount = async () => {
-    setError(null)
-    setInfo(null)
-    setIsBusy(true)
-    try {
-      await signOutCloud()
-      setSessionUser(null)
-      setInfo('Signed out.')
-    } catch (signOutError) {
-      setError(signOutError instanceof Error ? signOutError.message : 'Sign-out failed.')
-    } finally {
-      setIsBusy(false)
-    }
-  }
-
   return (
     <section className="panel account-panel">
-      <h1>Account</h1>
+      <h1>Compte</h1>
       <section className="account-section" data-testid="account-local-profile-section">
-        <h2>Local Profile</h2>
-        <form className="account-local-form" onSubmit={submitPlayerName}>
-          <label className="account-label" htmlFor="account-player-name-input">
-            Player Name
-            <input
-              id="account-player-name-input"
-              data-testid="account-player-name-input"
-              type="text"
-              value={playerNameDraft}
-              onChange={(event) => setPlayerNameDraft(event.target.value)}
-            />
-          </label>
-          <button type="submit" className="button" data-testid="account-player-name-submit">
-            Save Name
-          </button>
-        </form>
-        {playerNameError ? (
-          <p className="error" role="alert">
-            {playerNameError}
-          </p>
-        ) : null}
+        <h2>Profil local</h2>
+        <PlayerNameForm key={profile.playerName} initialName={profile.playerName} onRename={renamePlayer} />
         <div className="account-local-form">
           <p className="small" data-testid="account-audio-state">
-            Sound effects are currently {profile.settings.audioEnabled ? 'ON.' : 'OFF.'}
+            Les effets sonores sont {profile.settings.audioEnabled ? 'activés.' : 'désactivés.'}
           </p>
           <button
             type="button"
@@ -400,13 +219,13 @@ export function AccountPage() {
             onClick={() => setAudioEnabled(!profile.settings.audioEnabled)}
             data-testid="account-audio-toggle"
           >
-            {profile.settings.audioEnabled ? 'Turn sound OFF' : 'Turn sound ON'}
+            {profile.settings.audioEnabled ? 'Couper le son' : 'Activer le son'}
           </button>
         </div>
       </section>
 
       <section className="account-section">
-        <h2>Detailed Stats</h2>
+        <h2>Stats détaillées</h2>
         <div className="account-metrics-grid">
           {detailedMetrics.map((metric) => (
             <article key={metric.label} className="home-metric-card">
@@ -430,8 +249,8 @@ export function AccountPage() {
 
       <section className="account-section account-profiles-block" data-testid="account-profiles-block">
         <div className="account-section-head">
-          <h2>Tester Profiles</h2>
-          <p className="small">{storedProfiles.profiles.length} total</p>
+          <h2>Profils locaux</h2>
+          <p className="small">{storedProfiles.profiles.length} au total</p>
         </div>
 
         <div className="account-profiles-list">
@@ -445,13 +264,13 @@ export function AccountPage() {
                 <div className="home-profile-card__copy">
                   <p className="home-profile-card__name">{storedProfile.playerName}</p>
                   <p className="small">
-                    {storedProfile.wins}W / {profileLosses}L · {numberFormat.format(storedProfile.gold)} gold
+                    {storedProfile.wins}V / {profileLosses}D · {numberFormat.format(storedProfile.gold)} or
                   </p>
                 </div>
 
                 <div className="home-profile-card__actions">
                   {storedProfile.isActive ? (
-                    <span className="home-profile-card__active">Active</span>
+                    <span className="home-profile-card__active">Actif</span>
                   ) : (
                     <>
                       <button
@@ -462,7 +281,7 @@ export function AccountPage() {
                           setProfilesError(null)
                         }}
                       >
-                        Switch
+                        Changer
                       </button>
                       <button
                         type="button"
@@ -470,13 +289,13 @@ export function AccountPage() {
                         onClick={() => {
                           const result = deleteStoredProfile(storedProfile.id)
                           if (!result.valid) {
-                            setProfilesError(result.reason ?? 'Unable to delete profile.')
+                            setProfilesError(result.reason ?? 'Impossible de supprimer le profil.')
                             return
                           }
                           setProfilesError(null)
                         }}
                       >
-                        Delete
+                        Supprimer
                       </button>
                     </>
                   )}
@@ -491,12 +310,12 @@ export function AccountPage() {
             type="text"
             value={newProfileName}
             onChange={(event) => setNewProfileName(event.target.value)}
-            placeholder="New tester name"
-            aria-label="New Tester Name"
+            placeholder="Nom du nouveau profil"
+            aria-label="Nom du nouveau profil"
             data-testid="account-profile-create-input"
           />
           <button type="submit" className="button" data-testid="account-profile-create-submit">
-            Add profile
+            Ajouter le profil
           </button>
         </form>
 
@@ -507,91 +326,16 @@ export function AccountPage() {
         ) : null}
       </section>
 
-      <section className="account-section" data-testid="account-cloud-section">
-        <h2>Cloud Account</h2>
-        <p className="small">Connect with email/password to sync a real cross-device profile.</p>
-
-        {cloudEnabled ? (
-          <>
-            {isLoadingSession ? <p className="small">Loading cloud session...</p> : null}
-
-            {!isLoadingSession && !sessionUser ? (
-              <div className="account-auth-grid">
-                <label className="account-label">
-                  Email
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(event) => setEmail(event.target.value)}
-                    autoComplete="email"
-                    disabled={isBusy}
-                  />
-                </label>
-
-                <label className="account-label">
-                  Password
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
-                    autoComplete="current-password"
-                    disabled={isBusy}
-                  />
-                </label>
-
-                <div className="account-actions">
-                  <button type="button" className="button button-primary" onClick={submitSignIn} disabled={isBusy}>
-                    Sign In
-                  </button>
-                  <button type="button" className="button" onClick={submitSignUp} disabled={isBusy}>
-                    Sign Up
-                  </button>
-                </div>
-              </div>
-            ) : null}
-
-            {!isLoadingSession && sessionUser ? (
-              <div className="account-connected">
-                <p data-testid="account-connected-email">
-                  Connected as {sessionUser.email ?? 'unknown'}
-                </p>
-                <div className="account-actions">
-                  <button type="button" className="button button-primary" onClick={uploadLocalProfile} disabled={isBusy}>
-                    Upload Local Profile
-                  </button>
-                  <button type="button" className="button" onClick={downloadCloudProfile} disabled={isBusy}>
-                    Download Cloud Profile
-                  </button>
-                  <button type="button" className="button" onClick={disconnectCloudAccount} disabled={isBusy}>
-                    Sign Out
-                  </button>
-                  <button
-                    type="button"
-                    className="button"
-                    onClick={() => window.location.reload()}
-                    disabled={isBusy}
-                  >
-                    Reload App
-                  </button>
-                </div>
-              </div>
-            ) : null}
-          </>
-        ) : (
-          <p className="small" data-testid="account-cloud-disabled-note">Cloud auth is disabled for this app build.</p>
-        )}
-      </section>
-
       <section className="account-section account-danger-zone" data-testid="account-danger-zone">
-        <h2>Danger Zone</h2>
-        <p className="small">This resets your game profile data. This action cannot be undone.</p>
+        <h2>Zone dangereuse</h2>
+        <p className="small">Cette action réinitialise ton profil de jeu. Impossible de revenir en arrière.</p>
         <button
           type="button"
           className="button button-danger"
           data-testid="account-reset-trigger"
           onClick={() => setIsResetConfirmOpen(true)}
         >
-          Reset Profile Data
+          Réinitialiser le profil
         </button>
         {isResetConfirmOpen ? (
           <div className="account-danger-confirm">
@@ -604,7 +348,7 @@ export function AccountPage() {
                 setIsResetConfirmOpen(false)
               }}
             >
-              Confirm Reset
+              Confirmer la réinitialisation
             </button>
             <button
               type="button"
@@ -612,19 +356,25 @@ export function AccountPage() {
               data-testid="account-reset-cancel"
               onClick={() => setIsResetConfirmOpen(false)}
             >
-              Cancel
+              Annuler
             </button>
           </div>
         ) : null}
       </section>
 
-      {error ? (
-        <p className="error" role="alert">
-          {error}
-        </p>
-      ) : null}
+      <section className="account-section" data-testid="account-legal-links">
+        <h2>Légal & confidentialité</h2>
+        <p className="small">Consulte la politique de confidentialite et les mentions IP avant publication.</p>
+        <div className="account-actions">
+          <Link className="button button-primary" to="/privacy">
+            Politique de confidentialité
+          </Link>
+          <Link className="button" to="/legal">
+            Mentions IP
+          </Link>
+        </div>
+      </section>
 
-      {info ? <p className="small">{info}</p> : null}
     </section>
   )
 }

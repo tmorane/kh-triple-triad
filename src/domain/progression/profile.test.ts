@@ -45,6 +45,22 @@ describe('profile persistence', () => {
     localStorage.clear()
   })
 
+  test('migrates the old KH single profile storage key into PokeTriad storage', () => {
+    const legacyProfileStorageKey = 'kh-triple-triad-v1-profile'
+    const legacyProfile = {
+      ...createDefaultProfile(),
+      gold: 420,
+    }
+
+    localStorage.setItem(legacyProfileStorageKey, JSON.stringify(legacyProfile))
+
+    const profile = loadProfile()
+
+    expect(PROFILE_STORAGE_KEY).toBe('poketriad-v1-profile')
+    expect(profile.gold).toBe(420)
+    expect(localStorage.getItem(PROFILE_STORAGE_KEY)).toBeTruthy()
+  })
+
   test('creates a default profile on first launch', () => {
     const profile = loadProfile()
 
@@ -86,6 +102,9 @@ describe('profile persistence', () => {
       'm1_type_specialist',
       'm2_combo_practitioner',
       'm3_corner_tactician',
+      'b1_win_streak',
+      'b2_match_grinder',
+      'b3_collection_hunter',
     ])
     expect(profile.achievementProgress).toEqual({
       matchesPlayed: 0,
@@ -124,39 +143,17 @@ describe('profile persistence', () => {
     expect(profile.specialPackPity).toEqual({ legendaryFocusChancePercent: 1 })
   })
 
-  test('createResetProfile gives 6 common, 2 uncommon, 1 rare, 1 epic starter cards', () => {
+  test('createResetProfile gives only the fixed starter cards', () => {
     const profile = createResetProfile()
 
-    expect(profile.ownedCardIds).toHaveLength(10)
-    expect(new Set(profile.ownedCardIds).size).toBe(10)
-    expect(Object.keys(profile.cardCopiesById)).toHaveLength(10)
-    expect(Object.values(profile.cardCopiesById)).toEqual(Array(10).fill(1))
+    expect(profile.ownedCardIds).toEqual(starterDeck)
+    expect(Object.keys(profile.cardCopiesById)).toHaveLength(5)
+    expect(Object.values(profile.cardCopiesById)).toEqual(Array(5).fill(1))
     expect(profile.shinyCardCopiesById).toEqual({})
 
-    const rarityCounts = profile.ownedCardIds.reduce(
-      (counts, cardId) => {
-        const rarity = cardPool.find((card) => card.id === cardId)?.rarity
-        if (!rarity) {
-          return counts
-        }
-        counts[rarity] += 1
-        return counts
-      },
-      { common: 0, uncommon: 0, rare: 0, epic: 0, legendary: 0 },
-    )
-
-    expect(rarityCounts).toEqual({
-      common: 6,
-      uncommon: 2,
-      rare: 1,
-      epic: 1,
-      legendary: 0,
-    })
-
     expect(profile.deckSlots[0].cards).toHaveLength(5)
-    expect(profile.deckSlots[0].cards4x4).toHaveLength(8)
+    expect(profile.deckSlots[0].cards).toEqual(starterDeck)
     expect(profile.deckSlots[0].cards.every((cardId) => profile.ownedCardIds.includes(cardId))).toBe(true)
-    expect(profile.deckSlots[0].cards4x4.every((cardId) => profile.ownedCardIds.includes(cardId))).toBe(true)
     expect(profile.rankedByMode['4x4'].tier).toBe('iron')
     expect(profile.rankedByMode['4x4'].lp).toBe(0)
   })
@@ -303,7 +300,7 @@ describe('profile persistence', () => {
     expect(migrated.deckSlots[0].mode).toBe('4x4')
     expect(migrated.deckSlots[1].mode).toBe('4x4')
     expect(migrated.deckSlots[2].mode).toBe('4x4')
-    expect(Object.keys(migrated.missions)).toHaveLength(3)
+    expect(Object.keys(migrated.missions)).toHaveLength(6)
     expect(migrated.rankedByMode['4x4']).toEqual({
       tier: 'iron',
       division: 'IV',
@@ -626,6 +623,46 @@ describe('profile persistence', () => {
     expect(loaded.achievementProgress.matchesPlayed).toBe(0)
     expect(loaded.achievementProgress.shinyCrafted).toBe(0)
     expect(loaded.achievementRewardsClaimedById).toEqual({})
+  })
+
+  test('keeps legacy mission progress when loading a v12 profile that has only old mission ids', () => {
+    const legacyV12 = {
+      ...createDefaultProfile(),
+      version: 12 as const,
+      missions: {
+        m1_type_specialist: {
+          id: 'm1_type_specialist' as const,
+          progress: 4,
+          target: 5,
+          completed: false,
+          claimed: false,
+        },
+        m2_combo_practitioner: {
+          id: 'm2_combo_practitioner' as const,
+          progress: 2,
+          target: 6,
+          completed: false,
+          claimed: false,
+        },
+        m3_corner_tactician: {
+          id: 'm3_corner_tactician' as const,
+          progress: 8,
+          target: 12,
+          completed: false,
+          claimed: false,
+        },
+      },
+    }
+
+    localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(legacyV12))
+    const loaded = loadProfile()
+
+    expect(loaded.missions.m1_type_specialist.progress).toBe(4)
+    expect(loaded.missions.m2_combo_practitioner.progress).toBe(2)
+    expect(loaded.missions.m3_corner_tactician.progress).toBe(8)
+    expect(loaded.missions.b1_win_streak.progress).toBe(0)
+    expect(loaded.missions.b2_match_grinder.progress).toBe(0)
+    expect(loaded.missions.b3_collection_hunter.progress).toBe(0)
   })
 
   test('migrates v7 profile ranked into both v12 ladders', () => {

@@ -14,13 +14,17 @@ import type {
   RankedState,
   RankedTierId,
   Rarity,
+  TrackedPokemonState,
 } from '../types'
 import { evaluateAchievements, isAchievementId } from './achievements'
-import { createInitialMissionsProgress } from './missions'
+import { createInitialMissionsProgress, missionIds } from './missionCatalog'
+import { createInitialTrackedPokemonState } from './pokedexProgression'
 import { createInitialRankedState } from './ranked'
 
-export const PROFILE_STORAGE_KEY = 'kh-triple-triad-v1-profile'
-const STORED_PROFILES_STORAGE_KEY = 'kh-triple-triad-v1-profiles'
+export const PROFILE_STORAGE_KEY = 'poketriad-v1-profile'
+const LEGACY_PROFILE_STORAGE_KEY = 'kh-triple-triad-v1-profile'
+const STORED_PROFILES_STORAGE_KEY = 'poketriad-v1-profiles'
+const LEGACY_STORED_PROFILES_STORAGE_KEY = 'kh-triple-triad-v1-profiles'
 const STORED_PROFILES_VERSION = 1
 const DEFAULT_PLAYER_NAME = 'Joueur'
 const MAX_PLAYER_NAME_LENGTH = 20
@@ -32,7 +36,6 @@ const DEFAULT_DECK_SLOT_MODE: MatchMode = '4x4'
 const LEGENDARY_FOCUS_PITY_BASE_CHANCE_PERCENT = 1
 const LEGENDARY_FOCUS_PITY_MAX_CHANCE_PERCENT = 100
 const packInventoryRarities: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary']
-const missionIds: MissionId[] = ['m1_type_specialist', 'm2_combo_practitioner', 'm3_corner_tactician']
 const tutorialElementIds = new Set<string>(ELEMENT_EFFECT_ORDERED_IDS)
 const legacyRankIds = new Set(['R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7', 'R8'])
 const rankedTierIds = new Set<RankedTierId>([
@@ -159,6 +162,7 @@ interface PlayerProfileV7Legacy
   extends Omit<
     PlayerProfile,
     | 'version'
+    | 'hasChosenPlayerName'
     | 'rankedByMode'
     | 'cardFragmentsById'
     | 'shinyCardCopiesById'
@@ -174,6 +178,7 @@ interface PlayerProfileV8Legacy
   extends Omit<
     PlayerProfile,
     | 'version'
+    | 'hasChosenPlayerName'
     | 'settings'
     | 'cardFragmentsById'
     | 'shinyCardCopiesById'
@@ -188,17 +193,26 @@ interface PlayerProfileV8Legacy
 interface PlayerProfileV9Legacy
   extends Omit<
     PlayerProfile,
-    'version' | 'cardFragmentsById' | 'shinyCardCopiesById' | 'achievementProgress' | 'missionRewardsGrantedById' | 'achievementRewardsClaimedById'
+    | 'version'
+    | 'hasChosenPlayerName'
+    | 'cardFragmentsById'
+    | 'shinyCardCopiesById'
+    | 'achievementProgress'
+    | 'missionRewardsGrantedById'
+    | 'achievementRewardsClaimedById'
   > {
   version: 9
 }
 
 interface PlayerProfileV10Legacy
-  extends Omit<PlayerProfile, 'version' | 'cardFragmentsById' | 'achievementProgress' | 'missionRewardsGrantedById' | 'achievementRewardsClaimedById'> {
+  extends Omit<
+    PlayerProfile,
+    'version' | 'hasChosenPlayerName' | 'cardFragmentsById' | 'achievementProgress' | 'missionRewardsGrantedById' | 'achievementRewardsClaimedById'
+  > {
   version: 10
 }
 
-interface PlayerProfileV11Legacy extends Omit<PlayerProfile, 'version' | 'achievementRewardsClaimedById'> {
+interface PlayerProfileV11Legacy extends Omit<PlayerProfile, 'version' | 'hasChosenPlayerName' | 'achievementRewardsClaimedById'> {
   version: 11
 }
 
@@ -256,6 +270,10 @@ export function isPlayerNameValid(name: string): { valid: boolean; reason?: stri
   return { valid: true }
 }
 
+export function shouldRequestPlayerName(profile: PlayerProfile): boolean {
+  return !profile.hasChosenPlayerName
+}
+
 export function createDefaultProfile(): PlayerProfile {
   return createProfileFromStarterCards(starterOwnedCardIds, starterDeck)
 }
@@ -272,6 +290,7 @@ function createProfileFromStarterCards(initialOwnedCardIds: CardId[], initialDec
   return {
     version: 12,
     playerName: DEFAULT_PLAYER_NAME,
+    hasChosenPlayerName: false,
     gold: 100,
     ownedCardIds,
     cardCopiesById: createCardCopiesById(ownedCardIds),
@@ -302,6 +321,7 @@ function createProfileFromStarterCards(initialOwnedCardIds: CardId[], initialDec
       '3x3': { ...initialRanked, resultStreak: { ...initialRanked.resultStreak } },
       '4x4': { ...initialRanked, resultStreak: { ...initialRanked.resultStreak } },
     },
+    trackedPokemon: createInitialTrackedPokemonState(),
     tutorialProgress: createDefaultTutorialProgress(),
     settings: {
       audioEnabled: true,
@@ -394,6 +414,7 @@ export function createStoredProfile(playerName: string): StoredProfileMutationRe
   const storedProfiles = getOrCreateStoredProfiles()
   const nextProfile = createDefaultProfile()
   nextProfile.playerName = playerName.trim()
+  nextProfile.hasChosenPlayerName = true
 
   const now = new Date().toISOString()
   const nextId = createStoredProfileId(new Set(storedProfiles.profiles.map((entry) => entry.id)))
@@ -528,7 +549,7 @@ function getOrCreateStoredProfiles(): StoredProfilesV1 {
 }
 
 function loadStoredProfilesFromStorage(): StoredProfilesV1 | null {
-  const raw = localStorage.getItem(STORED_PROFILES_STORAGE_KEY)
+  const raw = readStorageValue(STORED_PROFILES_STORAGE_KEY, LEGACY_STORED_PROFILES_STORAGE_KEY)
   if (!raw) {
     return null
   }
@@ -615,7 +636,7 @@ function loadStoredProfilesFromStorage(): StoredProfilesV1 | null {
 }
 
 function loadLegacyProfileFromStorage(): PlayerProfile {
-  const raw = localStorage.getItem(PROFILE_STORAGE_KEY)
+  const raw = readStorageValue(PROFILE_STORAGE_KEY, LEGACY_PROFILE_STORAGE_KEY)
   if (!raw) {
     return finalizeLoadedProfile(createDefaultProfile()).profile
   }
@@ -818,6 +839,20 @@ function persistStoredProfiles(storedProfiles: StoredProfilesV1): void {
 
 function syncLegacyProfile(profile: PlayerProfile): void {
   localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile))
+}
+
+function readStorageValue(storageKey: string, legacyStorageKey: string): string | null {
+  const raw = localStorage.getItem(storageKey)
+  if (raw) {
+    return raw
+  }
+
+  const legacyRaw = localStorage.getItem(legacyStorageKey)
+  if (legacyRaw) {
+    localStorage.setItem(storageKey, legacyRaw)
+  }
+
+  return legacyRaw
 }
 
 function createStoredProfileId(existingIds: Set<string> = new Set()): string {
@@ -1113,6 +1148,7 @@ function migrateProfileV11ToV12(profile: PlayerProfileV11Legacy): PlayerProfile 
   return {
     ...profile,
     version: 12,
+    hasChosenPlayerName: profile.playerName.trim() !== DEFAULT_PLAYER_NAME,
     achievementRewardsClaimedById: {},
   }
 }
@@ -1140,7 +1176,11 @@ function finalizeLoadedProfile(profile: PlayerProfile): { profile: PlayerProfile
       syncTutorialProgress(
         syncMissions(
           syncMissionRewardsGrantedById(
-            syncAchievementRewardsClaimedById(syncAchievementProgress(syncCardFragmentsById(syncDeckSlots(syncPlayerName(profile))))),
+            syncTrackedPokemon(
+              syncAchievementRewardsClaimedById(
+                syncAchievementProgress(syncCardFragmentsById(syncDeckSlots(syncPlayerNameChoice(syncPlayerName(profile))))),
+              ),
+            ),
           ),
         ),
       ),
@@ -1232,6 +1272,17 @@ function syncAchievementRewardsClaimedById(profile: PlayerProfile): PlayerProfil
   return {
     ...profile,
     achievementRewardsClaimedById: next,
+  }
+}
+
+function syncTrackedPokemon(profile: PlayerProfile): PlayerProfile {
+  if (isTrackedPokemonState(profile.trackedPokemon)) {
+    return profile
+  }
+
+  return {
+    ...profile,
+    trackedPokemon: createInitialTrackedPokemonState(),
   }
 }
 
@@ -1382,6 +1433,20 @@ function syncPlayerName(profile: PlayerProfile): PlayerProfile {
   }
 }
 
+function syncPlayerNameChoice(profile: PlayerProfile): PlayerProfile {
+  const current = (profile as PlayerProfile & { hasChosenPlayerName?: unknown }).hasChosenPlayerName
+  const hasChosenPlayerName = typeof current === 'boolean' ? current : profile.playerName.trim() !== DEFAULT_PLAYER_NAME
+
+  if (current === hasChosenPlayerName) {
+    return profile
+  }
+
+  return {
+    ...profile,
+    hasChosenPlayerName,
+  }
+}
+
 function syncMissions(profile: PlayerProfile): PlayerProfile {
   if (!isMissionProgressMap(profile.missions)) {
     return {
@@ -1395,6 +1460,11 @@ function syncMissions(profile: PlayerProfile): PlayerProfile {
 
   for (const missionId of missionIds) {
     const current = profile.missions[missionId]
+    if (!current) {
+      changed = true
+      continue
+    }
+
     const target = nextMissions[missionId].target
     const progress = Math.max(0, Math.min(target, Math.floor(current.progress)))
     const completed = progress >= target
@@ -1512,6 +1582,7 @@ function isPlayerProfile(value: unknown): value is PlayerProfile {
     candidate.version === 12 &&
     typeof candidate.playerName === 'string' &&
     isPlayerNameValid(candidate.playerName).valid &&
+    (candidate.hasChosenPlayerName === undefined || typeof candidate.hasChosenPlayerName === 'boolean') &&
     typeof candidate.gold === 'number' &&
     Array.isArray(candidate.ownedCardIds) &&
     candidate.ownedCardIds.every((card) => typeof card === 'string') &&
@@ -1535,6 +1606,7 @@ function isPlayerProfile(value: unknown): value is PlayerProfile {
     isMissionProgressMap(candidate.missions) &&
     isMissionRewardsGrantedById(candidate.missionRewardsGrantedById) &&
     isRankedByMode(candidate.rankedByMode) &&
+    (candidate.trackedPokemon === undefined || isTrackedPokemonState(candidate.trackedPokemon)) &&
     (candidate.tutorialProgress === undefined || isTutorialProgress(candidate.tutorialProgress)) &&
     typeof candidate.settings?.audioEnabled === 'boolean'
   )
@@ -2016,7 +2088,7 @@ function isRankedState(value: unknown): value is RankedState {
   return (
     Number.isInteger(candidate.lp) &&
     Number(candidate.lp) >= 0 &&
-    Number(candidate.lp) <= 99 &&
+    Number(candidate.lp) <= 100 &&
     Number.isInteger(candidate.wins) &&
     Number(candidate.wins) >= 0 &&
     Number.isInteger(candidate.losses) &&
@@ -2029,7 +2101,39 @@ function isRankedState(value: unknown): value is RankedState {
     Number.isInteger(candidate.resultStreak?.count) &&
     Number(candidate.resultStreak?.count) >= 0 &&
     Number.isInteger(candidate.demotionShieldLosses) &&
-    Number(candidate.demotionShieldLosses) >= 0
+    Number(candidate.demotionShieldLosses) >= 0 &&
+    (candidate.promotionSeries === undefined ||
+      candidate.promotionSeries === null ||
+      (typeof candidate.promotionSeries === 'object' &&
+        !Array.isArray(candidate.promotionSeries) &&
+        Number.isInteger(candidate.promotionSeries.wins) &&
+        Number(candidate.promotionSeries.wins) >= 0 &&
+        Number.isInteger(candidate.promotionSeries.losses) &&
+        Number(candidate.promotionSeries.losses) >= 0)) &&
+    (candidate.seasonId === undefined || typeof candidate.seasonId === 'string') &&
+    (candidate.seasonLeagueRewardsClaimed === undefined ||
+      (isRecord(candidate.seasonLeagueRewardsClaimed) &&
+        Object.entries(candidate.seasonLeagueRewardsClaimed).every(
+          ([tierId, claimed]) => rankedTierIds.has(tierId as RankedTierId) && claimed === true,
+        )))
+  )
+}
+
+function isTrackedPokemonState(value: unknown): value is TrackedPokemonState {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false
+  }
+
+  const candidate = value as Partial<TrackedPokemonState>
+  return (
+    (candidate.targetCardId === null || typeof candidate.targetCardId === 'string') &&
+    Number.isInteger(candidate.gaugePoints) &&
+    Number(candidate.gaugePoints) >= 0 &&
+    Number(candidate.gaugePoints) <= 99 &&
+    Number.isInteger(candidate.completedGaugesInWindow) &&
+    Number(candidate.completedGaugesInWindow) >= 0 &&
+    Number(candidate.completedGaugesInWindow) <= 10 &&
+    (candidate.windowStartedAt === null || typeof candidate.windowStartedAt === 'string')
   )
 }
 
@@ -2037,6 +2141,8 @@ function cloneRankedState(state: RankedState): RankedState {
   return {
     ...state,
     resultStreak: { ...state.resultStreak },
+    promotionSeries: state.promotionSeries ? { ...state.promotionSeries } : state.promotionSeries,
+    seasonLeagueRewardsClaimed: state.seasonLeagueRewardsClaimed ? { ...state.seasonLeagueRewardsClaimed } : state.seasonLeagueRewardsClaimed,
   }
 }
 
@@ -2073,14 +2179,17 @@ function isMissionProgressMap(value: unknown): value is PlayerProfile['missions'
   }
 
   const candidate = value as Record<string, unknown>
-  return missionIds.every((missionId) => {
-    const mission = candidate[missionId]
+  for (const [missionIdText, mission] of Object.entries(candidate)) {
+    if (!missionIds.includes(missionIdText as MissionId)) {
+      return false
+    }
+
     if (!mission || typeof mission !== 'object' || Array.isArray(mission)) {
       return false
     }
 
     const entry = mission as Partial<PlayerProfile['missions'][MissionId]>
-    if (entry.id !== missionId) {
+    if (entry.id !== missionIdText) {
       return false
     }
     if (!Number.isInteger(entry.progress) || Number(entry.progress) < 0) {
@@ -2092,9 +2201,9 @@ function isMissionProgressMap(value: unknown): value is PlayerProfile['missions'
     if (typeof entry.completed !== 'boolean' || typeof entry.claimed !== 'boolean') {
       return false
     }
+  }
 
-    return true
-  })
+  return true
 }
 
 function doesOwnershipMatchCopies(

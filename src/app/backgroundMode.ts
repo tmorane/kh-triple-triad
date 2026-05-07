@@ -1,6 +1,7 @@
 export type BackgroundMode = 'light' | 'dark'
 
-export const BACKGROUND_MODE_STORAGE_KEY = 'kh-triple-triad-background-mode-v1'
+export const BACKGROUND_MODE_STORAGE_KEY = 'poketriad-background-mode-v1'
+const LEGACY_BACKGROUND_MODE_STORAGE_KEY = 'kh-triple-triad-background-mode-v1'
 
 function isBackgroundMode(value: string | null): value is BackgroundMode {
   return value === 'light' || value === 'dark'
@@ -13,7 +14,17 @@ export function readStoredBackgroundMode(): BackgroundMode | null {
 
   try {
     const storedValue = window.localStorage.getItem(BACKGROUND_MODE_STORAGE_KEY)
-    return isBackgroundMode(storedValue) ? storedValue : null
+    if (isBackgroundMode(storedValue)) {
+      return storedValue
+    }
+
+    const legacyStoredValue = window.localStorage.getItem(LEGACY_BACKGROUND_MODE_STORAGE_KEY)
+    if (isBackgroundMode(legacyStoredValue)) {
+      window.localStorage.setItem(BACKGROUND_MODE_STORAGE_KEY, legacyStoredValue)
+      return legacyStoredValue
+    }
+
+    return null
   } catch {
     return null
   }

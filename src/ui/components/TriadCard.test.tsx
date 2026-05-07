@@ -45,7 +45,7 @@ describe('TriadCard splashart', () => {
 
     const image = container.querySelector<HTMLImageElement>('.triad-card__art-image')
     expect(image).not.toBeNull()
-    expect(image?.getAttribute('src')).toContain('/splashart/Ombre.png')
+    expect(image?.getAttribute('src')).toContain('/splashart/Ombre.webp')
   })
 
   test('renders type logo badge for owned card and hides it for locked card', () => {
@@ -155,7 +155,7 @@ describe('TriadCard splashart', () => {
 
     const image = container.querySelector<HTMLImageElement>('.triad-card__art-image')
     expect(image).not.toBeNull()
-    expect(image?.getAttribute('src')).toContain('/splashart-shiny/Abo_Shiny.png')
+    expect(image?.getAttribute('src')).toContain('/splashart-shiny/Abo_Shiny.webp')
   })
 
   test('fragment-silhouette mode renders art for locked card', () => {
@@ -165,7 +165,7 @@ describe('TriadCard splashart', () => {
 
     const image = container.querySelector<HTMLImageElement>('.triad-card__art-image')
     expect(image).not.toBeNull()
-    expect(image?.getAttribute('src')).toContain('/splashart/Abo.png')
+    expect(image?.getAttribute('src')).toContain('/splashart/Abo.webp')
     expect(container.querySelector('.triad-card__frame')).toBeNull()
   })
 })

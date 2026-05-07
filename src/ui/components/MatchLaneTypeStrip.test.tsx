@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
 import type { MatchLaneTypeSlot } from '../../domain/match/effectsViewModel'
 import { MatchLaneTypeStrip } from './MatchLaneTypeStrip'
 
@@ -21,6 +22,16 @@ function buildSlots(states: Array<'active' | 'used' | 'disabled'>): MatchLaneTyp
     effectText: `Effet ${index + 1}`,
     displayLabel: base[index]?.label ?? 'Normal',
   }))
+}
+
+function readCssRule(selector: string): string {
+  const css = readFileSync(new URL('../../index.css', import.meta.url), 'utf8')
+  const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const rule = css.match(new RegExp(`${escapedSelector}\\s*\\{[^}]*\\}`, 's'))?.[0]
+  if (!rule) {
+    throw new Error(`Missing CSS rule for ${selector}.`)
+  }
+  return rule
 }
 
 describe('MatchLaneTypeStrip', () => {
@@ -59,5 +70,13 @@ describe('MatchLaneTypeStrip', () => {
     const tooltip = screen.getByTestId('match-lane-type-strip-tooltip-cpu')
     expect(tooltip).toHaveTextContent('Mode normal: effets désactivés.')
     expect(tooltip).toHaveTextContent('Type déjà consommé dans cette partie.')
+  })
+
+  test('keeps the effect tooltip layer above overlapping hand cards', () => {
+    const stripRule = readCssRule('.match-lane > .match-lane-type-strip')
+    const tooltipRule = readCssRule('.match-lane-type-strip__tooltip')
+
+    expect(stripRule).toMatch(/z-index:\s*(?:[6-9]\d|[1-9]\d{2,})\s*;/)
+    expect(tooltipRule).toMatch(/z-index:\s*(?:[7-9]\d|[1-9]\d{2,})\s*;/)
   })
 })

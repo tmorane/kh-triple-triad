@@ -21,6 +21,10 @@ function makeEntry(idSeed: string, text: string, tone: EffectFeedEntry['tone']):
   }
 }
 
+function formatTurnsBadge(turns: number): string {
+  return `${turns}T`
+}
+
 function diffAddedValues(previousValues: string[], nextValues: string[]): string[] {
   const previousSet = new Set(previousValues)
   return nextValues.filter((value) => !previousSet.has(value))
@@ -61,7 +65,7 @@ export function deriveEffectFeedEntries(previous: MatchState, next: MatchState, 
     entries.push(
       makeEntry(
         `flood:${next.turns}:${nextElementState.floodedCell}`,
-        `🌊 Case ${nextElementState.floodedCell + 1} inondée.`,
+        `Eau: case ${nextElementState.floodedCell + 1} inondée, -3 max au prochain non-Spectre.`,
         'debuff',
       ),
     )
@@ -82,7 +86,7 @@ export function deriveEffectFeedEntries(previous: MatchState, next: MatchState, 
       entries.push(
         makeEntry(
           `freeze:${next.turns}:${actor}:${blockedCell}`,
-          `❄️ Case ${blockedCell + 1} gelée pour ${actorLabel(actor)} (${nextFrozen.turnsRemaining} tour(s)).`,
+          `Glace: case ${blockedCell + 1} gelée ${formatTurnsBadge(nextFrozen.turnsRemaining)} pour ${actorLabel(actor)}.`,
           'debuff',
         ),
       )
@@ -97,7 +101,7 @@ export function deriveEffectFeedEntries(previous: MatchState, next: MatchState, 
       entries.push(
         makeEntry(
           `poison-hand:${next.turns}:${actor}:${cardId}`,
-          `☠️ ${cardName} (${actorLabel(actor)}) est empoisonnée en main.`,
+          `Poison: ${cardName} (${actorLabel(actor)}) aura -1 partout après pose.`,
           'debuff',
         ),
       )
@@ -118,7 +122,7 @@ export function deriveEffectFeedEntries(previous: MatchState, next: MatchState, 
       entries.push(
         makeEntry(
           `pose:${next.turns}:${actor}:${element}`,
-          `✨ Pouvoir ${getElementLabel(elementId)} utilisé par ${actorLabel(actor)}.`,
+          `${getElementLabel(elementId)}: pouvoir utilisé par ${actorLabel(actor)}.`,
           'info',
         ),
       )
@@ -146,7 +150,7 @@ export function deriveEffectFeedEntries(previous: MatchState, next: MatchState, 
       entries.push(
         makeEntry(
           `burn:${next.turns}:${cell}`,
-          `🔥 ${cardName} brûle (${nextEffects.burnTicksRemaining} tour(s)).`,
+          `Feu: ${cardName} -1 partout ${formatTurnsBadge(nextEffects.burnTicksRemaining)}.`,
           'debuff',
         ),
       )
@@ -157,48 +161,48 @@ export function deriveEffectFeedEntries(previous: MatchState, next: MatchState, 
     const previousVolatileCount = previousAllStatsMinusOneStacks.filter((stack) => stack.source === 'vol').length
     const nextVolatileCount = nextAllStatsMinusOneStacks.filter((stack) => stack.source === 'vol').length
     if (nextVolatileCount > previousVolatileCount) {
-      entries.push(makeEntry(`vol:${next.turns}:${cell}`, `🕊️ ${cardName} subit un malus temporaire.`, 'debuff'))
+      entries.push(makeEntry(`vol:${next.turns}:${cell}`, `Vol: ${cardName} -1 partout 1T.`, 'debuff'))
     }
     const previousGroundCount = previousAllStatsMinusOneStacks.filter((stack) => stack.source === 'sol').length
     const nextGroundCount = nextAllStatsMinusOneStacks.filter((stack) => stack.source === 'sol').length
     if (nextGroundCount > previousGroundCount) {
-      entries.push(makeEntry(`sol:${next.turns}:${cell}`, `🪨 ${cardName} subit un malus temporaire de Sol.`, 'debuff'))
+      entries.push(makeEntry(`sol:${next.turns}:${cell}`, `Sol: ${cardName} -1 partout 1T.`, 'debuff'))
     }
 
     if (!previousEffects?.unflippableUntilEndOfOpponentNextTurn && nextEffects.unflippableUntilEndOfOpponentNextTurn) {
-      entries.push(makeEntry(`shield:${next.turns}:${cell}`, `⚡ ${cardName} devient intouchable.`, 'buff'))
+      entries.push(makeEntry(`shield:${next.turns}:${cell}`, `Electrik: ${cardName} gagne SHIELD 1T.`, 'buff'))
     }
 
     if (!previousEffects?.swappedHighLowUntilMatchEnd && nextEffects.swappedHighLowUntilMatchEnd) {
-      entries.push(makeEntry(`psy:${next.turns}:${cell}`, `🔄 ${cardName} a ses stats inversées.`, 'info'))
+      entries.push(makeEntry(`psy:${next.turns}:${cell}`, `Psy: ${cardName} inverse meilleure et pire stat.`, 'info'))
     }
 
     const previousRockShield = previousEffects?.rockShieldCharges ?? 0
     if (nextEffects.rockShieldCharges > previousRockShield) {
-      entries.push(makeEntry(`rock-plus:${next.turns}:${cell}`, `🪨 ${cardName} gagne un bouclier.`, 'buff'))
+      entries.push(makeEntry(`rock-plus:${next.turns}:${cell}`, `Roche: ${cardName} gagne SHIELD ${nextEffects.rockShieldCharges}.`, 'buff'))
     }
     if (nextEffects.rockShieldCharges < previousRockShield) {
-      entries.push(makeEntry(`rock-minus:${next.turns}:${cell}`, `🪨 Bouclier de ${cardName} consommé.`, 'info'))
+      entries.push(makeEntry(`rock-minus:${next.turns}:${cell}`, `Roche: bouclier de ${cardName} consommé.`, 'info'))
     }
 
     if (!previousEffects?.poisonFirstCombatPending && nextEffects.poisonFirstCombatPending) {
       entries.push(
-        makeEntry(`poison-pending:${next.turns}:${cell}`, `☠️ ${cardName} subira -1 sur toutes ses stats jusqu a la fin du match.`, 'debuff'),
+        makeEntry(`poison-pending:${next.turns}:${cell}`, `Poison: ${cardName} -1 partout jusqu'a la fin.`, 'debuff'),
       )
     }
 
     if ((previousEffects?.insectEntryStacks ?? 0) < nextEffects.insectEntryStacks) {
-      entries.push(makeEntry(`insect:${next.turns}:${cell}`, `🐞 ${cardName} gagne essaim +${nextEffects.insectEntryStacks}.`, 'buff'))
+      entries.push(makeEntry(`insect:${next.turns}:${cell}`, `Insecte: ${cardName} +${nextEffects.insectEntryStacks} partout.`, 'buff'))
     }
 
     if (!previousEffects?.dragonApplied && nextEffects.dragonApplied) {
-      entries.push(makeEntry(`dragon:${next.turns}:${cell}`, `🐉 ${cardName} réorganise ses stats.`, 'info'))
+      entries.push(makeEntry(`dragon:${next.turns}:${cell}`, `Dragon: ${cardName} gagne +2/-1 réparti.`, 'info'))
     }
   }
 
   const moveElementId = getCard(move.cardId).elementId
   if (entries.length === 0 && isOnPoseElement(moveElementId) && nextElementState.usedOnPoseByActor[move.actor][moveElementId]) {
-    entries.push(makeEntry(`generic:${next.turns}:${move.actor}:${move.cardId}`, '✨ Effet de type appliqué.', 'info'))
+    entries.push(makeEntry(`generic:${next.turns}:${move.actor}:${move.cardId}`, `${getElementLabel(moveElementId)}: effet appliqué.`, 'info'))
   }
 
   return entries

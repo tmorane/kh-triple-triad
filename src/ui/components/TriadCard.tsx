@@ -98,20 +98,18 @@ export const TriadCard = memo(function TriadCard({
     () => (hideArtForLock ? [] : getCardArtCandidates(card.name, { shiny: hasShiny })),
     [card.name, hasShiny, hideArtForLock],
   )
+  const artKey = useMemo(
+    () => `${card.name}::${hasShiny ? 'shiny' : 'normal'}::${hideArtForLock ? 'hidden' : 'visible'}`,
+    [card.name, hasShiny, hideArtForLock],
+  )
   const interactiveCardRef = useRef<HTMLButtonElement | null>(null)
-  const artCandidateIndexRef = useRef(0)
   const [isArtVisible, setIsArtVisible] = useState(() => {
     if (hideArtForLock || !deferArtLoading) {
       return true
     }
     return typeof window === 'undefined' || typeof window.IntersectionObserver === 'undefined'
   })
-  const [artUnavailable, setArtUnavailable] = useState(false)
-
-  useEffect(() => {
-    artCandidateIndexRef.current = 0
-    setArtUnavailable(false)
-  }, [card.name, hideArtForLock])
+  const [artFailureByKey, setArtFailureByKey] = useState<Record<string, number>>({})
 
   useEffect(() => {
     if (isArtVisible || hideArtForLock || !deferArtLoading) {
@@ -168,7 +166,10 @@ export const TriadCard = memo(function TriadCard({
   const rightTrend = locked ? 'neutral' : (statTrends?.right ?? 'neutral')
   const bottomTrend = locked ? 'neutral' : (statTrends?.bottom ?? 'neutral')
   const leftTrend = locked ? 'neutral' : (statTrends?.left ?? 'neutral')
-  const artSrc = !hideArtForLock && isArtVisible && !artUnavailable ? (artCandidates[0] ?? null) : null
+  const artCandidateIndex = artFailureByKey[artKey] ?? 0
+  const artUnavailable = artCandidateIndex === -1
+  const artSrc =
+    !hideArtForLock && isArtVisible && !artUnavailable ? (artCandidates[artCandidateIndex] ?? null) : null
   const showSigil = hideArtForLock || artUnavailable || !isArtVisible
   const useCompactName = context === 'setup' && !locked && getLongestNameSegmentLength(card.name) >= 9
   const nameClassName = useCompactName ? 'triad-card__name triad-card__name--compact' : 'triad-card__name'
@@ -205,14 +206,27 @@ export const TriadCard = memo(function TriadCard({
   }
 
   function handleArtError(event: SyntheticEvent<HTMLImageElement>) {
-    const nextCandidateIndex = artCandidateIndexRef.current + 1
-    if (nextCandidateIndex >= artCandidates.length) {
-      setArtUnavailable(true)
-      return
-    }
+    setArtFailureByKey((current) => {
+      const currentIndex = current[artKey] ?? 0
+      if (currentIndex === -1) {
+        return current
+      }
 
-    artCandidateIndexRef.current = nextCandidateIndex
-    event.currentTarget.src = artCandidates[nextCandidateIndex]
+      const nextCandidateIndex = currentIndex + 1
+      if (nextCandidateIndex >= artCandidates.length) {
+        return {
+          ...current,
+          [artKey]: -1,
+        }
+      }
+
+      return {
+        ...current,
+        [artKey]: nextCandidateIndex,
+      }
+    })
+
+    event.preventDefault()
   }
 
   const content = isFragmentSilhouette ? (

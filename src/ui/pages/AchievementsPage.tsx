@@ -19,10 +19,7 @@ export function AchievementsPage() {
     return ids
   }, [profile.achievements])
 
-  const claimableRewardCount = useMemo(
-    () => listClaimableAchievementRewardIds(profile).length,
-    [profile.achievements, profile.achievementRewardsClaimedById],
-  )
+  const claimableRewardCount = listClaimableAchievementRewardIds(profile).length
   const claimButtonLabel = `Récupérer ${claimableRewardCount} pack(s) commun(s)`
 
   return (
@@ -105,7 +102,7 @@ export function AchievementsPage() {
         <Link className="button button-primary" to="/setup">
           Lancer un match
         </Link>
-        <Link className="button" to="/">
+        <Link className="button" to="/home">
           Accueil
         </Link>
       </div>

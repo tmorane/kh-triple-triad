@@ -23,7 +23,7 @@ const specialPackOrder: SpecialPackId[] = ['sans_coeur_focus', 'simili_focus', '
 const dropRarityOrder: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary']
 const SHOP_MODAL_PAGE_SIZE = 5
 const SHOP_MAX_STANDARD_PACK_QUANTITY = 20
-const generationFocusBaseRates: Record<Rarity, number> = { common: 70, uncommon: 22, rare: 5, epic: 2, legendary: 1 }
+const generationFocusBaseRates: Record<Rarity, number> = { common: 60, uncommon: 26, rare: 10, epic: 3, legendary: 1 }
 const generationFocusByPack: Record<'sans_coeur_focus' | 'simili_focus', 1 | 2> = {
   sans_coeur_focus: 1,
   simili_focus: 2,
@@ -31,6 +31,10 @@ const generationFocusByPack: Record<'sans_coeur_focus' | 'simili_focus', 1 | 2> 
 const GEN_1_MAX_POKEDEX_NUMBER = 151
 const GEN_2_MIN_POKEDEX_NUMBER = 152
 const GEN_2_MAX_POKEDEX_NUMBER = 251
+
+function isShopDemoToolsEnabled(): boolean {
+  return import.meta.env.VITE_SHOW_DEMO_TOOLS === 'true'
+}
 
 type AnyShopPackId = ShopPackId | SpecialPackId
 type DisplayPackId = AnyShopPackId | 'shiny_test'
@@ -43,53 +47,61 @@ interface PackVisual {
 
 const packVisuals: Record<DisplayPackId, PackVisual> = {
   common: {
-    tagline: 'Reliable foundations for every deck.',
+    tagline: 'Bases fiables pour tous les decks.',
     artSrc: '/packs/common-pack.svg',
   },
   uncommon: {
-    tagline: 'Specialized picks with sharper angles.',
+    tagline: 'Choix spécialisés avec plus de mordant.',
     artSrc: '/packs/uncommon-pack.svg',
   },
   rare: {
-    tagline: 'High-impact threats for decisive turns.',
+    tagline: 'Menaces fortes pour les tours décisifs.',
     artSrc: '/packs/rare-pack.svg',
   },
   epic: {
-    tagline: 'High-risk, high-reward momentum swings.',
+    tagline: 'Gros risque, grosse récompense, gros momentum.',
     artSrc: '/packs/epic-pack.svg',
   },
   legendary: {
-    tagline: 'Endgame royalty with unmatched pressure.',
+    tagline: 'Cartes royales de fin de jeu, pression maximale.',
     artSrc: '/packs/legendary-pack.svg',
   },
   sans_coeur_focus: {
-    tagline: 'Gen 1 Booster: 3 pulls from Kanto (#001-#151) with tuned rarity odds.',
-    artSrc: '/packs/sans-coeur-focus-pack.png',
+    tagline: 'Booster Gen 1: 3 tirages de Kanto (#001-#151), raretés ajustées.',
+    artSrc: '/packs/sans-coeur-focus-pack.svg',
   },
   simili_focus: {
-    tagline: 'Gen 2 Booster: 3 pulls from Johto (#152-#251) with tuned rarity odds.',
-    artSrc: '/packs/simili-focus-pack.png',
+    tagline: 'Booster Gen 2: 3 tirages de Johto (#152-#251), raretés ajustées.',
+    artSrc: '/packs/simili-focus-pack.svg',
   },
   legendary_focus: {
-    tagline: 'Target Booster: pick a legendary target, pity ramps after each miss.',
-    artSrc: '/packs/legendary-focus-pack.png',
+    tagline: 'Booster ciblé: choisis une légendaire, la pity monte après chaque raté.',
+    artSrc: '/packs/legendary-focus-pack.svg',
   },
   shiny_test: {
-    tagline: 'Debug pack: 1 guaranteed shiny pull.',
+    tagline: 'Pack debug: 1 shiny garanti.',
     artSrc: '/packs/legendary-pack.svg',
   },
 }
 
 const packLabels: Record<DisplayPackId, string> = {
-  common: 'Common Pack',
-  uncommon: 'Uncommon Pack',
-  rare: 'Rare Pack',
-  epic: 'Epic Pack',
-  legendary: 'Legendary Pack',
-  sans_coeur_focus: 'Gen 1 Booster',
-  simili_focus: 'Gen 2 Booster',
-  legendary_focus: 'Legendary Target Booster',
-  shiny_test: 'Shiny Test Pack',
+  common: 'Pack commun',
+  uncommon: 'Pack peu commun',
+  rare: 'Pack rare',
+  epic: 'Pack épique',
+  legendary: 'Pack légendaire',
+  sans_coeur_focus: 'Booster Gen 1',
+  simili_focus: 'Booster Gen 2',
+  legendary_focus: 'Booster légendaire ciblé',
+  shiny_test: 'Pack shiny test',
+}
+
+const rarityLabels: Record<Rarity, string> = {
+  common: 'Commune',
+  uncommon: 'Peu commune',
+  rare: 'Rare',
+  epic: 'Épique',
+  legendary: 'Légendaire',
 }
 
 function formatPackLabel(packId: DisplayPackId): string {
@@ -97,7 +109,7 @@ function formatPackLabel(packId: DisplayPackId): string {
 }
 
 function formatRarityLabel(rarity: Rarity): string {
-  return `${rarity.charAt(0).toUpperCase()}${rarity.slice(1)}`
+  return rarityLabels[rarity]
 }
 
 function isOpenedInventoryPack(result: OpenedRevealResult): result is OpenedPackResult {
@@ -131,6 +143,7 @@ function sanitizePackQuantity(value: number): number {
 export function ShopPage() {
   const { profile, purchaseShopPack, purchaseShopPacks, openOwnedPack, openShinyTestPack, buySpecialPack, addTestGold } =
     useGame()
+  const showDemoTools = isShopDemoToolsEnabled()
   const [purchaseToast, setPurchaseToast] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [openPackId, setOpenPackId] = useState<ShopPackId | null>(null)
@@ -209,18 +222,18 @@ export function ShopPage() {
     }
 
     if (openedPackResult.packId === 'shiny_test') {
-      return 'Guaranteed shiny pull'
+      return 'Shiny garanti'
     }
 
     if (isOpenedInventoryPack(openedPackResult)) {
-      return `Remaining: x${openedPackResult.remainingPackCount}`
+      return `Restants: x${openedPackResult.remainingPackCount}`
     }
 
     if (openedPackResult.packId === 'legendary_focus' && openedPackResult.targetLegendaryCardId) {
-      return `Target: ${getCard(openedPackResult.targetLegendaryCardId).name}`
+      return `Cible: ${getCard(openedPackResult.targetLegendaryCardId).name}`
     }
 
-    return 'Opened instantly'
+    return 'Ouvert instantanément'
   }, [openedPackResult])
 
   useEffect(() => {
@@ -267,13 +280,13 @@ export function ShopPage() {
             }
 
       if (!receipt) {
-        throw new Error('Bulk purchase is unavailable in this context.')
+        throw new Error('Achat multiple indisponible ici.')
       }
 
-      setPurchaseToast(`${formatPackLabel(receipt.packId)} added to inventory (+${receipt.quantity}).`)
+      setPurchaseToast(`${formatPackLabel(receipt.packId)} ajouté à l'inventaire (+${receipt.quantity}).`)
       setError(null)
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unable to complete purchase.'
+      const message = err instanceof Error ? err.message : 'Achat impossible.'
       setError(message)
     }
   }
@@ -283,7 +296,7 @@ export function ShopPage() {
       const request: SpecialPackPurchaseRequest = { packId }
       if (packId === 'legendary_focus') {
         if (!legendaryFocusTargetCardId) {
-          throw new Error('Please select a legendary focus target.')
+          throw new Error('Choisis une cible légendaire.')
         }
         request.targetLegendaryCardId = legendaryFocusTargetCardId
       }
@@ -296,7 +309,7 @@ export function ShopPage() {
       setPurchaseToast(null)
       setError(null)
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unable to complete special pack purchase.'
+      const message = err instanceof Error ? err.message : 'Achat du pack spécial impossible.'
       setError(message)
     }
   }
@@ -311,7 +324,7 @@ export function ShopPage() {
       setPurchaseToast(null)
       setError(null)
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unable to open this pack.'
+      const message = err instanceof Error ? err.message : 'Impossible d ouvrir ce pack.'
       setError(message)
     }
   }
@@ -337,7 +350,7 @@ export function ShopPage() {
       setPurchaseToast(null)
       setError(null)
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unable to open shiny test pack.'
+      const message = err instanceof Error ? err.message : 'Impossible d ouvrir le pack shiny test.'
       setError(message)
     }
   }
@@ -357,37 +370,39 @@ export function ShopPage() {
   return (
     <section className="panel shop-panel">
       <div className="shop-headline">
-        <h1>Shop</h1>
-        <p className="small">Buy packs to unlock cards and increase duplicate copy counts.</p>
+        <h1>Boutique</h1>
+        <p className="small">Achète des packs pour débloquer des cartes et augmenter tes doublons.</p>
       </div>
 
       <div className="shop-balance" data-testid="shop-gold-value">
-        Gold: {profile.gold}
+        Or: {profile.gold}
       </div>
 
-      <div className="shop-tools">
-        <button
-          type="button"
-          className="button shop-test-gold-button"
-          onClick={() => {
-            addTestGold(1000)
-            setError(null)
-          }}
-          data-testid="shop-add-test-gold"
-        >
-          +1000 Gold (Test)
-        </button>
-        <button
-          type="button"
-          className="button shop-test-shiny-pack-button"
-          onClick={handleOpenShinyTestPack}
-          data-testid="shop-open-shiny-test-pack"
-        >
-          Shiny Pack x1 (Test)
-        </button>
-      </div>
+      {showDemoTools ? (
+        <div className="shop-tools">
+          <button
+            type="button"
+            className="button shop-test-gold-button"
+            onClick={() => {
+              addTestGold(1000)
+              setError(null)
+            }}
+            data-testid="shop-add-test-gold"
+          >
+            +1000 or (test)
+          </button>
+          <button
+            type="button"
+            className="button shop-test-shiny-pack-button"
+            onClick={handleOpenShinyTestPack}
+            data-testid="shop-open-shiny-test-pack"
+          >
+            Pack shiny x1 (test)
+          </button>
+        </div>
+      ) : null}
 
-      <div className="shop-pack-grid" aria-label="Shop packs">
+      <div className="shop-pack-grid" aria-label="Packs de la boutique">
         {packOrder.map((packId) => {
           const price = getPackPrice(packId)
           const dropRates = getPackDropRates(packId)
@@ -406,7 +421,7 @@ export function ShopPage() {
                 <img
                   className="shop-pack-art"
                   src={packVisual.artSrc}
-                  alt={`${formatPackLabel(packId)} artwork`}
+                  alt={`Illustration ${formatPackLabel(packId)}`}
                   loading="lazy"
                   decoding="async"
                 />
@@ -415,7 +430,7 @@ export function ShopPage() {
                 </span>
               </div>
               <p className="small shop-pack-progress">
-                Owned {ownedInRarity}/{cardsInRarity.length}
+                Possédées {ownedInRarity}/{cardsInRarity.length}
               </p>
               <div className="shop-pack-rates" data-testid={`shop-pack-rates-${packId}`}>
                 {dropRarityOrder.map((rarity) => (
@@ -429,7 +444,7 @@ export function ShopPage() {
                 ))}
               </div>
               <div className="shop-pack-quantity" data-testid={`buy-pack-quantity-${packId}`}>
-                <span className="shop-pack-quantity__label">Qty</span>
+                <span className="shop-pack-quantity__label">Qté</span>
                 <div className="shop-pack-quantity__controls">
                   <button
                     type="button"
@@ -441,7 +456,7 @@ export function ShopPage() {
                       }))
                     }
                     disabled={buyQuantity <= 1}
-                    aria-label={`Decrease ${formatPackLabel(packId)} purchase quantity`}
+                    aria-label={`Réduire la quantité d'achat ${formatPackLabel(packId)}`}
                     data-testid={`buy-pack-quantity-decrement-${packId}`}
                   >
                     -
@@ -459,7 +474,7 @@ export function ShopPage() {
                       }))
                     }
                     disabled={buyQuantity >= SHOP_MAX_STANDARD_PACK_QUANTITY}
-                    aria-label={`Increase ${formatPackLabel(packId)} purchase quantity`}
+                    aria-label={`Augmenter la quantité d'achat ${formatPackLabel(packId)}`}
                     data-testid={`buy-pack-quantity-increment-${packId}`}
                   >
                     +
@@ -472,14 +487,14 @@ export function ShopPage() {
                 disabled={!affordable}
                 onClick={() => handleBuyPack(packId, buyQuantity)}
                 data-testid={`buy-pack-${packId}`}
-                aria-label={`Buy ${formatPackLabel(packId)} x${buyQuantity} for ${totalPrice} gold`}
+                aria-label={`Acheter ${formatPackLabel(packId)} x${buyQuantity} pour ${totalPrice} or`}
               >
-                <span className="shop-price-buy__label">Price</span>
+                <span className="shop-price-buy__label">Prix</span>
                 <span className="shop-price-buy__value">
                   {totalPrice}
                   <span className="shop-price-buy__unit">G</span>
                 </span>
-                <span className="shop-price-buy__hint">{affordable ? `Buy x${buyQuantity}` : 'Not enough gold'}</span>
+                <span className="shop-price-buy__hint">{affordable ? `Acheter x${buyQuantity}` : 'Pas assez d or'}</span>
               </button>
               <button
                 type="button"
@@ -488,7 +503,7 @@ export function ShopPage() {
                 onClick={() => handleOpenOwnedPack(packId)}
                 data-testid={`open-owned-pack-${packId}`}
               >
-                {ownedPackCount > 0 ? 'Open now' : 'No pack to open'}
+                {ownedPackCount > 0 ? 'Ouvrir' : 'Aucun pack'}
               </button>
               <button
                 type="button"
@@ -508,7 +523,7 @@ export function ShopPage() {
                 }}
                 data-testid={`toggle-pack-cards-${packId}`}
               >
-                {isOpen ? 'Close preview' : 'View cards'}
+                {isOpen ? 'Fermer aperçu' : 'Voir les cartes'}
               </button>
             </article>
           )
@@ -517,8 +532,8 @@ export function ShopPage() {
 
       <section className="shop-special-section" aria-labelledby="shop-special-title">
         <div className="shop-special-head">
-          <h2 id="shop-special-title">Special Packs</h2>
-          <p className="small">Instant opening with generation/target boosters.</p>
+          <h2 id="shop-special-title">Packs spéciaux</h2>
+          <p className="small">Ouverture instantanée avec boosters de génération ou de cible.</p>
         </div>
         <div className="shop-special-grid">
           {specialPackOrder.map((packId) => {
@@ -549,12 +564,12 @@ export function ShopPage() {
                     disabled={!canBuy}
                     onClick={() => handleBuySpecialPack(packId)}
                     data-testid={`buy-open-special-pack-${packId}`}
-                    aria-label={`Buy and open ${formatPackLabel(packId)} for ${price} gold`}
+                    aria-label={`Acheter et ouvrir ${formatPackLabel(packId)} pour ${price} or`}
                   >
                     <img
                       className="shop-special-pack-art"
                       src={visual.artSrc}
-                      alt={`${formatPackLabel(packId)} artwork`}
+                      alt={`Illustration ${formatPackLabel(packId)}`}
                       loading="lazy"
                       decoding="async"
                     />
@@ -568,15 +583,15 @@ export function ShopPage() {
                 {isLegendaryFocus ? (
                   <div className="shop-special-pack-target-wrap">
                     <div className="shop-special-pack-intel shop-special-pack-intel--legendary">
-                      <span className="shop-special-pack-intel-tag">1 Focus Roll + 2 Fillers</span>
-                      <span className="shop-special-pack-intel-sub">1% base, +1% per miss, reset on hit.</span>
+                      <span className="shop-special-pack-intel-tag">1 tirage focus + 2 remplissages</span>
+                      <span className="shop-special-pack-intel-sub">1% de base, +1% par raté, reset si ça touche.</span>
                     </div>
-                    <p className="shop-special-pack-target-label">Target Legendary</p>
+                    <p className="shop-special-pack-target-label">Légendaire ciblée</p>
                     <div
                       className="shop-special-pack-target-picker"
                       data-testid="shop-special-pack-legendary-target"
                       role="listbox"
-                      aria-label="Legendary focus targets"
+                      aria-label="Cibles légendaires"
                     >
                       {legendaryCards.map((card) => (
                         <article
@@ -605,23 +620,23 @@ export function ShopPage() {
                               ownedCardIdsSet.has(card.id) ? 'is-owned' : 'is-missing'
                             }`}
                           >
-                            {ownedCardIdsSet.has(card.id) ? 'Owned' : 'Missing'}
+                            {ownedCardIdsSet.has(card.id) ? 'Possédée' : 'Manquante'}
                           </span>
                         </article>
                       ))}
                     </div>
                     <p className="small shop-special-pack-target-note">
-                      Focus slot: {selectedLegendaryCard ? selectedLegendaryCard.name : 'No target selected'} | Current chance:{' '}
+                      Slot focus: {selectedLegendaryCard ? selectedLegendaryCard.name : 'Aucune cible'} | Chance actuelle:{' '}
                       {legendaryFocusChancePercent}%
                     </p>
                   </div>
                 ) : (
                   <div className="shop-special-pack-intel">
-                    <span className="shop-special-pack-intel-tag">Gen Booster · 3 Pulls</span>
+                    <span className="shop-special-pack-intel-tag">Booster Gen · 3 tirages</span>
                     <div className="shop-special-pack-intel-stats">
                       <span>Pool: {generationFocusPool.length}</span>
                       <span>
-                        Owned: {generationFocusOwnedCount}/{generationFocusPool.length}
+                        Possédées: {generationFocusOwnedCount}/{generationFocusPool.length}
                       </span>
                     </div>
                     <div className="shop-special-pack-intel-rates">
@@ -635,12 +650,12 @@ export function ShopPage() {
                 )}
 
                 <div className="shop-price-buy shop-special-pack-buy shop-special-pack-buy--display" aria-hidden="true">
-                  <span className="shop-price-buy__label">Price</span>
+                  <span className="shop-price-buy__label">Prix</span>
                   <span className="shop-price-buy__value">
                     {price}
                     <span className="shop-price-buy__unit">G</span>
                   </span>
-                  <span className="shop-price-buy__hint">Click artwork to buy</span>
+                  <span className="shop-price-buy__hint">Clique l'image pour acheter</span>
                 </div>
               </article>
             )
@@ -677,7 +692,7 @@ export function ShopPage() {
                   decoding="async"
                 />
                 <div>
-                  <h2 id={`shop-pack-modal-title-${openPackId}`}>{formatPackLabel(openPackId)} Cards</h2>
+                  <h2 id={`shop-pack-modal-title-${openPackId}`}>Cartes du {formatPackLabel(openPackId)}</h2>
                   <p className="small">{openPackVisual?.tagline}</p>
                 </div>
               </div>
@@ -691,11 +706,11 @@ export function ShopPage() {
                 }}
                 data-testid="shop-pack-modal-close"
               >
-                Close
+                Fermer
               </button>
             </div>
             <div className="shop-pack-modal-sections">
-              <div className="shop-pack-modal-rarity-tabs" role="tablist" aria-label="Rarity pages">
+              <div className="shop-pack-modal-rarity-tabs" role="tablist" aria-label="Pages de rareté">
                 {modalSections.map((section) => {
                   const isActive = activeModalSection?.rarity === section.rarity
                   return (
@@ -727,7 +742,7 @@ export function ShopPage() {
                       {formatRarityLabel(activeModalSection.rarity)}
                     </h3>
                     <p className="small">
-                      {activeModalSection.ownedCount}/{activeModalSection.cards.length} owned | {activeModalSection.dropRate}%
+                      {activeModalSection.ownedCount}/{activeModalSection.cards.length} possédées | {activeModalSection.dropRate}%
                     </p>
                   </div>
                   <div className="shop-pack-modal-grid">
@@ -747,7 +762,7 @@ export function ShopPage() {
                         )
                       })
                     ) : (
-                      <p className="small shop-pack-modal-empty">No cards available in this rarity.</p>
+                      <p className="small shop-pack-modal-empty">Aucune carte disponible dans cette rareté.</p>
                     )}
                   </div>
                   {activeModalSection.cards.length > SHOP_MODAL_PAGE_SIZE ? (
@@ -759,7 +774,7 @@ export function ShopPage() {
                         disabled={openPackPageIndex <= 0}
                         onClick={() => setOpenPackPage((page) => Math.max(0, page - 1))}
                       >
-                        Previous
+                        Précédent
                       </button>
                       <p className="small" data-testid="shop-pack-modal-page-indicator">
                         Page {openPackPageIndex + 1} / {openPackPageCount}
@@ -771,7 +786,7 @@ export function ShopPage() {
                         disabled={openPackPageIndex >= openPackPageCount - 1}
                         onClick={() => setOpenPackPage((page) => Math.min(openPackPageCount - 1, page + 1))}
                       >
-                        Next
+                        Suivant
                       </button>
                     </div>
                   ) : null}
@@ -796,7 +811,7 @@ export function ShopPage() {
               <div className="packs-reveal-headline">
                 <img className="packs-reveal-art" src={openedPackVisual?.artSrc} alt="" aria-hidden="true" />
                 <div>
-                  <h2 id="shop-opened-reveal-title">{formatPackLabel(openedPackResult.packId)} Opened</h2>
+                  <h2 id="shop-opened-reveal-title">{formatPackLabel(openedPackResult.packId)} ouvert</h2>
                   <p className="small">{openedPackSubtitle}</p>
                 </div>
               </div>
@@ -808,7 +823,7 @@ export function ShopPage() {
                     onClick={handleOpenAnotherOwnedPack}
                     data-testid="shop-opened-reveal-open-another"
                   >
-                    Open another
+                    Ouvrir encore
                   </button>
                 ) : null}
                 <button
@@ -817,7 +832,7 @@ export function ShopPage() {
                   onClick={() => setOpenedPackResult(null)}
                   data-testid="shop-opened-reveal-close"
                 >
-                  Close
+                  Fermer
                 </button>
               </div>
             </div>
@@ -861,8 +876,8 @@ export function ShopPage() {
         <Link className="button button-primary" to="/pokedex">
           Pokédex
         </Link>
-        <Link className="button" to="/">
-          Home
+        <Link className="button" to="/home">
+          Accueil
         </Link>
       </div>
     </section>

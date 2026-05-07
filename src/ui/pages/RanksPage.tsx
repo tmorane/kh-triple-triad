@@ -1,111 +1,167 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { IS_4X4_UI_ENABLED } from '../../app/matchUiConfig'
-import {
-  fetchOwnedCardsLadder,
-  fetchPeakRankLadder,
-  isGlobalLadderEnabled,
-  type LadderEntry,
-} from '../../app/cloud/cloudLadderStore'
+import { fetchOwnedCardsLadder, fetchPeakRankLadder, isGlobalLadderEnabled, type LadderEntry } from '../../app/cloud/cloudLadderStore'
+import { PRIMARY_MATCH_MODE } from '../../app/matchUiConfig'
+import { PROFILE_STORAGE_KEY } from '../../domain/progression/profile'
 import { rankedTiers } from '../../domain/progression/ranked'
 import { getRankEmblemSrc } from '../rankEmblems'
 
+const LADDER_LIMIT = 10
+const numberFormat = new Intl.NumberFormat('fr-FR')
+
 const divisionLabelByTierType = {
   withDivisions: 'Divisions IV, III, II, I',
-  apex: 'Apex tier (no divisions)',
+  apex: 'Rang sommet (sans divisions)',
 } as const
 
 const rankedRules = [
-  'Win streak LP: +60 / +65 / +70 LP',
-  'Win bonus by division: IV +0, III +1, II +2, I +3 LP',
-  'Win bonus at apex tier: Challenger +2 LP',
-  'Loss streak LP: -20 / -25 / -30 LP',
-  'Deck bonus by division: IV +0, III +2, II +4, I +6 score',
-  'Deck bonus at apex tier: Challenger +6 score',
-  'Draw: 0 LP',
-  'Promotion at 100 LP with carry',
-  'Demotion shield: 3 losses after promotion',
+  'Série de victoires: +30 / +31 / +32 / +33 / +34 / +35 points',
+  'Série de défaites: -15 / -16 / -17 / -18 / -19 / -20 points',
+  'Égalité: 0 point',
+  'Promotion à 100 points: BO3 (2 victoires pour monter)',
+  'Matchs de BO3: aucun point gagné ou perdu',
+  'Promotion réussie: ligue suivante +20 points',
+  'Promotion ratée: même ligue, retour à 80 points',
+  'À 0 point: 2 boucliers, la 3e défaite rétrograde',
+  'Challenger: pas de rétrogradation vers Diamant',
+  'Saison: 2 mois, reset -2 ligues',
+  'Récompenses de ligue: 1 fois par ligue et par saison',
 ]
 
+const tierNameById = {
+  iron: 'Fer',
+  bronze: 'Bronze',
+  silver: 'Argent',
+  gold: 'Or',
+  platinum: 'Platine',
+  diamond: 'Diamant',
+  challenger: 'Challenger',
+} as const
+
+type LadderStatus = 'disabled' | 'loading' | 'ready' | 'empty' | 'error'
+
+interface LadderState {
+  status: LadderStatus
+  rankEntries: LadderEntry[]
+  ownedEntries: LadderEntry[]
+}
+
+const emptyLadderState: LadderState = {
+  status: 'disabled',
+  rankEntries: [],
+  ownedEntries: [],
+}
+
+const rankLabelTranslation: Record<string, string> = {
+  Iron: 'Fer',
+  Bronze: 'Bronze',
+  Silver: 'Argent',
+  Gold: 'Or',
+  Platinum: 'Platine',
+  Diamond: 'Diamant',
+  Challenger: 'Challenger',
+}
+
+function formatDisplayRankLabel(label: string): string {
+  const [tier, ...rest] = label.split(' ')
+  if (!tier) {
+    return label
+  }
+
+  return [rankLabelTranslation[tier] ?? tier, ...rest].join(' ')
+}
+
+function formatOwnedPokemonCount(count: number): string {
+  return `${numberFormat.format(count)} Pokémon`
+}
+
+function readStoredProfileRevision(): string {
+  try {
+    return window.localStorage.getItem(PROFILE_STORAGE_KEY) ?? ''
+  } catch {
+    return ''
+  }
+}
+
+function renderLadderRows(entries: LadderEntry[], emptyMessage: string, renderValue: (entry: LadderEntry) => string) {
+  if (entries.length === 0) {
+    return <li className="ranks-ladder-empty">{emptyMessage}</li>
+  }
+
+  return entries.map((entry, index) => (
+    <li className="ranks-ladder-row" key={entry.userId}>
+      <span className="ranks-ladder-position">#{index + 1}</span>
+      <span className="ranks-ladder-name">{entry.playerName}</span>
+      <span className="ranks-ladder-value">{renderValue(entry)}</span>
+    </li>
+  ))
+}
+
 export function RanksPage() {
-  const laddersEnabled = isGlobalLadderEnabled()
-  const [isLoadingLadders, setIsLoadingLadders] = useState(laddersEnabled)
-  const [ownedCardsLadder, setOwnedCardsLadder] = useState<LadderEntry[]>([])
-  const [peakRankLadder3x3, setPeakRankLadder3x3] = useState<LadderEntry[]>([])
-  const [peakRankLadder4x4, setPeakRankLadder4x4] = useState<LadderEntry[]>([])
-  const [ladderError, setLadderError] = useState<string | null>(null)
+  const ladderEnabled = isGlobalLadderEnabled()
+  const storedProfileRevision = readStoredProfileRevision()
+  const [ladderState, setLadderState] = useState<LadderState>(() => (
+    ladderEnabled ? { ...emptyLadderState, status: 'loading' } : emptyLadderState
+  ))
 
   useEffect(() => {
-    if (!laddersEnabled) {
-      setIsLoadingLadders(false)
-      setOwnedCardsLadder([])
-      setPeakRankLadder3x3([])
-      setPeakRankLadder4x4([])
-      setLadderError(null)
+    if (!ladderEnabled) {
       return
     }
 
-    let mounted = true
+    let cancelled = false
 
-    const loadLadders = async () => {
-      setIsLoadingLadders(true)
-      setLadderError(null)
-      try {
-        const [owned, peak3x3, peak4x4] = await Promise.all([
-          fetchOwnedCardsLadder(50),
-          fetchPeakRankLadder('3x3', 50),
-          IS_4X4_UI_ENABLED ? fetchPeakRankLadder('4x4', 50) : Promise.resolve([] as LadderEntry[]),
-        ])
-        if (!mounted) {
+    void Promise.all([
+      fetchPeakRankLadder(PRIMARY_MATCH_MODE, LADDER_LIMIT),
+      fetchOwnedCardsLadder(LADDER_LIMIT),
+    ])
+      .then(([rankEntries, ownedEntries]) => {
+        if (cancelled) {
           return
         }
-        setOwnedCardsLadder(owned)
-        setPeakRankLadder3x3(peak3x3)
-        setPeakRankLadder4x4(peak4x4)
-      } catch (error) {
-        if (!mounted) {
-          return
-        }
-        setLadderError(error instanceof Error ? error.message : 'Unable to load ladders.')
-      } finally {
-        if (mounted) {
-          setIsLoadingLadders(false)
-        }
-      }
-    }
 
-    void loadLadders()
+        setLadderState({
+          status: rankEntries.length > 0 || ownedEntries.length > 0 ? 'ready' : 'empty',
+          rankEntries,
+          ownedEntries,
+        })
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setLadderState({ ...emptyLadderState, status: 'error' })
+        }
+      })
 
     return () => {
-      mounted = false
+      cancelled = true
     }
-  }, [laddersEnabled])
+  }, [ladderEnabled, storedProfileRevision])
 
   return (
     <section className="panel ranks-panel">
       <div className="ranks-headline">
-        <h1>Ranks</h1>
-        <p className="small">Combat ladder V1 (ranked queue only)</p>
+        <h1>Rangs</h1>
+        <p className="small">Classement combat V1 (file classée uniquement)</p>
       </div>
 
       <p className="ranks-open-only-note" data-testid="ranks-open-only-note">
-        Ranked queue uses visibility rule only (Open or Hidden).
+        La file classée utilise seulement la règle de visibilité (visible ou cachée).
       </p>
 
-      <div className="ranks-grid" aria-label="Rank tiers">
+      <div className="ranks-grid" aria-label="Paliers de rang">
         {rankedTiers.map((tier) => (
           <article className="ranks-tier-card" data-testid={`ranks-tier-${tier.id}`} key={tier.id}>
-            <img src={getRankEmblemSrc(tier.id)} alt={`${tier.name} rank emblem`} className="ranks-tier-emblem" />
+            <img src={getRankEmblemSrc(tier.id)} alt={`Emblème du rang ${tierNameById[tier.id]}`} className="ranks-tier-emblem" />
             <div className="ranks-tier-copy">
-              <h2>{tier.name}</h2>
+              <h2>{tierNameById[tier.id]}</h2>
               <p>{tier.hasDivisions ? divisionLabelByTierType.withDivisions : divisionLabelByTierType.apex}</p>
             </div>
           </article>
         ))}
       </div>
 
-      <section className="ranks-rules" data-testid="ranks-rules" aria-label="Ranked rules summary">
-        <h2>LP Rules</h2>
+      <section className="ranks-rules" data-testid="ranks-rules" aria-label="Résumé des règles classées">
+        <h2>Règles de points</h2>
         <ul>
           {rankedRules.map((rule) => (
             <li key={rule}>{rule}</li>
@@ -113,89 +169,61 @@ export function RanksPage() {
         </ul>
       </section>
 
-      <section className="ranks-ladders" aria-label="Global ladders">
+      <section className="ranks-ladders" aria-label="Classements globaux" data-testid="ranks-ladders">
         <div className="ranks-ladders-head">
-          <h2>Global Ladders</h2>
-          <p className="small">All players leaderboard</p>
+          <h2>Classements globaux</h2>
+          <p className="small">
+            Top {LADDER_LIMIT} · rang {PRIMARY_MATCH_MODE.toUpperCase()} et Pokédex
+          </p>
         </div>
 
-        {!laddersEnabled ? (
+        {ladderState.status === 'loading' ? (
+          <p className="small" data-testid="ranks-ladder-loading">
+            Chargement des classements...
+          </p>
+        ) : null}
+        {ladderState.status === 'disabled' ? (
           <p className="small" data-testid="ranks-ladder-disabled-note">
-            Global ladders are unavailable until cloud auth is configured.
+            Crée au moins un profil local ou active le cloud pour remplir les classements.
+          </p>
+        ) : null}
+        {ladderState.status === 'error' ? (
+          <p className="error" role="alert" data-testid="ranks-ladder-error">
+            Impossible de charger les classements pour le moment.
           </p>
         ) : null}
 
-        {laddersEnabled && isLoadingLadders ? <p className="small">Loading global ladders...</p> : null}
-
-        {laddersEnabled && ladderError ? (
-          <p className="error" role="alert">
-            {ladderError}
-          </p>
-        ) : null}
-
-        {laddersEnabled && !isLoadingLadders && !ladderError ? (
-          <div className="ranks-ladder-grid">
-            <article className="ranks-ladder-card" data-testid="ranks-owned-ladder">
-              <h3>Most Owned Cards</h3>
-              {ownedCardsLadder.length === 0 ? (
-                <p className="small">No players yet.</p>
-              ) : (
-                <ol className="ranks-ladder-list">
-                  {ownedCardsLadder.map((entry, index) => (
-                    <li key={entry.userId} className="ranks-ladder-row">
-                      <span className="ranks-ladder-position">#{index + 1}</span>
-                      <span className="ranks-ladder-name">{entry.playerName}</span>
-                      <span className="ranks-ladder-value">{entry.ownedCardsCount} cards</span>
-                    </li>
-                  ))}
-                </ol>
+        <div className="ranks-ladder-grid">
+          <article className="ranks-ladder-card">
+            <h3>Meilleur rang {PRIMARY_MATCH_MODE.toUpperCase()}</h3>
+            <ol className="ranks-ladder-list" data-testid="ranks-rank-ladder">
+              {renderLadderRows(
+                ladderState.rankEntries,
+                'Aucun rang publié pour le moment.',
+                (entry) => formatDisplayRankLabel(entry.peakRankLabel),
               )}
-            </article>
+            </ol>
+          </article>
 
-            <article className="ranks-ladder-card" data-testid="ranks-peak-ladder-3x3">
-              <h3>Highest Peak Rank 3X3</h3>
-              {peakRankLadder3x3.length === 0 ? (
-                <p className="small">No players yet.</p>
-              ) : (
-                <ol className="ranks-ladder-list">
-                  {peakRankLadder3x3.map((entry, index) => (
-                    <li key={entry.userId} className="ranks-ladder-row">
-                      <span className="ranks-ladder-position">#{index + 1}</span>
-                      <span className="ranks-ladder-name">{entry.playerName}</span>
-                      <span className="ranks-ladder-value">{entry.peakRankLabel}</span>
-                    </li>
-                  ))}
-                </ol>
+          <article className="ranks-ladder-card">
+            <h3>Pokémon capturés</h3>
+            <ol className="ranks-ladder-list" data-testid="ranks-owned-ladder">
+              {renderLadderRows(
+                ladderState.ownedEntries,
+                'Aucune collection publiée pour le moment.',
+                (entry) => formatOwnedPokemonCount(entry.ownedCardsCount),
               )}
-            </article>
-            {IS_4X4_UI_ENABLED ? (
-              <article className="ranks-ladder-card" data-testid="ranks-peak-ladder-4x4">
-                <h3>Highest Peak Rank 4X4</h3>
-                {peakRankLadder4x4.length === 0 ? (
-                  <p className="small">No players yet.</p>
-                ) : (
-                  <ol className="ranks-ladder-list">
-                    {peakRankLadder4x4.map((entry, index) => (
-                      <li key={entry.userId} className="ranks-ladder-row">
-                        <span className="ranks-ladder-position">#{index + 1}</span>
-                        <span className="ranks-ladder-name">{entry.playerName}</span>
-                        <span className="ranks-ladder-value">{entry.peakRankLabel}</span>
-                      </li>
-                    ))}
-                  </ol>
-                )}
-              </article>
-            ) : null}
-          </div>
-        ) : null}
+            </ol>
+          </article>
+        </div>
       </section>
 
       <div className="actions">
         <Link className="button button-primary" to="/setup">
-          Start Match
+          Lancer un match
         </Link>
-        <Link className="button" to="/">
-          Home
+        <Link className="button" to="/home">
+          Accueil
         </Link>
       </div>
     </section>

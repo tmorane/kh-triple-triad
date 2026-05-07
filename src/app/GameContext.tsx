@@ -1,11 +1,14 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useCallback, useMemo, useRef, useState } from 'react'
 import { isDeckNameValid, toggleCardInDeck, validateDeck } from '../domain/cards/decks'
+import { cardPool } from '../domain/cards/cardPool'
 import {
   buildAutoPlayerDeck,
   buildCpuOpponent,
   buildCpuOpponentForLevel,
+  computeDeckScore,
   MAX_NORMAL_OPPONENT_LEVEL,
+  getCpuOpponentPreviewForLevel,
   getOpponentLevelForProfile,
   type CpuOpponent,
   type OpponentLevel,
@@ -30,7 +33,15 @@ import {
 import { createSeededRng } from '../domain/random/seededRng'
 import { evaluateAchievements } from '../domain/progression/achievements'
 import { claimAllAchievementRewards as applyAchievementRewardsClaimAll } from '../domain/progression/achievementRewards'
-import { applyMatchMissions, claimCompletedMission } from '../domain/progression/missions'
+import { applyCardsAcquiredMissions, applyMatchMissions, claimCompletedMission } from '../domain/progression/missions'
+import { cloneMissionProgressMap, missionIds } from '../domain/progression/missionCatalog'
+import {
+  applyTrackedPokemonMatchResult,
+  createInitialTrackedPokemonState,
+  getPokedexClaimSelectionCount,
+  setTrackedPokemonTarget as setTrackedPokemonTargetState,
+  TRACKED_GAUGE_MAX_COMPLETIONS_PER_WINDOW,
+} from '../domain/progression/pokedexProgression'
 import { applyMatchRewards, type RewardBreakdown } from '../domain/progression/rewards'
 import { applyRankedMatchResult, type RankedMatchResultSummary } from '../domain/progression/ranked'
 import { craftCardFromFragments as applyCardFragmentCraft } from '../domain/progression/fragments'
@@ -40,6 +51,16 @@ import { resolveTowerRelicEffects } from '../domain/tower/relics'
 import { applyTowerCheckpointRewards } from '../domain/tower/rewards'
 import { createInitialTowerProgress, createTowerRun, describeTowerPostMatch, queueTowerRewardsForFloor, selectTowerReward } from '../domain/tower/run'
 import type { TowerMatchSummary, TowerProgressState, TowerRunState } from '../domain/tower/types'
+import {
+  applyStoryVictoryRewards,
+  loadStoryProgress,
+  resolveStoryTrainer,
+  saveStoryProgress,
+  type StoryMapId,
+  type StoryProgress,
+  type StoryTrainerId,
+  type StoryVictoryRewardSummary,
+} from '../domain/story/story'
 import {
   openOwnedPack as applyOpenPack,
   openOwnedPacks as applyOpenPacks,
@@ -80,6 +101,11 @@ interface CurrentMatch {
     boss: boolean
     relics: TowerRunState['relics']
   }
+  story?: {
+    mapId: StoryMapId
+    trainerId: StoryTrainerId
+    trainerName: string
+  }
 }
 
 export interface MatchOpponentSummary {
@@ -98,7 +124,39 @@ export interface LastMatchSummary {
   opponent: MatchOpponentSummary
   rankedMode: MatchMode | null
   rankedUpdate: RankedMatchResultSummary | null
+  trackedPokemonUpdate?: TrackedPokemonMatchSummary | null
   tower?: TowerMatchSummary
+  missionRecap?: MatchMissionRecap | null
+  storyReward?: StoryVictoryRewardSummary | null
+}
+
+export interface TrackedPokemonMatchSummary {
+  targetCardId: CardId | null
+  gaugeBefore: number
+  gaugeAfter: number
+  gainedGaugePoints: number
+  fragmentsGranted: number
+  completedGaugesInWindow: number
+  capReached: boolean
+  windowReset: boolean
+  maxCompletionsPerWindow: number
+}
+
+export interface MatchMissionRecapEntry {
+  id: MissionId
+  progressBefore: number
+  progressAfter: number
+  target: number
+  completedBefore: boolean
+  completedAfter: boolean
+}
+
+export interface MatchMissionRecap {
+  before: PlayerProfile['missions']
+  after: PlayerProfile['missions']
+  completedMissionIds: MissionId[]
+  readyToClaimMissionIds: MissionId[]
+  entries: MatchMissionRecapEntry[]
 }
 
 interface GameContextValue {
@@ -106,6 +164,7 @@ interface GameContextValue {
   storedProfiles: StoredProfilesSnapshot
   currentMatch: CurrentMatch | null
   lastMatchSummary: LastMatchSummary | null
+  storyProgress: StoryProgress
   towerProgress?: TowerProgressState
   towerRun?: TowerRunState | null
   startMatch(
@@ -116,6 +175,7 @@ interface GameContextValue {
     options?: { useAutoDeck?: boolean; normalOpponentLevel?: OpponentLevel; tutorialScenarioId?: TutorialScenarioId },
   ): void
   startTowerRun?(): void
+  startStoryTrainerMatch?(trainerId: StoryTrainerId): void
   resumeTowerRun?(): void
   continueTowerRun?(): void
   selectTowerReward?(choiceId: string, swapOutCardId?: CardId): void
@@ -128,9 +188,10 @@ interface GameContextValue {
   toggleDeckSlotCard(slotId: DeckSlotId, cardId: CardId, mode: MatchMode): void
   setDeckSlotMode(slotId: DeckSlotId, mode: MatchMode): void
   setDeckSlotRules(slotId: DeckSlotId, rules: { same: boolean; plus: boolean }): void
+  setTrackedPokemonTarget?(cardId: CardId | null): { valid: boolean; reason?: string }
   claimMission?(missionId: MissionId): { valid: boolean; reason?: string }
   updateCurrentMatch(state: MatchState): void
-  finalizeCurrentMatch(claimedCpuCardId?: CardId): LastMatchSummary
+  finalizeCurrentMatch(claimedCpuCardIds?: CardId[]): LastMatchSummary
   clearLastMatchSummary(): void
   purchaseShopPack(packId: ShopPackId): ShopPurchaseReceipt
   purchaseShopPacks?(packId: ShopPackId, quantity: number): ShopBulkPurchaseReceipt
@@ -153,6 +214,7 @@ export const GameContext = createContext<GameContextValue | null>(null)
 function cloneProfile(profile: PlayerProfile): PlayerProfile {
   return {
     ...profile,
+    hasChosenPlayerName: profile.hasChosenPlayerName,
     ownedCardIds: [...profile.ownedCardIds],
     cardCopiesById: { ...profile.cardCopiesById },
     cardFragmentsById: { ...profile.cardFragmentsById },
@@ -168,22 +230,27 @@ function cloneProfile(profile: PlayerProfile): PlayerProfile {
     achievementProgress: { ...profile.achievementProgress },
     achievements: [...profile.achievements],
     achievementRewardsClaimedById: { ...profile.achievementRewardsClaimedById },
-    missions: {
-      m1_type_specialist: { ...profile.missions.m1_type_specialist },
-      m2_combo_practitioner: { ...profile.missions.m2_combo_practitioner },
-      m3_corner_tactician: { ...profile.missions.m3_corner_tactician },
-    },
+    missions: cloneMissionProgressMap(profile.missions),
     missionRewardsGrantedById: { ...profile.missionRewardsGrantedById },
     rankedByMode: {
       '3x3': {
         ...profile.rankedByMode['3x3'],
         resultStreak: { ...profile.rankedByMode['3x3'].resultStreak },
+        promotionSeries: profile.rankedByMode['3x3'].promotionSeries ? { ...profile.rankedByMode['3x3'].promotionSeries } : null,
+        seasonLeagueRewardsClaimed: profile.rankedByMode['3x3'].seasonLeagueRewardsClaimed
+          ? { ...profile.rankedByMode['3x3'].seasonLeagueRewardsClaimed }
+          : undefined,
       },
       '4x4': {
         ...profile.rankedByMode['4x4'],
         resultStreak: { ...profile.rankedByMode['4x4'].resultStreak },
+        promotionSeries: profile.rankedByMode['4x4'].promotionSeries ? { ...profile.rankedByMode['4x4'].promotionSeries } : null,
+        seasonLeagueRewardsClaimed: profile.rankedByMode['4x4'].seasonLeagueRewardsClaimed
+          ? { ...profile.rankedByMode['4x4'].seasonLeagueRewardsClaimed }
+          : undefined,
       },
     },
+    trackedPokemon: profile.trackedPokemon ? { ...profile.trackedPokemon } : undefined,
     settings: { ...profile.settings },
     tutorialProgress: profile.tutorialProgress
       ? {
@@ -202,32 +269,114 @@ function resolveProfileTowerRun(profile: PlayerProfile): TowerRunState | null {
   return profile.towerRun ?? null
 }
 
+function grantRandomLeaguePassageFragments(profile: PlayerProfile, fragmentCount: number, seed: number): void {
+  if (fragmentCount <= 0 || cardPool.length === 0) {
+    return
+  }
+
+  const rng = createSeededRng(seed)
+  for (let index = 0; index < fragmentCount; index += 1) {
+    const cardId = cardPool[rng.nextInt(cardPool.length)]?.id
+    if (!cardId) {
+      continue
+    }
+    profile.cardFragmentsById[cardId] = (profile.cardFragmentsById[cardId] ?? 0) + 1
+  }
+}
+
+function normalizeClaimedCpuCardIds(claimedCpuCardIds: CardId[] | undefined, expectedCount: number, cpuDeck: CardId[]): CardId[] {
+  const requested = Array.from(new Set(claimedCpuCardIds ?? [])).filter((cardId) => cpuDeck.includes(cardId))
+  const normalized: CardId[] = [...requested]
+
+  for (const cpuCardId of cpuDeck) {
+    if (normalized.length >= expectedCount) {
+      break
+    }
+    if (!normalized.includes(cpuCardId)) {
+      normalized.push(cpuCardId)
+    }
+  }
+
+  return normalized.slice(0, expectedCount)
+}
+
+function buildMissionRecap(
+  before: PlayerProfile['missions'],
+  after: PlayerProfile['missions'],
+  completedMissionIds: MissionId[],
+  readyToClaimMissionIds: MissionId[],
+): MatchMissionRecap {
+  return {
+    before: cloneMissionProgressMap(before),
+    after: cloneMissionProgressMap(after),
+    completedMissionIds: [...completedMissionIds],
+    readyToClaimMissionIds: [...readyToClaimMissionIds],
+    entries: missionIds.map((missionId) => ({
+      id: missionId,
+      progressBefore: before[missionId].progress,
+      progressAfter: after[missionId].progress,
+      target: after[missionId].target,
+      completedBefore: before[missionId].completed,
+      completedAfter: after[missionId].completed,
+    })),
+  }
+}
+
 export function GameProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<PlayerProfile>(() => loadProfile())
   const profileRef = useRef<PlayerProfile>(profile)
   const [currentMatch, setCurrentMatch] = useState<CurrentMatch | null>(null)
   const [lastMatchSummary, setLastMatchSummary] = useState<LastMatchSummary | null>(null)
+  const [storyProgress, setStoryProgress] = useState<StoryProgress>(() => loadStoryProgress())
   const towerProgress = resolveProfileTowerProgress(profile)
   const towerRun = resolveProfileTowerRun(profile)
 
-  const commitComputedProfile = useCallback((nextProfile: PlayerProfile) => {
-    profileRef.current = nextProfile
-    saveProfile(nextProfile)
-    setProfile(nextProfile)
-    return nextProfile
+  const applyPostUpdateMissionHooks = useCallback((previousProfile: PlayerProfile, updatedProfile: PlayerProfile): PlayerProfile => {
+    const cardsAcquiredDelta = updatedProfile.achievementProgress.cardsAcquired - previousProfile.achievementProgress.cardsAcquired
+    let nextProfile = updatedProfile
+
+    if (cardsAcquiredDelta > 0) {
+      nextProfile = applyCardsAcquiredMissions(nextProfile, cardsAcquiredDelta).profile
+    }
+
+    const unlocked = evaluateAchievements(nextProfile)
+    if (unlocked.length === 0) {
+      return nextProfile
+    }
+
+    return {
+      ...nextProfile,
+      achievements: [...nextProfile.achievements, ...unlocked],
+    }
   }, [])
+
+  const commitComputedProfile = useCallback((nextProfile: PlayerProfile) => {
+    const previousProfile = profileRef.current
+    const committedProfile = applyPostUpdateMissionHooks(previousProfile, nextProfile)
+    profileRef.current = committedProfile
+    saveProfile(committedProfile)
+    setProfile(committedProfile)
+    return committedProfile
+  }, [applyPostUpdateMissionHooks])
 
   const persistProfileUpdate = useCallback((mutator: (nextProfile: PlayerProfile) => void) => {
     setProfile((existingProfile) => {
       const nextProfile = cloneProfile(existingProfile)
       mutator(nextProfile)
-      profileRef.current = nextProfile
-      saveProfile(nextProfile)
-      return nextProfile
+      const committedProfile = applyPostUpdateMissionHooks(existingProfile, nextProfile)
+      profileRef.current = committedProfile
+      saveProfile(committedProfile)
+      return committedProfile
     })
-  }, [])
+  }, [applyPostUpdateMissionHooks])
 
   const storedProfiles: StoredProfilesSnapshot = listStoredProfiles()
+
+  const commitStoryProgress = useCallback((nextProgress: StoryProgress) => {
+    saveStoryProgress(nextProgress)
+    setStoryProgress(nextProgress)
+    return nextProgress
+  }, [])
 
   const value = useMemo<GameContextValue>(() => {
     const startPreparedMatch = ({
@@ -245,6 +394,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       strictPowerTargeting,
       tower,
       tutorial,
+      story,
     }: {
       queue: MatchQueue
       mode: MatchMode
@@ -260,6 +410,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       strictPowerTargeting?: boolean
       tutorial?: CurrentMatch['tutorial']
       tower?: CurrentMatch['tower']
+      story?: CurrentMatch['story']
     }) => {
       const state = createMatch({
         playerDeck,
@@ -295,6 +446,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         usedAutoDeck,
         tutorial,
         tower,
+        story,
       })
     }
 
@@ -342,6 +494,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       storedProfiles,
       currentMatch,
       lastMatchSummary,
+      storyProgress,
       towerProgress,
       towerRun,
       startMatch: (queue, mode, deck, rules, options) => {
@@ -434,6 +587,43 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           rewardMultiplier,
           usedAutoDeck: useAutoDeck,
         })
+      },
+      startStoryTrainerMatch: (trainerId) => {
+        const activeProfile = profileRef.current
+        const selectedDeckSlot = activeProfile.deckSlots.find((slot) => slot.id === activeProfile.selectedDeckSlotId)
+        const playerDeck = selectedDeckSlot ? [...selectedDeckSlot.cards] : []
+        const validation = validateDeck(playerDeck, activeProfile.ownedCardIds, '3x3')
+        if (!validation.valid) {
+          throw new Error(validation.reason)
+        }
+
+        const trainer = resolveStoryTrainer(trainerId)
+        const seed = Date.now()
+        const opponentPreview = getCpuOpponentPreviewForLevel(trainer.level, playerDeck, '3x3')
+        const opponent: CpuOpponent = {
+          ...opponentPreview,
+          deck: [...trainer.cpuDeck],
+          deckScore: computeDeckScore(trainer.cpuDeck),
+        }
+
+        startPreparedMatch({
+          queue: 'story',
+          mode: '3x3',
+          playerDeck,
+          cpuDeck: [...trainer.cpuDeck],
+          rules: { ...trainer.rules, same: false, plus: false },
+          seed,
+          startingTurn: resolveStartingTurn(seed),
+          opponent,
+          rewardMultiplier: 1,
+          usedAutoDeck: false,
+          story: {
+            mapId: trainer.mapId,
+            trainerId: trainer.id,
+            trainerName: trainer.name,
+          },
+        })
+        setLastMatchSummary(null)
       },
       startTowerRun: () => {
         const selectedDeckSlot = profile.deckSlots.find((slot) => slot.id === profile.selectedDeckSlotId)
@@ -529,6 +719,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
         persistProfileUpdate((nextProfile) => {
           nextProfile.playerName = name.trim()
+          nextProfile.hasChosenPlayerName = true
         })
 
         return { valid: true }
@@ -603,6 +794,17 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           }
         })
       },
+      setTrackedPokemonTarget: (cardId) => {
+        try {
+          persistProfileUpdate((nextProfile) => {
+            const currentTrackedState = nextProfile.trackedPokemon ?? createInitialTrackedPokemonState()
+            nextProfile.trackedPokemon = setTrackedPokemonTargetState(currentTrackedState, cardId)
+          })
+          return { valid: true }
+        } catch (error) {
+          return { valid: false, reason: error instanceof Error ? error.message : 'Invalid tracked pokemon target.' }
+        }
+      },
       claimMission: (missionId) => {
         const claimResult = claimCompletedMission(profileRef.current, missionId, Date.now())
         if (!claimResult.claimed) {
@@ -621,7 +823,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           return { ...existing, state }
         })
       },
-      finalizeCurrentMatch: (claimedCpuCardId) => {
+      finalizeCurrentMatch: (claimedCpuCardIds) => {
         if (!currentMatch) {
           throw new Error('No active match to finalize.')
         }
@@ -653,6 +855,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
             goldAwarded: 0,
             bonusGoldFromDuplicate: 0,
             bonusGoldFromDifficulty: 0,
+            bonusGoldFromWinStreak: 0,
             bonusGoldFromComboBounty: 0,
             bonusGoldFromCleanVictory: 0,
             bonusGoldFromSecondarySynergy: 0,
@@ -660,6 +863,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
             bonusGoldFromAutoDeck: 0,
             criticalVictory: false,
             droppedCardId: null,
+            droppedCardIds: [],
             duplicateConverted: false,
             newlyUnlockedAchievements: [],
           }
@@ -678,12 +882,18 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
             },
             rankedMode: null,
             rankedUpdate: null,
+            missionRecap: null,
           }
 
           setLastMatchSummary(summary)
           setCurrentMatch(null)
           return summary
         }
+
+        const shouldResolveClaims = (currentMatch.queue === 'normal' || currentMatch.queue === 'ranked') && result.winner === 'player'
+        const requiredClaimCount = shouldResolveClaims ? getPokedexClaimSelectionCount(profile, currentMatch.cpuDeck.length) : 0
+        const normalizedClaimedCpuCardIds =
+          requiredClaimCount > 0 ? normalizeClaimedCpuCardIds(claimedCpuCardIds, requiredClaimCount, currentMatch.cpuDeck) : undefined
 
         const progression = applyMatchRewards(
           profile,
@@ -692,26 +902,59 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           currentMatch.seed + currentMatch.state.turns,
           currentMatch.opponent.level,
           currentMatch.rewardMultiplier,
-          claimedCpuCardId,
-          { disableCardCapture: currentMatch.queue === 'tower' },
-        )
-
-        const missionProgression = applyMatchMissions(
-          progression.profile,
+          normalizedClaimedCpuCardIds,
           {
-            winner: result.winner,
-            playerPrimarySynergyActive: false,
-            playerSecondarySynergyActive: false,
-            playerSamePlusTriggers: result.rules.open ? 0 : 1,
-            playerCornerPlays: result.metrics?.cornerPlaysByActor.player ?? 0,
+            disableCardCapture: currentMatch.queue === 'tower' || currentMatch.queue === 'story',
+            fixedGoldAward: currentMatch.queue === 'story' ? 0 : undefined,
           },
-          currentMatch.seed + currentMatch.state.turns + 1,
         )
 
-        let nextProfile = missionProgression.profile
+        let nextProfile = progression.profile
         let rankedMode: MatchMode | null = null
         let rankedUpdate: RankedMatchResultSummary | null = null
+        let trackedPokemonUpdate: TrackedPokemonMatchSummary | null = null
         let towerSummary: TowerMatchSummary | undefined
+        let missionRecap: MatchMissionRecap | null = null
+        let storyReward: StoryVictoryRewardSummary | null = null
+
+        if (currentMatch.queue === 'normal' || currentMatch.queue === 'ranked') {
+          const missionSnapshotBefore = cloneMissionProgressMap(nextProfile.missions)
+          const missionProgression = applyMatchMissions(
+            nextProfile,
+            {
+              queue: currentMatch.queue,
+              winner: result.winner,
+              openRuleEnabled: result.rules.open,
+              playerCornerPlays: result.metrics?.cornerPlaysByActor.player ?? 0,
+            },
+            currentMatch.seed + currentMatch.state.turns + 1,
+          )
+
+          nextProfile = missionProgression.profile
+          missionRecap = buildMissionRecap(
+            missionSnapshotBefore,
+            missionProgression.profile.missions,
+            missionProgression.completedMissionIds,
+            missionProgression.readyToClaimMissionIds,
+          )
+        }
+
+        if (currentMatch.queue === 'story' && currentMatch.story && result.winner === 'player') {
+          const trainer = resolveStoryTrainer(currentMatch.story.trainerId)
+          const storyRewards = applyStoryVictoryRewards(nextProfile, storyProgress, trainer, currentMatch.seed + currentMatch.state.turns + 3)
+          nextProfile = storyRewards.profile
+          storyReward = storyRewards.summary
+          commitStoryProgress(storyRewards.progress)
+
+          if (storyReward.fragmentCardId) {
+            progression.rewards.droppedCardId = storyReward.fragmentCardId
+            progression.rewards.droppedCardIds = [storyReward.fragmentCardId]
+          }
+          progression.rewards.goldAwarded = storyReward.trainerGoldAwarded + (storyReward.zoneReward?.gold ?? 0)
+          if (storyReward.zoneReward && !progression.newlyOwnedCards.includes(storyReward.zoneReward.cardId)) {
+            progression.newlyOwnedCards.push(storyReward.zoneReward.cardId)
+          }
+        }
 
         if (currentMatch.queue === 'ranked') {
           const rankedModeForMatch = currentMatch.state.config.mode
@@ -727,6 +970,39 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
               ...nextProfile.rankedByMode,
               [rankedModeForMatch]: rankedUpdate.next,
             },
+          }
+          if (rankedUpdate.awardedLeagueReward) {
+            grantRandomLeaguePassageFragments(
+              nextProfile,
+              rankedUpdate.awardedLeagueReward.fragments,
+              currentMatch.seed + currentMatch.state.turns + 2,
+            )
+          }
+        }
+
+        if (currentMatch.queue === 'normal' || currentMatch.queue === 'ranked') {
+          const trackedState = nextProfile.trackedPokemon ?? createInitialTrackedPokemonState()
+          const trackedUpdate = applyTrackedPokemonMatchResult(trackedState, result.winner)
+          nextProfile = {
+            ...nextProfile,
+            trackedPokemon: trackedUpdate.next,
+          }
+
+          if (trackedUpdate.fragmentsGranted > 0 && trackedUpdate.next.targetCardId) {
+            const targetCardId = trackedUpdate.next.targetCardId
+            nextProfile.cardFragmentsById[targetCardId] = (nextProfile.cardFragmentsById[targetCardId] ?? 0) + trackedUpdate.fragmentsGranted
+          }
+
+          trackedPokemonUpdate = {
+            targetCardId: trackedUpdate.next.targetCardId,
+            gaugeBefore: trackedUpdate.previous.gaugePoints,
+            gaugeAfter: trackedUpdate.next.gaugePoints,
+            gainedGaugePoints: trackedUpdate.gainedGaugePoints,
+            fragmentsGranted: trackedUpdate.fragmentsGranted,
+            completedGaugesInWindow: trackedUpdate.next.completedGaugesInWindow,
+            capReached: trackedUpdate.capReached,
+            windowReset: trackedUpdate.windowReset,
+            maxCompletionsPerWindow: TRACKED_GAUGE_MAX_COMPLETIONS_PER_WINDOW,
           }
         }
 
@@ -800,7 +1076,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           },
           rankedMode,
           rankedUpdate,
+          trackedPokemonUpdate,
           tower: towerSummary,
+          missionRecap,
+          storyReward,
         }
 
         setLastMatchSummary(summary)
@@ -930,10 +1209,12 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     }
   }, [
     commitComputedProfile,
+    commitStoryProgress,
     currentMatch,
     lastMatchSummary,
     persistProfileUpdate,
     profile,
+    storyProgress,
     storedProfiles,
     towerProgress,
     towerRun,

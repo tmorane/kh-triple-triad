@@ -437,7 +437,7 @@ function buildContextValue(
     buySpecialPack: () => {
       throw new Error('Not implemented in test.')
     },
-    addTestGold: () => {
+    addTestOr: () => {
       throw new Error('Not implemented in test.')
     },
     createStoredProfile: () => {
@@ -540,7 +540,7 @@ describe('MatchPage ranked preview', () => {
 
     renderMatchPageWithContext(buildContextValue(state, 'normal'))
 
-    expect(screen.getByRole('heading', { name: 'CPU Hand (Hidden)' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Main CPU (cachée)' })).toBeInTheDocument()
     const cpuHand = screen.getByLabelText('CPU hand')
     expect(within(cpuHand).getAllByLabelText(/^Locked card /i).length).toBeGreaterThan(0)
   })
@@ -552,10 +552,10 @@ describe('MatchPage ranked preview', () => {
 
     await waitFor(() => expect(screen.getByTestId('match-finish-modal')).toBeInTheDocument())
 
-    expect(screen.getByText('Queue: Ranked')).toBeInTheDocument()
+    expect(screen.getByText('File: Classé')).toBeInTheDocument()
     expect(screen.getByTestId('match-ranked-recap')).toBeInTheDocument()
-    expect(screen.getByTestId('match-ranked-emblem')).toHaveAttribute('src', '/ranks/iron.png')
-    expect(screen.getByTestId('match-ranked-delta')).toHaveTextContent('+60 LP')
+    expect(screen.getByTestId('match-ranked-emblem')).toHaveAttribute('src', '/ranks/iron.svg')
+    expect(screen.getByTestId('match-ranked-delta')).toHaveTextContent('+30 LP')
     expect(screen.getByTestId('match-ranked-progress')).toHaveAttribute('role', 'progressbar')
   })
 
@@ -566,7 +566,7 @@ describe('MatchPage ranked preview', () => {
 
     await waitFor(() => expect(screen.getByTestId('match-finish-modal')).toBeInTheDocument())
 
-    expect(screen.getByText('Queue: Normal')).toBeInTheDocument()
+    expect(screen.getByText('File: Normal')).toBeInTheDocument()
     expect(screen.queryByTestId('match-ranked-recap')).not.toBeInTheDocument()
   })
 })
@@ -581,7 +581,7 @@ describe('MatchPage finish header', () => {
 
     expect(screen.getByTestId('match-finish-player-score')).toHaveTextContent('9')
     expect(screen.getByTestId('match-finish-cpu-score')).toHaveTextContent('0')
-    expect(screen.getByTestId('match-finish-outcome')).toHaveTextContent('WIN')
+    expect(screen.getByTestId('match-finish-outcome')).toHaveTextContent('VICTOIRE')
     expect(screen.queryByText('Match Finished')).not.toBeInTheDocument()
     expect(screen.queryByText(/^Winner:/)).not.toBeInTheDocument()
     expect(screen.queryByText('Achievements')).not.toBeInTheDocument()
@@ -595,7 +595,7 @@ describe('MatchPage finish header', () => {
 
     await waitFor(() => expect(screen.getByTestId('match-finish-modal')).toBeInTheDocument())
 
-    expect(screen.getByTestId('match-finish-outcome')).toHaveTextContent('LOSE')
+    expect(screen.getByTestId('match-finish-outcome')).toHaveTextContent('DÉFAITE')
   })
 
   test('shows DRAW outcome on tie result', async () => {
@@ -605,7 +605,7 @@ describe('MatchPage finish header', () => {
 
     await waitFor(() => expect(screen.getByTestId('match-finish-modal')).toBeInTheDocument())
 
-    expect(screen.getByTestId('match-finish-outcome')).toHaveTextContent('DRAW')
+    expect(screen.getByTestId('match-finish-outcome')).toHaveTextContent('ÉGALITÉ')
   })
 })
 
@@ -662,6 +662,70 @@ describe('MatchPage gameplay capture metadata', () => {
       expect(capturedCell).toHaveAttribute('data-state', 'flipped')
       expect(capturedCell).toHaveAttribute('data-flip-direction', 'horizontal')
     })
+  })
+
+  test('player capture shows duel phase with compared stats', async () => {
+    const user = userEvent.setup()
+    renderMatchPageWithStatefulContext(makeActivePlayerTurnStateWithCapture())
+
+    await user.click(screen.getByTestId('player-card-c110'))
+    await user.click(screen.getByTestId('board-cell-1'))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('match-phase-bar-current')).toHaveTextContent('Duel')
+      expect(screen.getByTestId('match-duel-badge-0')).toHaveTextContent('Hypnomade 4 > Abo 1')
+    })
+  })
+
+  test('player capture opens a duel freeze frame with capture result', async () => {
+    const user = userEvent.setup()
+    renderMatchPageWithStatefulContext(makeActivePlayerTurnStateWithCapture())
+
+    await user.click(screen.getByTestId('player-card-c110'))
+    await user.click(screen.getByTestId('board-cell-1'))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('match-duel-freeze-frame')).toBeInTheDocument()
+      expect(screen.getByTestId('match-duel-freeze-title')).toHaveTextContent('Hypnomade attaque ← gauche')
+      expect(screen.getByTestId('match-duel-freeze-score')).toHaveTextContent('Hypnomade 4 > Abo 1')
+      expect(screen.getByTestId('match-duel-freeze-result')).toHaveTextContent('Abo capturé')
+    })
+  })
+
+  test('dismisses duel freeze frame immediately when any key is pressed', async () => {
+    const user = userEvent.setup()
+    renderMatchPageWithStatefulContext(makeActivePlayerTurnStateWithCapture())
+
+    await user.click(screen.getByTestId('player-card-c110'))
+    await user.click(screen.getByTestId('board-cell-1'))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('match-duel-freeze-frame')).toBeInTheDocument()
+    })
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space' }))
+    })
+
+    expect(screen.queryByTestId('match-duel-freeze-frame')).not.toBeInTheDocument()
+  })
+
+  test('dismisses duel freeze frame immediately when the player clicks anywhere', async () => {
+    const user = userEvent.setup()
+    renderMatchPageWithStatefulContext(makeActivePlayerTurnStateWithCapture())
+
+    await user.click(screen.getByTestId('player-card-c110'))
+    await user.click(screen.getByTestId('board-cell-1'))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('match-duel-freeze-frame')).toBeInTheDocument()
+    })
+
+    await act(async () => {
+      fireEvent.pointerDown(window)
+    })
+
+    expect(screen.queryByTestId('match-duel-freeze-frame')).not.toBeInTheDocument()
   })
 
   test('cpu capture applies flip state metadata on board cells', async () => {
@@ -843,6 +907,7 @@ describe('MatchPage tutorial guided flow', () => {
     expect(screen.getByTestId('player-card-c42')).toBeDisabled()
     expect(screen.getByTestId('player-card-c44')).toBeDisabled()
     expect(screen.getByTestId('player-card-c43')).toBeEnabled()
+    expect(screen.getByTestId('match-tutorial-window')).toHaveAttribute('role', 'dialog')
     expect(screen.getByTestId('match-tutorial-chapter')).toHaveTextContent('Lecon 1/3 - Controle du plateau')
   })
 
@@ -983,8 +1048,8 @@ describe('MatchPage critical victory', () => {
 
     await waitFor(() => expect(screen.getByTestId('match-finish-modal')).toBeInTheDocument())
 
-    expect(screen.getByText('Critical Victory')).toBeInTheDocument()
-    expect(screen.getByText(/\+22 critical/)).toBeInTheDocument()
+    expect(screen.getByText('Victoire critique')).toBeInTheDocument()
+    expect(screen.getByText(/\+15 critique/)).toBeInTheDocument()
     expect(playCriticalVictorySound).toHaveBeenCalledTimes(1)
 
     view.rerender(
@@ -1005,7 +1070,7 @@ describe('MatchPage critical victory', () => {
 
     await waitFor(() => expect(screen.getByTestId('match-finish-modal')).toBeInTheDocument())
 
-    expect(screen.queryByText('Critical Victory')).not.toBeInTheDocument()
+    expect(screen.queryByText('Victoire critique')).not.toBeInTheDocument()
     expect(playCriticalVictorySound).not.toHaveBeenCalled()
   })
 
@@ -1028,14 +1093,14 @@ describe('MatchPage claimed card selection', () => {
 
     await waitFor(() => expect(screen.getByTestId('match-finish-modal')).toBeInTheDocument())
 
-    const claimGrid = screen.getByLabelText('Claim card selection')
+    const claimGrid = screen.getByLabelText('Sélection de fragment')
     expect(claimGrid).toHaveClass('setup-selected-cards')
 
     const firstClaimCard = screen.getByTestId('match-claim-card-c71')
     expect(firstClaimCard).toHaveClass('setup-preview-card')
   })
 
-  test('victory requires selecting one cpu card before continuing and passes selected card to finalize', async () => {
+  test('victory requires selecting claimed cards before continuing and passes selected list to finalize', async () => {
     const user = userEvent.setup()
     const finalizeMock = vi.fn()
     const state = makeFinishedState(['player', 'player', 'player', 'player', 'player', 'player', 'player', 'player', 'cpu'])
@@ -1047,19 +1112,19 @@ describe('MatchPage claimed card selection', () => {
 
     await waitFor(() => expect(screen.getByTestId('match-finish-modal')).toBeInTheDocument())
 
-    expect(screen.getByText('Choose 1 opponent card to recover 1 fragment (not a full card)')).toBeInTheDocument()
+    expect(screen.getByText('Choisis 1 carte(s) adverse(s) pour récupérer 1 fragment(s)')).toBeInTheDocument()
     expect(screen.getAllByTestId(/^match-claim-card-/)).toHaveLength(5)
     expect(screen.getByTestId('finish-match-button')).toBeDisabled()
 
     await user.click(screen.getByTestId('match-claim-card-c71'))
     await waitFor(() => expect(screen.getByTestId('finish-match-button')).toBeEnabled())
     expect(screen.getByTestId('match-fragment-selection-status')).toHaveTextContent(
-      'Selected: C71 - Current fragments: 0/6',
+      'Sélection: C71 - Fragments actuels: 0/6',
     )
 
     await user.click(screen.getByTestId('finish-match-button'))
     expect(finalizeMock).toHaveBeenCalledTimes(1)
-    expect(finalizeMock).toHaveBeenCalledWith('c71')
+    expect(finalizeMock).toHaveBeenCalledWith(['c71'])
   })
 
   test('draw/loss results do not show claim selector and continue stays enabled', async () => {
@@ -1068,7 +1133,7 @@ describe('MatchPage claimed card selection', () => {
 
     await waitFor(() => expect(screen.getByTestId('match-finish-modal')).toBeInTheDocument())
 
-    expect(screen.queryByText('Choose 1 opponent card to recover 1 fragment (not a full card)')).not.toBeInTheDocument()
+    expect(screen.queryByText('Choisis 1 carte(s) adverse(s) pour récupérer 1 fragment(s)')).not.toBeInTheDocument()
     expect(screen.queryAllByTestId(/^match-claim-card-/)).toHaveLength(0)
     expect(screen.getByTestId('finish-match-button')).toBeEnabled()
   })
@@ -1111,7 +1176,36 @@ describe('MatchPage claimed card selection', () => {
 
     await user.click(screen.getByTestId('finish-match-button'))
     expect(finalizeMock).toHaveBeenCalledTimes(1)
-    expect(finalizeMock).toHaveBeenCalledWith(firstCpuCardId)
+    expect(finalizeMock).toHaveBeenCalledWith([firstCpuCardId])
+  })
+
+  test('at 50% pokedex completion, victory requires selecting two claim cards', async () => {
+    const user = userEvent.setup()
+    const finalizeMock = vi.fn()
+    const state = makeFinishedState(['player', 'player', 'player', 'player', 'player', 'player', 'player', 'player', 'cpu'])
+    const contextValue = buildContextValue(state, 'normal', 8, {
+      finalizeCurrentMatch: finalizeMock as unknown as GameContextValue['finalizeCurrentMatch'],
+    })
+    const ownedAtHalf = cardPool.slice(0, Math.ceil(cardPool.length * 0.5)).map((card) => card.id)
+    contextValue.profile.ownedCardIds = ownedAtHalf
+    contextValue.profile.cardCopiesById = Object.fromEntries(ownedAtHalf.map((cardId) => [cardId, 1]))
+
+    renderMatchPageWithContext(contextValue)
+
+    await waitFor(() => expect(screen.getByTestId('match-finish-modal')).toBeInTheDocument())
+
+    expect(screen.getByText('Choisis 2 carte(s) adverse(s) pour récupérer 2 fragment(s)')).toBeInTheDocument()
+    expect(screen.getByTestId('finish-match-button')).toBeDisabled()
+
+    await user.click(screen.getByTestId('match-claim-card-c71'))
+    expect(screen.getByTestId('finish-match-button')).toBeDisabled()
+
+    await user.click(screen.getByTestId('match-claim-card-c72'))
+    await waitFor(() => expect(screen.getByTestId('finish-match-button')).toBeEnabled())
+
+    await user.click(screen.getByTestId('finish-match-button'))
+    expect(finalizeMock).toHaveBeenCalledTimes(1)
+    expect(finalizeMock).toHaveBeenCalledWith(['c71', 'c72'])
   })
 
   test('marks claim cards with a star and plus when they are not owned yet', async () => {
@@ -1189,6 +1283,59 @@ describe('MatchPage cpu pacing', () => {
   })
 })
 
+describe('MatchPage combat coach', () => {
+  test('renders one compact action line with the concrete effect', () => {
+    const state = makeActivePlayerTurnStateWithFireCastAnimation()
+
+    renderMatchPageWithContext(buildContextValue(state, 'normal'))
+
+    const coach = screen.getByTestId('match-combat-coach')
+    expect(screen.getByTestId('match-board-console')).toContainElement(coach)
+    expect(screen.getByTestId('match-combat-coach-body')).toHaveTextContent(
+      /ACTION\s*:\s*Tu pourras bruler une carte\./,
+    )
+    expect(within(coach).queryByTestId('match-combat-coach-title')).not.toBeInTheDocument()
+    expect(within(coach).queryByText('À faire')).not.toBeInTheDocument()
+    expect(within(coach).queryByText('Effet')).not.toBeInTheDocument()
+  })
+
+  test('describes captures as a simple effect instead of a stat comparison', () => {
+    const state = makeActivePlayerTurnStateWithCapture()
+
+    renderMatchPageWithContext(buildContextValue(state, 'normal'))
+
+    const coachBody = screen.getByTestId('match-combat-coach-body')
+    expect(coachBody).toHaveTextContent(/ACTION\s*:\s*Abo passe chez toi\./)
+    expect(coachBody).not.toHaveTextContent(/bat son/)
+    expect(coachBody).not.toHaveTextContent(/Ton \d/)
+  })
+
+  test('shows a concrete effect info card for water before choosing the target', () => {
+    const state = makeActivePlayerTurnStateWithWaterCastAnimation()
+
+    renderMatchPageWithContext(buildContextValue(state, 'normal'))
+    fireEvent.click(screen.getByTestId('player-card-c03'))
+
+    expect(screen.getByTestId('match-effect-info-card')).toHaveTextContent('EFFET EAU')
+    expect(screen.getByTestId('match-effect-info-impact')).toHaveTextContent(
+      'La prochaine carte non-Spectre posée sur cette case perd 3 sur sa meilleure stat.',
+    )
+    expect(screen.getByTestId('match-effect-info-note')).toHaveTextContent('Après déclenchement, la case redevient normale.')
+  })
+
+  test('keeps the effect info visible while choosing a power target', () => {
+    const state = makeActivePlayerTurnStateWithWaterCastAnimation()
+
+    renderMatchPageWithContext(buildContextValue(state, 'normal'))
+    fireEvent.click(screen.getByTestId('player-card-c03'))
+    fireEvent.click(screen.getByTestId('board-cell-8'))
+
+    expect(screen.getByTestId('match-effect-info-title')).toHaveTextContent('CIBLE EAU')
+    expect(screen.getByTestId('match-effect-info-trigger')).toHaveTextContent('Clique une case lumineuse.')
+    expect(screen.getByTestId('match-effect-info-impact')).toHaveTextContent('perd 3 sur sa meilleure stat')
+  })
+})
+
 describe('MatchPage hand layout classes by mode', () => {
   test('renders cpu and player side hand art in match lanes', () => {
     const state = makeActiveCpuTurnState()
@@ -1234,6 +1381,35 @@ describe('MatchPage hand layout classes by mode', () => {
     expect(screen.getByTestId('match-lane-type-strip-cpu')).toBeInTheDocument()
   })
 
+  test('renders the compact effects panel during active effects matches', () => {
+    const state = attachEffectsState(makeActivePlayerTurnState(), {
+      enabled: true,
+      mode: 'effects',
+      floodedCell: 4,
+      usedOnPoseByActor: { player: { eau: true }, cpu: {} },
+    })
+
+    renderMatchPageWithContext(buildContextValue(state, 'normal'))
+
+    expect(screen.getByTestId('match-effects-panel-mode')).toHaveTextContent('EFFETS ON')
+    expect(screen.getByTestId('match-effects-panel-hazards')).toHaveTextContent('EAU C5')
+    expect(screen.getByTestId('match-effects-panel-used')).toHaveTextContent('Joueur • Eau')
+  })
+
+  test('renders the normal mode +1 bonus panel when type rules are enabled', () => {
+    const state = attachEffectsState(makeActivePlayerTurnState(), {
+      enabled: true,
+      mode: 'normal',
+    })
+    state.board[4] = { owner: 'player', cardId: 'c09' }
+
+    renderMatchPageWithContext(buildContextValue(state, 'normal'))
+
+    expect(screen.getByTestId('match-effects-panel-mode')).toHaveTextContent('EFFETS OFF')
+    expect(screen.getByText('Mode normal: les cartes Normal affichent +1 partout.')).toBeInTheDocument()
+    expect(screen.getByTestId('match-effects-panel-active')).toHaveTextContent('+1 C5')
+  })
+
   test('renders poisoned hand card with debuffed display stats', () => {
     const state = attachEffectsState(makeActivePlayerTurnState(), {
       enabled: true,
@@ -1265,6 +1441,7 @@ describe('MatchPage hand layout classes by mode', () => {
     expect(rightStat).toHaveClass(poisonedCardDef.right > 1 ? 'effect-stat--debuff' : 'effect-stat--neutral')
     expect(bottomStat).toHaveClass(poisonedCardDef.bottom > 1 ? 'effect-stat--debuff' : 'effect-stat--neutral')
     expect(leftStat).toHaveClass(poisonedCardDef.left > 1 ? 'effect-stat--debuff' : 'effect-stat--neutral')
+    expect(screen.getByTestId('hand-card-player-c42-0-effects')).toHaveTextContent('POISON -1')
   })
 
   test('marks poisoned cpu hand card with poison visual class', () => {
@@ -1286,6 +1463,7 @@ describe('MatchPage hand layout classes by mode', () => {
     const cpuHand = screen.getByLabelText('CPU hand')
     const poisonedCpuCard = within(cpuHand).getByLabelText(poisonedCpuCardDef.name)
     expect(poisonedCpuCard).toHaveClass('is-hand-poisoned')
+    expect(screen.getByTestId('hand-card-cpu-c72-0-effects')).toHaveTextContent('POISON -1')
   })
 })
 
@@ -1323,10 +1501,10 @@ describe('MatchPage tower mode', () => {
 
     renderMatchPageWithContext(contextValue)
 
-    expect(screen.getByTestId('match-tower-floor')).toHaveTextContent('Tower Floor 12')
-    expect(screen.getByTestId('match-tower-floor')).toHaveTextContent('Checkpoint 10')
-    expect(screen.getByTestId('match-tower-boss')).toHaveTextContent('Normal Floor')
-    expect(screen.getByTestId('match-tower-relics')).toHaveTextContent('Relics 0')
+    expect(screen.getByTestId('match-tower-floor')).toHaveTextContent('Tour étage 12')
+    expect(screen.getByTestId('match-tower-floor')).toHaveTextContent('Palier 10')
+    expect(screen.getByTestId('match-tower-boss')).toHaveTextContent('Étage normal')
+    expect(screen.getByTestId('match-tower-relics')).toHaveTextContent('Reliques 0')
   })
 
   test('finish modal hides claimed-card selection and uses tower action labels', async () => {
@@ -1363,11 +1541,11 @@ describe('MatchPage tower mode', () => {
 
     await waitFor(() => expect(screen.getByTestId('match-finish-modal')).toBeInTheDocument())
 
-    expect(screen.getByText('Queue: Tower')).toBeInTheDocument()
-    expect(screen.queryByText('Choose 1 opponent card to recover 1 fragment (not a full card)')).not.toBeInTheDocument()
-    expect(screen.getByText('Tower mode does not grant card fragments.')).toBeInTheDocument()
+    expect(screen.getByText('File: Tour')).toBeInTheDocument()
+    expect(screen.queryByText('Choisis 1 carte adverse pour récupérer 1 fragment, pas une carte complète.')).not.toBeInTheDocument()
+    expect(screen.getByText('Le mode Tour ne donne pas de fragments de carte.')).toBeInTheDocument()
     expect(screen.queryByTestId('restart-match-button')).not.toBeInTheDocument()
-    expect(screen.getByTestId('finish-match-button')).toHaveTextContent('Continue Ascension')
+    expect(screen.getByTestId('finish-match-button')).toHaveTextContent("Continuer l'ascension")
   })
 })
 
@@ -1462,6 +1640,27 @@ describe('MatchPage keyboard gameplay', () => {
 })
 
 describe('MatchPage effects visualization', () => {
+  test('adds a compact effect history entry after a power resolves', async () => {
+    vi.useFakeTimers()
+    try {
+      const state = makeActivePlayerTurnStateWithFireCastAnimation()
+      renderMatchPageWithStatefulContext(state)
+
+      fireEvent.click(screen.getByTestId('player-card-c02'))
+      fireEvent.click(screen.getByTestId('board-cell-4'))
+      fireEvent.click(screen.getByTestId('board-cell-1'))
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(220)
+      })
+
+      expect(screen.getByTestId('match-effects-panel-feed')).toHaveTextContent('Feu:')
+      expect(screen.getByTestId('match-effects-panel-feed')).toHaveTextContent('-1 partout')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   test('animates eau cast marker before applying flooded cell state', async () => {
     vi.useFakeTimers()
     try {
@@ -1517,8 +1716,8 @@ describe('MatchPage effects visualization', () => {
       'src',
       expect.stringContaining('/logos-elements/feu.png'),
     )
-    expect(screen.getByTestId('match-fire-target-hint')).toHaveTextContent('bruler')
-    expect(screen.queryByText('Choose a power target.')).not.toBeInTheDocument()
+    expect(screen.getByTestId('match-fire-target-hint')).toHaveTextContent('Clique une carte lumineuse pour brûler.')
+    expect(screen.queryByText('Choisis une cible de pouvoir.')).not.toBeInTheDocument()
   })
 
   test('animates feu cast marker before applying burn state', async () => {
@@ -1607,7 +1806,7 @@ describe('MatchPage effects visualization', () => {
     fireEvent.click(screen.getByTestId('board-cell-0'))
 
     expect(updateCurrentMatch).not.toHaveBeenCalled()
-    expect(screen.queryByText('Choose a power target.')).not.toBeInTheDocument()
+    expect(screen.queryByText('Choisis une cible de pouvoir.')).not.toBeInTheDocument()
     expect(screen.getByTestId('board-cell-1')).toHaveClass('fallback-cell--fire-target')
   })
 
@@ -1673,8 +1872,8 @@ describe('MatchPage effects visualization', () => {
       expect.stringContaining('/logos-elements/eau.png'),
     )
     expect(screen.getByTestId('board-cell-0-flood-target-badge')).toHaveTextContent('CIBLE')
-    expect(screen.getByTestId('match-flood-target-hint')).toHaveTextContent('inonder')
-    expect(screen.queryByText('Choose a power target.')).not.toBeInTheDocument()
+    expect(screen.getByTestId('match-flood-target-hint')).toHaveTextContent('Clique une case lumineuse pour inonder.')
+    expect(screen.queryByText('Choisis une cible de pouvoir.')).not.toBeInTheDocument()
   })
 
   test('animates eau flooded malus then clash before applying resolved state', async () => {
@@ -1697,7 +1896,7 @@ describe('MatchPage effects visualization', () => {
         'src',
         expect.stringContaining('/logos-elements/eau.png'),
       )
-      expect(screen.getByTestId('board-cell-4-water-penalty-badge')).toHaveTextContent('-2')
+      expect(screen.getByTestId('board-cell-4-water-penalty-badge')).toHaveTextContent('-3')
       expect(screen.queryByTestId('match-vs-overlay')).not.toBeInTheDocument()
 
       await act(async () => {
@@ -1708,6 +1907,8 @@ describe('MatchPage effects visualization', () => {
       expect(screen.getByTestId('board-cell-4')).toHaveClass('fallback-cell--clash')
       expect(screen.getByTestId('board-cell-5')).toHaveClass('fallback-cell--clash')
       expect(screen.getByTestId('match-vs-overlay')).toBeInTheDocument()
+      expect(screen.getByTestId('match-phase-bar-current')).toHaveTextContent('Duel')
+      expect(screen.getByTestId('match-vs-badge-0')).toHaveTextContent('VS')
 
       await act(async () => {
         await vi.advanceTimersByTimeAsync(600)
@@ -1739,7 +1940,7 @@ describe('MatchPage effects visualization', () => {
       expect(screen.getByTestId('board-cell-5')).toHaveClass('fallback-cell--ground-debuffed')
       expect(screen.getByTestId('board-cell-5-ground-badge-logo')).toHaveAttribute(
         'src',
-        expect.stringContaining('/ui/match/board-effects/Sol.png'),
+        expect.stringContaining('/ui/match/board-effects/runtime/Sol.webp'),
       )
 
       const resolvedState = updateCurrentMatch.mock.calls[0]?.[0] as MatchState
@@ -1830,8 +2031,8 @@ describe('MatchPage effects visualization', () => {
       'src',
       expect.stringContaining('/logos-elements/glace.png'),
     )
-    expect(screen.getByTestId('match-freeze-target-hint')).toHaveTextContent('geler')
-    expect(screen.queryByText('Choose a power target.')).not.toBeInTheDocument()
+    expect(screen.getByTestId('match-freeze-target-hint')).toHaveTextContent('Clique une case lumineuse pour geler.')
+    expect(screen.queryByText('Choisis une cible de pouvoir.')).not.toBeInTheDocument()
   })
 
   test('keeps frozen cell visual after glace cast resolves', async () => {

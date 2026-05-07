@@ -51,6 +51,7 @@ function renderCollection(valueOverrides: Partial<GameContextValue> = {}) {
         duplicateConverted: false,
         bonusGoldFromDuplicate: 0,
         bonusGoldFromDifficulty: 0,
+        bonusGoldFromWinStreak: 0,
         bonusGoldFromComboBounty: 0,
         bonusGoldFromCleanVictory: 0,
         bonusGoldFromSecondarySynergy: 0,
@@ -112,7 +113,7 @@ function renderCollection(valueOverrides: Partial<GameContextValue> = {}) {
     buySpecialPack: () => {
       throw new Error('Not implemented in test.')
     },
-    addTestGold: () => {
+    addTestOr: () => {
       throw new Error('Not implemented in test.')
     },
     createStoredProfile: () => {
@@ -581,7 +582,7 @@ describe('CollectionPage', () => {
     await user.click(selectedCard)
 
     expect(screen.getByTestId('collection-selected-copies')).toHaveTextContent('2')
-    expect(screen.getByText('Copies totales : 12')).toBeInTheDocument()
+    expect(screen.getByText('Copies totales : 7')).toBeInTheDocument()
     expect(screen.getByTestId('collection-selected-category')).not.toHaveTextContent('Inconnu')
     expect(screen.getByTestId('collection-selected-element')).not.toHaveTextContent('Inconnu')
     const selectedElement = screen.getByTestId('collection-selected-element')

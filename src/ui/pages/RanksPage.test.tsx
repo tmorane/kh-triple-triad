@@ -1,11 +1,15 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-import { afterAll, beforeEach, describe, expect, test, vi } from 'bun:test'
-import { __setCloudLadderDependenciesForTests, __setMockLadderEnabledForTests } from '../../app/cloud/cloudLadderStore'
+import { beforeEach, describe, expect, test, vi } from 'bun:test'
+import * as cloudLadderStore from '../../app/cloud/cloudLadderStore'
+import { PROFILE_STORAGE_KEY } from '../../domain/progression/profile'
 import { RanksPage } from './RanksPage'
-const listStoredProfilesForLadderMock = vi.fn(() => [])
-const isCloudAuthEnabledMock = vi.fn(() => false)
-const getSupabaseClientMock = vi.fn(() => null)
+
+vi.mock('../../app/cloud/cloudLadderStore', () => ({
+  fetchOwnedCardsLadder: vi.fn(async () => []),
+  fetchPeakRankLadder: vi.fn(async () => []),
+  isGlobalLadderEnabled: vi.fn(() => true),
+}))
 
 function renderRanksPage() {
   return render(
@@ -15,35 +19,45 @@ function renderRanksPage() {
   )
 }
 
-beforeEach(() => {
-  vi.clearAllMocks()
-  listStoredProfilesForLadderMock.mockReturnValue([])
-  isCloudAuthEnabledMock.mockReturnValue(false)
-  getSupabaseClientMock.mockReturnValue(null)
-  __setMockLadderEnabledForTests(false)
-  __setCloudLadderDependenciesForTests({
-    listStoredProfilesForLadder: listStoredProfilesForLadderMock,
-    isCloudAuthEnabled: isCloudAuthEnabledMock,
-    getSupabaseClient: getSupabaseClientMock,
-  })
-})
+function writeStoredProfileRevision(playerName: string) {
+  localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify({ playerName }))
+}
 
-afterAll(() => {
-  __setMockLadderEnabledForTests(null)
-  __setCloudLadderDependenciesForTests(null)
-})
+function readStoredPlayerName(): string {
+  const saved = JSON.parse(localStorage.getItem(PROFILE_STORAGE_KEY) ?? '{}') as { playerName?: string }
+  return saved.playerName ?? 'Joueur'
+}
+
+function createLocalLadderEntry() {
+  return {
+    userId: 'local-player',
+    playerName: readStoredPlayerName(),
+    ownedCardsCount: 5,
+    peakRankScore: 0,
+    peakRankLabel: 'Iron IV',
+    updatedAt: '2026-05-07T12:00:00.000Z',
+  }
+}
 
 describe('RanksPage', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    localStorage.clear()
+    vi.mocked(cloudLadderStore.isGlobalLadderEnabled).mockReturnValue(false)
+    vi.mocked(cloudLadderStore.fetchPeakRankLadder).mockResolvedValue([])
+    vi.mocked(cloudLadderStore.fetchOwnedCardsLadder).mockResolvedValue([])
+  })
+
   test('renders all ranked tiers with emblem and division model', () => {
     renderRanksPage()
 
     const tiers = [
-      'Iron',
+      'Fer',
       'Bronze',
-      'Silver',
-      'Gold',
-      'Platinum',
-      'Diamond',
+      'Argent',
+      'Or',
+      'Platine',
+      'Diamant',
       'Challenger',
     ]
 
@@ -54,57 +68,98 @@ describe('RanksPage', () => {
     expect(screen.getAllByTestId(/^ranks-tier-/)).toHaveLength(7)
     expect(screen.getByTestId('ranks-tier-iron')).toHaveTextContent('Divisions IV, III, II, I')
     expect(screen.getByTestId('ranks-tier-diamond')).toHaveTextContent('Divisions IV, III, II, I')
-    expect(screen.getByTestId('ranks-tier-challenger')).toHaveTextContent('Apex tier (no divisions)')
-    expect(screen.getByRole('img', { name: 'Iron rank emblem' })).toHaveAttribute('src', '/ranks/iron.png')
-    expect(screen.getByRole('img', { name: 'Challenger rank emblem' })).toHaveAttribute('src', '/ranks/challenger.png')
+    expect(screen.getByTestId('ranks-tier-challenger')).toHaveTextContent('Rang sommet (sans divisions)')
+    expect(screen.getByRole('img', { name: 'Emblème du rang Fer' })).toHaveAttribute('src', '/ranks/iron.svg')
+    expect(screen.getByRole('img', { name: 'Emblème du rang Challenger' })).toHaveAttribute('src', '/ranks/challenger.svg')
   })
 
   test('renders ranked LP rules summary', () => {
     renderRanksPage()
 
-    expect(screen.getByTestId('ranks-rules')).toHaveTextContent('+60 / +65 / +70 LP')
-    expect(screen.getByTestId('ranks-rules')).toHaveTextContent('IV +0, III +1, II +2, I +3 LP')
-    expect(screen.getByTestId('ranks-rules')).toHaveTextContent('Challenger +2 LP')
-    expect(screen.getByTestId('ranks-rules')).toHaveTextContent('-20 / -25 / -30 LP')
-    expect(screen.getByTestId('ranks-rules')).toHaveTextContent('IV +0, III +2, II +4, I +6 score')
-    expect(screen.getByTestId('ranks-rules')).toHaveTextContent('Challenger +6 score')
-    expect(screen.getByTestId('ranks-rules')).toHaveTextContent('Draw: 0 LP')
-    expect(screen.getByTestId('ranks-rules')).toHaveTextContent('Promotion at 100 LP with carry')
-    expect(screen.getByTestId('ranks-rules')).toHaveTextContent('Demotion shield: 3 losses after promotion')
-    expect(screen.getByTestId('ranks-open-only-note')).toHaveTextContent('Ranked queue uses visibility rule only')
+    expect(screen.getByTestId('ranks-rules')).toHaveTextContent('+30 / +31 / +32 / +33 / +34 / +35')
+    expect(screen.getByTestId('ranks-rules')).toHaveTextContent('-15 / -16 / -17 / -18 / -19 / -20')
+    expect(screen.getByTestId('ranks-rules')).toHaveTextContent('Égalité: 0 point')
+    expect(screen.getByTestId('ranks-rules')).toHaveTextContent('Promotion à 100 points: BO3')
+    expect(screen.getByTestId('ranks-rules')).toHaveTextContent('Matchs de BO3: aucun point gagné ou perdu')
+    expect(screen.getByTestId('ranks-rules')).toHaveTextContent('Promotion réussie: ligue suivante +20 points')
+    expect(screen.getByTestId('ranks-rules')).toHaveTextContent('Promotion ratée: même ligue, retour à 80 points')
+    expect(screen.getByTestId('ranks-rules')).toHaveTextContent('À 0 point: 2 boucliers, la 3e défaite rétrograde')
+    expect(screen.getByTestId('ranks-rules')).toHaveTextContent('Challenger: pas de rétrogradation vers Diamant')
+    expect(screen.getByTestId('ranks-rules')).toHaveTextContent('Saison: 2 mois, reset -2 ligues')
+    expect(screen.getByTestId('ranks-rules')).toHaveTextContent('Récompenses de ligue: 1 fois par ligue et par saison')
+    expect(screen.getByTestId('ranks-open-only-note')).toHaveTextContent('La file classée utilise seulement la règle de visibilité')
   })
 
-  test('shows ladder disabled note when global ladders are disabled', () => {
-    renderRanksPage()
-
-    expect(screen.getByTestId('ranks-ladder-disabled-note')).toHaveTextContent(
-      'Global ladders are unavailable until cloud auth is configured.',
-    )
-  })
-
-  test('renders owned cards ladder and 3x3 peak ladder when global ladder mode is enabled (mock without cloud)', async () => {
-    listStoredProfilesForLadderMock.mockReturnValue([
+  test('renders global ladders for rank and captured pokemon', async () => {
+    vi.mocked(cloudLadderStore.isGlobalLadderEnabled).mockReturnValue(true)
+    vi.mocked(cloudLadderStore.fetchPeakRankLadder).mockResolvedValue([
       {
-        id: 'u-1',
-        playerName: 'Alice',
-        ownedCardsCount: 120,
-        rankedByMode: {
-          '3x3': { tier: 'diamond', division: 'II', lp: 23 },
-          '4x4': { tier: 'diamond', division: 'II', lp: 23 },
-        },
-        updatedAt: '2026-02-23T12:00:00.000Z',
+        userId: 'rank-1',
+        playerName: 'Sora',
+        ownedCardsCount: 152,
+        peakRankScore: 6085,
+        peakRankLabel: 'Challenger',
+        updatedAt: '2026-02-19T08:00:00.000Z',
+      },
+      {
+        userId: 'rank-2',
+        playerName: 'Riku',
+        ownedCardsCount: 139,
+        peakRankScore: 5071,
+        peakRankLabel: 'Diamond I',
+        updatedAt: '2026-02-18T08:00:00.000Z',
+      },
+    ])
+    vi.mocked(cloudLadderStore.fetchOwnedCardsLadder).mockResolvedValue([
+      {
+        userId: 'owned-1',
+        playerName: 'Kairi',
+        ownedCardsCount: 200,
+        peakRankScore: 5000,
+        peakRankLabel: 'Diamond IV',
+        updatedAt: '2026-02-17T08:00:00.000Z',
+      },
+      {
+        userId: 'owned-2',
+        playerName: 'Aqua',
+        ownedCardsCount: 127,
+        peakRankScore: 5000,
+        peakRankLabel: 'Diamond IV',
+        updatedAt: '2026-02-16T08:00:00.000Z',
       },
     ])
 
     renderRanksPage()
 
-    await waitFor(() => {
-      expect(screen.getByTestId('ranks-owned-ladder')).toBeInTheDocument()
-    })
+    expect(await screen.findByRole('heading', { name: 'Classements globaux' })).toBeInTheDocument()
+    expect(cloudLadderStore.fetchPeakRankLadder).toHaveBeenCalledWith('3x3', 10)
+    expect(cloudLadderStore.fetchOwnedCardsLadder).toHaveBeenCalledWith(10)
+    expect(screen.getByTestId('ranks-rank-ladder')).toHaveTextContent('Sora')
+    expect(screen.getByTestId('ranks-rank-ladder')).toHaveTextContent('Challenger')
+    expect(screen.getByTestId('ranks-owned-ladder')).toHaveTextContent('Kairi')
+    expect(screen.getByTestId('ranks-owned-ladder')).toHaveTextContent('200 Pokémon')
+  })
 
-    expect(screen.getByTestId('ranks-owned-ladder')).toHaveTextContent('Alice')
-    expect(screen.getByTestId('ranks-owned-ladder')).toHaveTextContent('120')
-    expect(screen.getByTestId('ranks-peak-ladder-3x3')).toHaveTextContent('Diamond II')
-    expect(screen.queryByTestId('ranks-peak-ladder-4x4')).not.toBeInTheDocument()
+  test('refreshes local ladders when the stored player name changes', async () => {
+    vi.mocked(cloudLadderStore.isGlobalLadderEnabled).mockReturnValue(true)
+    vi.mocked(cloudLadderStore.fetchPeakRankLadder).mockImplementation(async () => [createLocalLadderEntry()])
+    vi.mocked(cloudLadderStore.fetchOwnedCardsLadder).mockImplementation(async () => [createLocalLadderEntry()])
+    writeStoredProfileRevision('Joueur')
+
+    const { rerender } = renderRanksPage()
+
+    expect(await screen.findByTestId('ranks-rank-ladder')).toHaveTextContent('Joueur')
+    expect(screen.getByTestId('ranks-owned-ladder')).toHaveTextContent('Joueur')
+
+    writeStoredProfileRevision('Aqua')
+    rerender(
+      <MemoryRouter>
+        <RanksPage />
+      </MemoryRouter>,
+    )
+
+    await waitFor(() => expect(cloudLadderStore.fetchPeakRankLadder).toHaveBeenCalledTimes(2))
+    expect(screen.getByTestId('ranks-rank-ladder')).toHaveTextContent('Aqua')
+    expect(screen.getByTestId('ranks-owned-ladder')).toHaveTextContent('Aqua')
   })
 })

@@ -42,7 +42,7 @@ function buildContextValue(overrides: Partial<GameContextValue> = {}): GameConte
     buySpecialPack: vi.fn(() => {
       throw new Error('Not implemented in test.')
     }),
-    addTestGold: vi.fn(),
+    addTestOr: vi.fn(),
     createStoredProfile: vi.fn(() => ({ valid: true })),
     switchStoredProfile: vi.fn(),
     deleteStoredProfile: vi.fn(() => ({ valid: true })),
@@ -67,11 +67,11 @@ describe('RulesPage', () => {
     renderRulesPage()
     const user = userEvent.setup()
 
-    expect(screen.getByRole('heading', { name: 'Rules' })).toBeInTheDocument()
-    expect(screen.getByText(/Turn it on to see the CPU hand/i)).toBeInTheDocument()
-    expect(screen.getByText(/Turn it off to keep the CPU hand hidden/i)).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Règles' })).toBeInTheDocument()
+    expect(screen.getByText(/active cette règle pour voir la main du CPU/i)).toBeInTheDocument()
+    expect(screen.getByText(/Désactive-la pour garder sa main cachée/i)).toBeInTheDocument()
 
-    expect(screen.getByRole('heading', { name: 'Element effects' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Effets de type' })).toBeInTheDocument()
 
     const feuIcon = screen.getByTestId('rules-element-icon-feu')
     const eauIcon = screen.getByTestId('rules-element-icon-eau')
@@ -101,7 +101,7 @@ describe('RulesPage', () => {
 
     await user.click(screen.getByRole('button', { name: 'Tutoriel' }))
 
-    expect(screen.getByTestId('rules-tutorial-progress')).toHaveTextContent('Etape 1/15')
+    expect(screen.getByTestId('rules-tutorial-progress')).toHaveTextContent('Étape 1/15')
     expect(screen.getByTestId('rules-tutorial-step-label')).toHaveTextContent('Normal')
 
     const normalIcon = screen.getByTestId('rules-element-icon-normal')
@@ -125,14 +125,14 @@ describe('RulesPage', () => {
     const feuIcon = screen.getByTestId('rules-element-icon-feu')
 
     await user.click(feuIcon)
-    expect(progress).toHaveTextContent('Etape 1/15')
+    expect(progress).toHaveTextContent('Étape 1/15')
 
     await user.click(normalIcon)
-    expect(progress).toHaveTextContent('Etape 2/15')
+    expect(progress).toHaveTextContent('Étape 2/15')
     expect(screen.getByTestId('rules-tutorial-step-label')).toHaveTextContent('Feu')
 
     await user.click(screen.getByRole('button', { name: 'Passer' }))
-    expect(progress).toHaveTextContent('Etape 3/15')
+    expect(progress).toHaveTextContent('Étape 3/15')
     expect(screen.getByTestId('rules-tutorial-step-label')).toHaveTextContent('Eau')
   })
 
@@ -142,7 +142,7 @@ describe('RulesPage', () => {
 
     await user.click(screen.getByRole('button', { name: 'Tutoriel' }))
     await user.click(screen.getByTestId('rules-element-icon-normal'))
-    expect(screen.getByTestId('rules-tutorial-progress')).toHaveTextContent('Etape 2/15')
+    expect(screen.getByTestId('rules-tutorial-progress')).toHaveTextContent('Étape 2/15')
 
     await user.click(screen.getByRole('button', { name: 'Quitter' }))
 
@@ -166,7 +166,7 @@ describe('RulesPage', () => {
     expect(screen.queryByTestId('rules-tutorial-progress')).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Relancer' }))
-    expect(screen.getByTestId('rules-tutorial-progress')).toHaveTextContent('Etape 1/15')
+    expect(screen.getByTestId('rules-tutorial-progress')).toHaveTextContent('Étape 1/15')
     expect(screen.getByTestId('rules-tutorial-step-label')).toHaveTextContent('Normal')
   })
 

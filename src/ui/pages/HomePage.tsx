@@ -1,28 +1,27 @@
 import type { CSSProperties } from 'react'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import {
-  fetchOwnedCardsLadder,
-  fetchPeakRankLadder,
-  isGlobalLadderEnabled,
-  type LadderEntry,
-} from '../../app/cloud/cloudLadderStore'
-import { IS_4X4_UI_ENABLED } from '../../app/matchUiConfig'
+import { fetchOwnedCardsLadder, fetchPeakRankLadder, isGlobalLadderEnabled, type LadderEntry } from '../../app/cloud/cloudLadderStore'
+import { IS_4X4_UI_ENABLED, PRIMARY_MATCH_MODE } from '../../app/matchUiConfig'
 import { useGame } from '../../app/useGame'
 import { cardPool } from '../../domain/cards/cardPool'
+import { deriveFirstRunOnboarding, deriveLongTermGoals } from '../../domain/progression/engagementLoop'
+import { missionDefinitions, missionIds } from '../../domain/progression/missionCatalog'
 import type { MissionId, RankedTierId } from '../../domain/types'
 import { getRankEmblemSrc } from '../rankEmblems'
+import { TrackedPokemonWidget } from '../components/TrackedPokemonWidget'
 
 const GOLD_MILESTONES = [150, 200, 300, 450, 600, 800, 1000]
-const numberFormat = new Intl.NumberFormat('en-US')
+const HOME_LADDER_LIMIT = 3
+const numberFormat = new Intl.NumberFormat('fr-FR')
 
 const tierNames: Record<RankedTierId, string> = {
-  iron: 'Iron',
+  iron: 'Fer',
   bronze: 'Bronze',
-  silver: 'Silver',
-  gold: 'Gold',
-  platinum: 'Platinum',
-  diamond: 'Diamond',
+  silver: 'Argent',
+  gold: 'Or',
+  platinum: 'Platine',
+  diamond: 'Diamant',
   challenger: 'Challenger',
 }
 
@@ -46,19 +45,29 @@ interface HomeMissionCard {
   claimable: boolean
 }
 
-const missionOrder: MissionId[] = ['m1_type_specialist', 'm2_combo_practitioner', 'm3_corner_tactician']
+type LadderStatus = 'disabled' | 'loading' | 'ready' | 'empty' | 'error'
 
-const missionTitles: Record<MissionId, string> = {
-  m1_type_specialist: 'Win 5 Matches',
-  m2_combo_practitioner: 'Combo Practitioner',
-  m3_corner_tactician: 'Corner Tactician',
+interface HomeLadderState {
+  status: LadderStatus
+  rankEntries: LadderEntry[]
+  ownedEntries: LadderEntry[]
 }
 
-const bonusMissionTargets = {
-  b1_win_streak: 5,
-  b2_match_grinder: 25,
-  b3_collection_hunter: cardPool.length,
-} as const
+const emptyHomeLadderState: HomeLadderState = {
+  status: 'disabled',
+  rankEntries: [],
+  ownedEntries: [],
+}
+
+const rankLabelTranslation: Record<string, string> = {
+  Iron: 'Fer',
+  Bronze: 'Bronze',
+  Silver: 'Argent',
+  Gold: 'Or',
+  Platinum: 'Platine',
+  Diamond: 'Diamant',
+  Challenger: 'Challenger',
+}
 
 function clampPercent(value: number): number {
   return Math.max(0, Math.min(100, value))
@@ -108,14 +117,40 @@ function formatTierLabelExplicit(tier: RankedTierId, division: string | null): s
   return `${label} (Division ${divisionNumber})`
 }
 
+function formatDisplayRankLabel(label: string): string {
+  const [tier, ...rest] = label.split(' ')
+  if (!tier) {
+    return label
+  }
+
+  return [rankLabelTranslation[tier] ?? tier, ...rest].join(' ')
+}
+
+function formatOwnedPokemonCount(count: number): string {
+  return `${numberFormat.format(count)} Pokémon`
+}
+
+function renderHomeLadderRows(entries: LadderEntry[], emptyMessage: string, renderValue: (entry: LadderEntry) => string) {
+  if (entries.length === 0) {
+    return <li className="home-ladder-empty">{emptyMessage}</li>
+  }
+
+  return entries.map((entry, index) => (
+    <li className="home-ladder-row" key={entry.userId}>
+      <span className="home-ladder-position">#{index + 1}</span>
+      <span className="home-ladder-name">{entry.playerName}</span>
+      <span className="home-ladder-value">{renderValue(entry)}</span>
+    </li>
+  ))
+}
+
 export function HomePage() {
   const { profile, currentMatch, claimMission } = useGame()
-  const laddersEnabled = isGlobalLadderEnabled()
-  const [isLoadingLadders, setIsLoadingLadders] = useState(laddersEnabled)
-  const [ownedCardsLadder, setOwnedCardsLadder] = useState<LadderEntry[]>([])
-  const [peakRankLadder, setPeakRankLadder] = useState<LadderEntry[]>([])
-  const [ladderError, setLadderError] = useState<string | null>(null)
   const [profileArtAvailable, setProfileArtAvailable] = useState(true)
+  const ladderEnabled = isGlobalLadderEnabled()
+  const [ladderState, setLadderState] = useState<HomeLadderState>(() => (
+    ladderEnabled ? { ...emptyHomeLadderState, status: 'loading' } : emptyHomeLadderState
+  ))
 
   const played = profile.stats.played
   const wins = profile.stats.won
@@ -124,70 +159,74 @@ export function HomePage() {
 
   const selectedDeck = profile.deckSlots.find((slot) => slot.id === profile.selectedDeckSlotId) ?? profile.deckSlots[0]
   const playActionTarget = currentMatch ? '/match' : '/setup'
-  const playActionLabel = currentMatch ? 'Continue' : 'Play'
+  const playActionLabel = currentMatch ? 'Continuer' : 'Jouer'
 
   const ownedCards = profile.ownedCardIds.length
   const totalCards = cardPool.length
   const totalPacks = Object.values(profile.packInventoryByRarity).reduce((sum, quantity) => sum + quantity, 0)
   const nextGoldTarget = GOLD_MILESTONES.find((milestone) => profile.gold < milestone) ?? null
-  const missions = missionOrder.map((missionId) => profile.missions[missionId])
+  const missions = missionIds.map((missionId) => profile.missions[missionId])
 
   const ranked3x3 = profile.rankedByMode['3x3']
   const ranked4x4 = profile.rankedByMode['4x4']
   const rankedTierLabel3x3 = formatTierLabelExplicit(ranked3x3.tier, ranked3x3.division)
   const rankedTierLabel4x4 = formatTierLabelExplicit(ranked4x4.tier, ranked4x4.division)
   const rankedProgressPercent = IS_4X4_UI_ENABLED ? ranked4x4.lp : ranked3x3.lp
-  const homePeakLadderMode = IS_4X4_UI_ENABLED ? '4x4' : '3x3'
+  const onboarding = deriveFirstRunOnboarding(profile)
+  const longTermGoals = deriveLongTermGoals(profile)
+  const localLadderRefreshKey = [
+    profile.playerName,
+    profile.ownedCardIds.length,
+    ranked3x3.tier,
+    ranked3x3.division,
+    ranked3x3.lp,
+    ranked4x4.tier,
+    ranked4x4.division,
+    ranked4x4.lp,
+  ].join('|')
+
+  useEffect(() => {
+    if (!ladderEnabled) {
+      return
+    }
+
+    let cancelled = false
+
+    void Promise.all([
+      fetchPeakRankLadder(PRIMARY_MATCH_MODE, HOME_LADDER_LIMIT),
+      fetchOwnedCardsLadder(HOME_LADDER_LIMIT),
+    ])
+      .then(([rankEntries, ownedEntries]) => {
+        if (cancelled) {
+          return
+        }
+
+        setLadderState({
+          status: rankEntries.length > 0 || ownedEntries.length > 0 ? 'ready' : 'empty',
+          rankEntries,
+          ownedEntries,
+        })
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setLadderState({ ...emptyHomeLadderState, status: 'error' })
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [ladderEnabled, localLadderRefreshKey])
 
   const panelStyle = {
     '--home-win-rate': `${winRatePercent}%`,
     '--home-rank-progress': `${rankedProgressPercent}%`,
   } as CSSProperties
 
-  useEffect(() => {
-    if (!laddersEnabled) {
-      setIsLoadingLadders(false)
-      setOwnedCardsLadder([])
-      setPeakRankLadder([])
-      setLadderError(null)
-      return
-    }
-
-    let mounted = true
-
-    const loadLadders = async () => {
-      setIsLoadingLadders(true)
-      setLadderError(null)
-      try {
-        const [owned, peak] = await Promise.all([fetchOwnedCardsLadder(5), fetchPeakRankLadder(homePeakLadderMode, 5)])
-        if (!mounted) {
-          return
-        }
-        setOwnedCardsLadder(owned)
-        setPeakRankLadder(peak)
-      } catch (error) {
-        if (!mounted) {
-          return
-        }
-        setLadderError(error instanceof Error ? error.message : 'Unable to load ladders.')
-      } finally {
-        if (mounted) {
-          setIsLoadingLadders(false)
-        }
-      }
-    }
-
-    void loadLadders()
-
-    return () => {
-      mounted = false
-    }
-  }, [homePeakLadderMode, laddersEnabled])
-
   const metrics: ProfileMetric[] = [
     {
       icon: '3',
-      label: '3X3 Ranked',
+      label: 'Classé 3X3',
       value: rankedTierLabel3x3,
       sub: `${ranked3x3.lp} LP`,
       progress: ranked3x3.lp,
@@ -195,9 +234,9 @@ export function HomePage() {
     },
     {
       icon: 'G',
-      label: 'Gold Reserve',
+      label: "Réserve d'or",
       value: numberFormat.format(profile.gold),
-      sub: nextGoldTarget ? `${numberFormat.format(nextGoldTarget - profile.gold)} to next tier` : 'Top treasury tier reached',
+      sub: nextGoldTarget ? `${numberFormat.format(nextGoldTarget - profile.gold)} avant le prochain palier` : 'Palier max atteint',
       progress: nextGoldTarget ? clampPercent(Math.round((profile.gold / nextGoldTarget) * 100)) : 100,
       testId: 'gold-value',
     },
@@ -205,7 +244,7 @@ export function HomePage() {
       icon: 'C',
       label: 'Pokédex',
       value: `${ownedCards}/${totalCards}`,
-      sub: `${clampPercent(Math.round((ownedCards / totalCards) * 100))}% complete`,
+      sub: `${clampPercent(Math.round((ownedCards / totalCards) * 100))}% complété`,
       progress: clampPercent(Math.round((ownedCards / totalCards) * 100)),
       testId: 'home-collection-value',
     },
@@ -213,7 +252,7 @@ export function HomePage() {
       ? [
           {
             icon: '4',
-            label: '4X4 Ranked',
+            label: 'Classé 4X4',
             value: rankedTierLabel4x4,
             sub: `${ranked4x4.lp} LP`,
             progress: ranked4x4.lp,
@@ -223,46 +262,16 @@ export function HomePage() {
       : []),
   ]
 
-  const coreMissionCards: HomeMissionCard[] = missions.map((mission) => ({
+  const displayMissions: HomeMissionCard[] = missions.map((mission) => ({
     id: mission.id,
     missionId: mission.id,
-    title: missionTitles[mission.id],
+    title: missionDefinitions[mission.id].title,
     progress: mission.progress,
     target: mission.target,
     completed: mission.completed,
     claimed: mission.claimed,
     claimable: true,
   }))
-  const bonusMissionCards: HomeMissionCard[] = [
-    {
-      id: 'b1_win_streak',
-      title: 'Win Streak',
-      progress: Math.min(profile.stats.streak, bonusMissionTargets.b1_win_streak),
-      target: bonusMissionTargets.b1_win_streak,
-      completed: profile.stats.streak >= bonusMissionTargets.b1_win_streak,
-      claimed: false,
-      claimable: false,
-    },
-    {
-      id: 'b2_match_grinder',
-      title: 'Match Grinder',
-      progress: Math.min(profile.stats.played, bonusMissionTargets.b2_match_grinder),
-      target: bonusMissionTargets.b2_match_grinder,
-      completed: profile.stats.played >= bonusMissionTargets.b2_match_grinder,
-      claimed: false,
-      claimable: false,
-    },
-    {
-      id: 'b3_collection_hunter',
-      title: 'Collection Hunter',
-      progress: Math.min(ownedCards, bonusMissionTargets.b3_collection_hunter),
-      target: bonusMissionTargets.b3_collection_hunter,
-      completed: ownedCards >= bonusMissionTargets.b3_collection_hunter,
-      claimed: false,
-      claimable: false,
-    },
-  ]
-  const displayMissions: HomeMissionCard[] = [...coreMissionCards, ...bonusMissionCards]
   const completedDisplayMissions = displayMissions.filter((mission) => mission.completed).length
 
   const missionFocusId =
@@ -278,8 +287,11 @@ export function HomePage() {
 
   return (
     <section className="panel home-panel" style={panelStyle}>
+      <div className="home-anime-backdrop" aria-hidden="true" />
+      <div className="home-anime-grid" aria-hidden="true" />
+      <div className="home-anime-halo" aria-hidden="true" />
       <div className="home-panel__glow" aria-hidden="true" />
-      <p className="home-eyebrow">Player Profile</p>
+      <p className="home-eyebrow">Centre Dresseur</p>
 
       <div className="home-hero">
         <div className="home-hero-main home-section--profile">
@@ -287,7 +299,7 @@ export function HomePage() {
             <div className="home-avatar" aria-hidden="true">
               {profileArtAvailable ? (
                 <img
-                  src="/ui/home/season-current.png"
+                  src="/ui/home/season-current.webp"
                   alt=""
                   data-testid="home-profile-art-image"
                   onError={() => {
@@ -317,9 +329,9 @@ export function HomePage() {
           </div>
 
           <div className="home-hero-main__details">
-            <article className="home-rank-progress" aria-label="Rank momentum">
+            <article className="home-rank-progress" aria-label="Dynamique de rang">
               <p className="home-rank-progress__head">
-                <span>Rank Momentum</span>
+                <span>Dynamique de rang</span>
                 <strong>{ranked3x3.lp}/100 LP</strong>
               </p>
               <div className="home-meter home-rank-progress__meter" aria-hidden="true">
@@ -327,19 +339,19 @@ export function HomePage() {
               </div>
             </article>
 
-            <div className="home-profile-pills" aria-label="Player highlights">
+            <div className="home-profile-pills" aria-label="Temps forts du joueur">
               <article className="home-profile-pill is-cyan">
-                <p className="home-profile-pill__label">Best Streak</p>
+                <p className="home-profile-pill__label">Meilleure série</p>
                 <p className="home-profile-pill__value">{profile.stats.bestStreak}</p>
               </article>
               <article className="home-profile-pill is-gold">
-                <p className="home-profile-pill__label">Missions Done</p>
+                <p className="home-profile-pill__label">Missions terminées</p>
                 <p className="home-profile-pill__value">
                   {completedDisplayMissions}/{displayMissions.length}
                 </p>
               </article>
               <article className="home-profile-pill is-violet">
-                <p className="home-profile-pill__label">Packs Ready</p>
+                <p className="home-profile-pill__label">Packs prêts</p>
                 <p className="home-profile-pill__value">{totalPacks}</p>
               </article>
             </div>
@@ -350,30 +362,72 @@ export function HomePage() {
           <Link className="button button-primary home-hero-cta__primary" to={playActionTarget} data-testid="home-quick-action-play">
             {playActionLabel}
           </Link>
-          <div className="home-hero-cta__secondary" aria-label="Secondary quick actions">
+          <TrackedPokemonWidget testIdPrefix="home-tracked" className="home-hero-tracked" />
+          <div className="home-hero-cta__secondary" aria-label="Actions rapides secondaires">
             <Link className="button" to="/packs" data-testid="home-quick-action-packs">
-              Open Packs
+              Ouvrir les packs
             </Link>
             <Link className="button" to="/decks" data-testid="home-quick-action-setup">
-              Edit Deck
+              Modifier le deck
             </Link>
           </div>
 
+          <section className="home-ladders-block" data-testid="home-ladders-block" aria-label="Classements">
+            <div className="home-ladders-head">
+              <h2>Classements</h2>
+              <Link className="home-ladders-link" to="/ranks">
+                Top complet
+              </Link>
+            </div>
+            {ladderState.status === 'loading' ? (
+              <p className="small" data-testid="home-ladder-loading">
+                Chargement des classements...
+              </p>
+            ) : null}
+            {ladderState.status === 'error' ? (
+              <p className="error" role="alert" data-testid="home-ladder-error">
+                Ladder indisponible.
+              </p>
+            ) : null}
+            <div className="home-ladders-grid">
+              <article className="home-ladder-card">
+                <h3>Rang {PRIMARY_MATCH_MODE.toUpperCase()}</h3>
+                <ol className="home-ladder-list" data-testid="home-rank-ladder">
+                  {renderHomeLadderRows(
+                    ladderState.rankEntries,
+                    'Aucun rang publié.',
+                    (entry) => formatDisplayRankLabel(entry.peakRankLabel),
+                  )}
+                </ol>
+              </article>
+              <article className="home-ladder-card">
+                <h3>Captures</h3>
+                <ol className="home-ladder-list" data-testid="home-owned-ladder">
+                  {renderHomeLadderRows(
+                    ladderState.ownedEntries,
+                    'Aucune collection publiée.',
+                    (entry) => formatOwnedPokemonCount(entry.ownedCardsCount),
+                  )}
+                </ol>
+              </article>
+            </div>
+          </section>
+
           <div className="home-hero-insights">
-            <aside className="home-winrate-card" aria-label="Win rate">
-              <p className="home-winrate-label">Win Rate</p>
+            <aside className="home-winrate-card" aria-label="Taux de victoire">
+              <p className="home-winrate-label">Taux de victoire</p>
               <div className="home-winrate-ring">
                 <span>{winRateLabel}</span>
               </div>
               <p className="home-winrate-caption">
-                {wins} wins in {played} matches
+                {wins} victoire{wins === 1 ? '' : 's'} en {played} match{played === 1 ? '' : 's'}
               </p>
             </aside>
 
             <aside className="home-ranked-badge-card" data-testid="home-ranked-badge-card-3x3">
               <img
                 src={getRankEmblemSrc(ranked3x3.tier)}
-                alt={`${tierNames[ranked3x3.tier]} rank emblem 3x3`}
+                alt={`Emblème du rang ${tierNames[ranked3x3.tier]} 3x3`}
                 className="home-ranked-badge"
                 data-testid="home-ranked-badge-3x3"
               />
@@ -383,7 +437,7 @@ export function HomePage() {
               <aside className="home-ranked-badge-card" data-testid="home-ranked-badge-card-4x4">
                 <img
                   src={getRankEmblemSrc(ranked4x4.tier)}
-                  alt={`${tierNames[ranked4x4.tier]} rank emblem 4x4`}
+                  alt={`Emblème du rang ${tierNames[ranked4x4.tier]} 4x4`}
                   className="home-ranked-badge"
                   data-testid="home-ranked-badge-4x4"
                 />
@@ -393,6 +447,30 @@ export function HomePage() {
           </div>
         </aside>
       </div>
+
+      {onboarding.visible ? (
+        <section className="home-onboarding home-section--profile" data-testid="home-onboarding">
+          <div className="home-onboarding__copy">
+            <p className="home-eyebrow">Première session</p>
+            <h2>{onboarding.title}</h2>
+            <p className="small">{onboarding.description}</p>
+            <Link className="button button-primary" to={onboarding.primaryAction.to} data-testid="home-onboarding-primary">
+              {onboarding.primaryAction.title}
+            </Link>
+          </div>
+          <div className="home-onboarding__steps" aria-label="Étapes de démarrage">
+            {onboarding.steps.map((step) => (
+              <article className={`home-onboarding-step is-${step.status}`} key={step.id} data-testid={`home-onboarding-step-${step.id}`}>
+                <p className="home-onboarding-step__status">
+                  {step.status === 'completed' ? 'Terminé' : step.status === 'current' ? 'Maintenant' : 'Bientôt'}
+                </p>
+                <h3>{step.title}</h3>
+                <p className="small">{step.description}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <div className="home-metrics-strip" data-testid="home-metrics-strip">
         {metrics.map((metric) => (
@@ -420,19 +498,19 @@ export function HomePage() {
         <div className="home-missions-head">
           <h2>Missions</h2>
           <Link className="button" to="/missions" data-testid="home-missions-link">
-            View missions
+            Voir les missions
           </Link>
         </div>
         <p className="small">
-          {completedDisplayMissions}/{displayMissions.length} completed
+          {completedDisplayMissions}/{displayMissions.length} terminées
         </p>
         <div className="home-missions-list">
           {displayMissions.map((mission) => {
             const progressPercent = clampPercent(Math.round((mission.progress / mission.target) * 100))
             const isFocused = mission.id === missionFocusId
-            const missionStateLabel = mission.claimed ? 'Claimed' : mission.completed ? 'Ready to claim' : 'In progress'
+            const missionStateLabel = mission.claimed ? 'Réclamée' : mission.completed ? 'Prête à récupérer' : 'En cours'
             const showClaimAction = mission.claimable && mission.completed
-            const claimLabel = mission.claimed ? 'New Mission' : 'Claim'
+            const claimLabel = mission.claimed ? 'Nouvelle mission' : 'Récupérer'
             return (
               <article
                 key={mission.id}
@@ -474,64 +552,30 @@ export function HomePage() {
         </div>
       </section>
 
-      <section className="ranks-ladders home-ladders-block home-section--ladders" aria-label="Global ladders on home">
-        <div className="ranks-ladders-head">
-          <h2>Global Ladders</h2>
-          <p className="small">Top 5 players</p>
+      <section className="home-goals-block home-section--ladders" data-testid="home-long-term-goals" aria-label="Objectifs longue durée">
+        <div className="home-missions-head">
+          <h2>Objectifs longue durée</h2>
+          <p className="small">Ce qui donne envie de relancer une partie demain.</p>
         </div>
-
-        {!laddersEnabled ? (
-          <p className="small" data-testid="home-ladder-disabled-note">
-            Global ladders are unavailable until cloud auth is configured.
-          </p>
-        ) : null}
-
-        {laddersEnabled && isLoadingLadders ? <p className="small">Loading global ladders...</p> : null}
-
-        {laddersEnabled && ladderError ? (
-          <p className="error" role="alert">
-            {ladderError}
-          </p>
-        ) : null}
-
-        {laddersEnabled && !isLoadingLadders && !ladderError ? (
-          <div className="ranks-ladder-grid">
-            <article className="ranks-ladder-card" data-testid="home-owned-ladder">
-              <h3>Most Owned Cards</h3>
-              {ownedCardsLadder.length === 0 ? (
-                <p className="small">No players yet.</p>
-              ) : (
-                <ol className="ranks-ladder-list">
-                  {ownedCardsLadder.map((entry, index) => (
-                    <li key={entry.userId} className="ranks-ladder-row">
-                      <span className="ranks-ladder-position">#{index + 1}</span>
-                      <span className="ranks-ladder-name">{entry.playerName}</span>
-                      <span className="ranks-ladder-value">{entry.ownedCardsCount} cards</span>
-                    </li>
-                  ))}
-                </ol>
-              )}
-            </article>
-
-            <article className="ranks-ladder-card" data-testid="home-peak-ladder">
-              <h3>Highest Peak Rank</h3>
-              {peakRankLadder.length === 0 ? (
-                <p className="small">No players yet.</p>
-              ) : (
-                <ol className="ranks-ladder-list">
-                  {peakRankLadder.map((entry, index) => (
-                    <li key={entry.userId} className="ranks-ladder-row">
-                      <span className="ranks-ladder-position">#{index + 1}</span>
-                      <span className="ranks-ladder-name">{entry.playerName}</span>
-                      <span className="ranks-ladder-value">{entry.peakRankLabel}</span>
-                    </li>
-                  ))}
-                </ol>
-              )}
-            </article>
-          </div>
-        ) : null}
+        <div className="home-goals-grid">
+          {longTermGoals.map((goal) => {
+            const progress = goal.target > 0 ? clampPercent(Math.round((goal.current / goal.target) * 100)) : 0
+            return (
+              <Link className="home-goal-card" to={goal.to} key={goal.id} data-testid={`home-long-term-goal-${goal.id}`}>
+                <p className="home-mission-title">{goal.title}</p>
+                <p className="small">{goal.description}</p>
+                <p className="home-metric-sub">
+                  {numberFormat.format(goal.current)}/{numberFormat.format(goal.target)}
+                </p>
+                <div className="home-meter" aria-hidden="true">
+                  <span style={{ width: `${progress}%` }} />
+                </div>
+              </Link>
+            )
+          })}
+        </div>
       </section>
+
     </section>
   )
 }

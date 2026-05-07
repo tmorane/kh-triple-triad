@@ -1,40 +1,23 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useGame } from '../../app/useGame'
-import type { MissionId, MissionReward } from '../../domain/types'
-
-const missionOrder: MissionId[] = ['m1_type_specialist', 'm2_combo_practitioner', 'm3_corner_tactician']
-
-const missionTitles: Record<MissionId, string> = {
-  m1_type_specialist: 'Win 5 Matches',
-  m2_combo_practitioner: 'Combo Practitioner',
-  m3_corner_tactician: 'Corner Tactician',
-}
-
-const missionDescriptions: Record<MissionId, string> = {
-  m1_type_specialist: 'Win 5 matches.',
-  m2_combo_practitioner: 'Play 6 matches with Hidden enemy hand.',
-  m3_corner_tactician: 'Play 12 cards in corner cells.',
-}
-
-const missionRewards: Record<MissionId, MissionReward> = {
-  m1_type_specialist: { kind: 'gold', amount: 120 },
-  m2_combo_practitioner: { kind: 'pack', packId: 'rare', amount: 1 },
-  m3_corner_tactician: { kind: 'card', strategy: 'prefer_non_owned' },
-}
+import { missionDefinitions, missionIds } from '../../domain/progression/missionCatalog'
+import type { MissionReward } from '../../domain/types'
 
 function formatMissionReward(reward: MissionReward): string {
   if (reward.kind === 'gold') {
-    return `+${reward.amount} gold`
+    return `+${reward.amount} or`
   }
   if (reward.kind === 'pack') {
-    return `+${reward.amount} ${reward.packId} pack`
+    return `+${reward.amount} pack ${reward.packId}`
   }
-  return '1 card (prefer non-owned)'
+  return '1 carte (non possédée en priorité)'
 }
 
 export function MissionsPage() {
-  const { profile } = useGame()
-  const missions = missionOrder.map((missionId) => profile.missions[missionId])
+  const { profile, claimMission } = useGame()
+  const [feedback, setFeedback] = useState<string | null>(null)
+  const missions = missionIds.map((missionId) => profile.missions[missionId])
   const completedCount = missions.filter((mission) => mission.completed).length
 
   return (
@@ -42,25 +25,33 @@ export function MissionsPage() {
       <header className="missions-head">
         <h1>Missions</h1>
         <p className="small" data-testid="missions-summary">
-          {completedCount}/{missions.length} completed
+          {completedCount}/{missions.length} terminées
         </p>
       </header>
 
+      {feedback ? (
+        <p className="small" data-testid="missions-feedback" role="status">
+          {feedback}
+        </p>
+      ) : null}
+
       <div className="missions-grid">
         {missions.map((mission) => {
+          const definition = missionDefinitions[mission.id]
           const progressPercent = Math.max(0, Math.min(100, Math.round((mission.progress / mission.target) * 100)))
           const rewardAlreadyGranted = profile.missionRewardsGrantedById[mission.id] === true
-          const status = mission.claimed ? 'Claimed' : mission.completed ? 'Completed' : 'In progress'
+          const status = mission.completed ? 'Prête à récupérer' : 'En cours'
+
           return (
             <article key={mission.id} className="missions-card" data-testid={`missions-card-${mission.id}`}>
-              <h2>{missionTitles[mission.id]}</h2>
-              <p className="small">{missionDescriptions[mission.id]}</p>
+              <h2>{definition.title}</h2>
+              <p className="small">{definition.description}</p>
               <p className="small missions-reward" data-testid={`missions-reward-${mission.id}`}>
-                Reward: {formatMissionReward(missionRewards[mission.id])}
+                Récompense: {formatMissionReward(definition.reward)}
               </p>
               {rewardAlreadyGranted ? (
                 <p className="small missions-reward" data-testid={`missions-reward-history-${mission.id}`}>
-                  Reward already granted before reset.
+                  Récompense déjà accordée avant réinitialisation.
                 </p>
               ) : null}
               <p className="small" data-testid={`missions-progress-${mission.id}`}>
@@ -72,6 +63,27 @@ export function MissionsPage() {
               <p className="small missions-status" data-testid={`missions-status-${mission.id}`}>
                 {status}
               </p>
+              {mission.completed ? (
+                <button
+                  type="button"
+                  className="button home-mission-claim"
+                  data-testid={`missions-claim-${mission.id}`}
+                  onClick={() => {
+                    if (!claimMission) {
+                      setFeedback('Réclamation indisponible.')
+                      return
+                    }
+                    const result = claimMission(mission.id)
+                    if (result.valid) {
+                      setFeedback('Récompense récupérée. Nouvelle mission lancée.')
+                    } else {
+                      setFeedback(result.reason ?? 'Mission non disponible.')
+                    }
+                  }}
+                >
+                  Récupérer
+                </button>
+              ) : null}
             </article>
           )
         })}
@@ -79,10 +91,10 @@ export function MissionsPage() {
 
       <div className="actions">
         <Link className="button button-primary" to="/setup">
-          Play Match
+          Jouer
         </Link>
-        <Link className="button" to="/">
-          Home
+        <Link className="button" to="/home">
+          Accueil
         </Link>
       </div>
     </section>

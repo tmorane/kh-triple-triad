@@ -1,4 +1,4 @@
-import { isAdminEmailAllowed, parseAdminAllowedEmails } from './adminAllowlist'
+import { isAdminEmailAllowed, parseAdminAllowedEmails } from './adminAllowlist.js'
 
 interface AdminImageMoveApiRequest {
   method?: string
@@ -144,7 +144,7 @@ export async function handleAdminImageMoveRequest(
 
   const payload = parseBody(request.body)
   const validation = validateMovePayload(payload)
-  if (!validation.ok) {
+  if (validation.ok === false) {
     return { status: 400, body: { error: validation.message } }
   }
 

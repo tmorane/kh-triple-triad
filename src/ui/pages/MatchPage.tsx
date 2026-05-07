@@ -2,26 +2,34 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useGame } from '../../app/useGame'
 import { getCard } from '../../domain/cards/cardPool'
+import { getElementLabel } from '../../domain/cards/taxonomy'
 import { selectCpuMove } from '../../domain/match/ai'
 import { applyMoveDetailed, listLegalMoves, listMovePowerTargetOptions, resolveMatchResult } from '../../domain/match/engine'
+import { buildCombatCoachMessage } from '../../domain/match/combatCoach'
+import { resolveCombatPhase } from '../../domain/match/combatPhase'
+import { deriveEffectFeedEntries, type EffectFeedEntry } from '../../domain/match/effectFeed'
 import { buildMatchEffectsViewModel } from '../../domain/match/effectsViewModel'
 import { getModeSpec } from '../../domain/match/modeSpec'
 import type { TutorialPlayerStep, TutorialStep } from '../../domain/match/tutorialScenarios'
-import type { MoveFlipEvent } from '../../domain/match/types'
+import type { MatchState, MoveDuelEvent, MoveFlipEvent } from '../../domain/match/types'
 import { getCardFragmentCost } from '../../domain/progression/fragments'
+import { getPokedexClaimSelectionCount } from '../../domain/progression/pokedexProgression'
 import { applyMatchRewards } from '../../domain/progression/rewards'
 import { applyRankedMatchResult } from '../../domain/progression/ranked'
 import type { Actor, CardElementId, CardId, Move } from '../../domain/types'
 import { playCriticalVictorySound } from '../audio/criticalVictorySound'
-import { PixiBoard } from '../components/PixiBoard'
+import { PixiBoard, type BoardSlot } from '../components/PixiBoard'
 import { RankedLpRecap } from '../components/RankedLpRecap'
 import { RuleBadges } from '../components/RuleBadges'
 import { TriadCard } from '../components/TriadCard'
 import { MatchLaneTypeStrip } from '../components/MatchLaneTypeStrip'
+import { MatchEffectsPanel } from '../components/MatchEffectsPanel'
+import { MatchPhaseBar } from '../components/MatchPhaseBar'
 
 function formatGoldBonusDetails(rewards: {
   bonusGoldFromDuplicate: number
   bonusGoldFromDifficulty: number
+  bonusGoldFromWinStreak: number
   bonusGoldFromComboBounty: number
   bonusGoldFromCleanVictory: number
   bonusGoldFromSecondarySynergy: number
@@ -30,25 +38,28 @@ function formatGoldBonusDetails(rewards: {
 }): string {
   const parts: string[] = []
   if (rewards.bonusGoldFromDifficulty > 0) {
-    parts.push(`+${rewards.bonusGoldFromDifficulty} difficulty`)
+    parts.push(`+${rewards.bonusGoldFromDifficulty} difficulté`)
+  }
+  if (rewards.bonusGoldFromWinStreak > 0) {
+    parts.push(`+${rewards.bonusGoldFromWinStreak} série`)
   }
   if (rewards.bonusGoldFromDuplicate > 0) {
-    parts.push(`+${rewards.bonusGoldFromDuplicate} duplicate`)
+    parts.push(`+${rewards.bonusGoldFromDuplicate} doublon`)
   }
   if (rewards.bonusGoldFromComboBounty > 0) {
     parts.push(`+${rewards.bonusGoldFromComboBounty} combo`)
   }
   if (rewards.bonusGoldFromCleanVictory > 0) {
-    parts.push(`+${rewards.bonusGoldFromCleanVictory} clean`)
+    parts.push(`+${rewards.bonusGoldFromCleanVictory} victoire nette`)
   }
   if (rewards.bonusGoldFromSecondarySynergy > 0) {
-    parts.push(`+${rewards.bonusGoldFromSecondarySynergy} secondary`)
+    parts.push(`+${rewards.bonusGoldFromSecondarySynergy} synergie secondaire`)
   }
   if (rewards.bonusGoldFromCriticalVictory > 0) {
-    parts.push(`+${rewards.bonusGoldFromCriticalVictory} critical`)
+    parts.push(`+${rewards.bonusGoldFromCriticalVictory} critique`)
   }
   if (rewards.bonusGoldFromAutoDeck > 0) {
-    parts.push(`+${rewards.bonusGoldFromAutoDeck} auto deck`)
+    parts.push(`+${rewards.bonusGoldFromAutoDeck} deck auto`)
   }
   return parts.length > 0 ? ` (${parts.join(', ')})` : ''
 }
@@ -65,9 +76,10 @@ const GROUND_DEBUFF_VISUAL_DELAY_MS = 900
 const FREEZE_BLOCKED_FLASH_DELAY_MS = 320
 const FLIP_EVENT_DURATION_MS = 1200
 const FLIP_EVENT_VISIBILITY_MS = 2100
+const DUEL_EVENT_VISIBILITY_MS = 1200
 const CPU_THINKING_DURATION_MS = 2000
 const CPU_TURN_AFTER_FLIP_DELAY_MS = Math.max(FLIP_EVENT_DURATION_MS, CPU_THINKING_DURATION_MS)
-const POWER_TARGET_PROMPT = 'Choose a power target.'
+const POWER_TARGET_PROMPT = 'Choisis une cible de pouvoir.'
 const viteBaseUrl =
   typeof import.meta !== 'undefined' && typeof import.meta.env !== 'undefined' && typeof import.meta.env.BASE_URL === 'string'
     ? import.meta.env.BASE_URL
@@ -75,8 +87,8 @@ const viteBaseUrl =
 const matchLaneAssetBasePath = `${viteBaseUrl}ui/setup/`
 
 const matchLaneArtwork = {
-  cpuHand: `${matchLaneAssetBasePath}cpu-hand.jpg`,
-  playerHand: `${matchLaneAssetBasePath}player-hand.jpg`,
+  cpuHand: `${matchLaneAssetBasePath}cpu-hand.webp`,
+  playerHand: `${matchLaneAssetBasePath}player-hand.webp`,
 }
 
 type KeyboardDirection = 'up' | 'down' | 'left' | 'right'
@@ -87,6 +99,265 @@ type PowerTargetingState = {
   cardId: CardId
   placementCell: number
   targetCells: number[]
+}
+
+type CombatEffectInfo = {
+  elementId: CardElementId
+  title: string
+  trigger: string
+  impact: string
+  note: string
+}
+
+function getPowerTargetHint(elementId: CardElementId): { testId: string; message: string } {
+  switch (elementId) {
+    case 'eau':
+      return { testId: 'match-flood-target-hint', message: 'Clique une case lumineuse pour inonder.' }
+    case 'feu':
+      return { testId: 'match-fire-target-hint', message: 'Clique une carte lumineuse pour brûler.' }
+    case 'glace':
+      return { testId: 'match-freeze-target-hint', message: 'Clique une case lumineuse pour geler.' }
+    case 'vol':
+      return { testId: 'match-vol-target-hint', message: 'Clique une carte lumineuse pour affaiblir.' }
+    case 'psy':
+      return { testId: 'match-psy-target-hint', message: 'Clique une carte lumineuse pour inverser.' }
+    default:
+      return { testId: 'match-power-target-hint', message: 'Clique une cible lumineuse.' }
+  }
+}
+
+function getCombatEffectInfo(elementId: CardElementId, isChoosingTarget: boolean): CombatEffectInfo {
+  const titlePrefix = isChoosingTarget ? 'CIBLE' : 'EFFET'
+  const title = `${titlePrefix} ${getElementLabel(elementId).toUpperCase()}`
+
+  switch (elementId) {
+    case 'eau':
+      return {
+        elementId,
+        title,
+        trigger: isChoosingTarget ? 'Clique une case lumineuse.' : 'Après la pose, choisis une case vide lumineuse.',
+        impact: 'La prochaine carte non-Spectre posée sur cette case perd 3 sur sa meilleure stat.',
+        note: 'Après déclenchement, la case redevient normale.',
+      }
+    case 'feu':
+      return {
+        elementId,
+        title,
+        trigger: isChoosingTarget ? 'Clique une carte ennemie lumineuse.' : 'Après la pose, cible un ennemi adjacent.',
+        impact: 'La carte ciblée brûle: -1 sur chaque côté pendant 1 tour.',
+        note: 'Elle devient plus facile à capturer pendant ce tour.',
+      }
+    case 'glace':
+      return {
+        elementId,
+        title,
+        trigger: isChoosingTarget ? 'Clique une case lumineuse.' : 'Après la pose, choisis une case vide lumineuse.',
+        impact: 'La case gèle: le CPU ne pourra pas y poser sa prochaine carte.',
+        note: 'Utilise ça pour fermer une case dangereuse.',
+      }
+    case 'vol':
+      return {
+        elementId,
+        title,
+        trigger: isChoosingTarget ? 'Clique une carte ennemie lumineuse.' : 'Après la pose, cible une carte ennemie déjà posée.',
+        impact: 'La carte ciblée perd 2 sur chaque côté pendant 1 tour.',
+        note: 'Parfait pour préparer une capture juste après.',
+      }
+    case 'psy':
+      return {
+        elementId,
+        title,
+        trigger: isChoosingTarget ? 'Clique une carte ennemie lumineuse.' : 'Après la pose, cible une carte ennemie déjà posée.',
+        impact: 'La meilleure stat et la pire stat de la carte ciblée sont inversées.',
+        note: 'Une grosse défense peut devenir une faiblesse.',
+      }
+    case 'electrik':
+      return {
+        elementId,
+        title,
+        trigger: 'Se déclenche quand la carte est posée.',
+        impact: 'Cette carte devient intouchable pendant le prochain tour adverse.',
+        note: 'Le CPU ne peut pas la capturer tout de suite.',
+      }
+    case 'poison':
+      return {
+        elementId,
+        title,
+        trigger: 'Se déclenche quand la carte est posée.',
+        impact: 'Une carte en main adverse est empoisonnée: quand elle sera posée, elle perdra 1 partout.',
+        note: 'Le malus attend dans la main adverse.',
+      }
+    case 'sol':
+      return {
+        elementId,
+        title,
+        trigger: 'Se déclenche quand la carte est posée.',
+        impact: 'Les cartes ennemies adjacentes perdent 1 sur chaque côté jusqu’à leur prochain tour.',
+        note: 'Plus tu poses près des ennemis, plus l’effet compte.',
+      }
+    case 'dragon':
+      return {
+        elementId,
+        title,
+        trigger: 'Se déclenche quand la carte est posée.',
+        impact: 'Ses 2 stats les plus faibles gagnent 1, sa meilleure stat perd 1.',
+        note: 'La carte devient plus équilibrée pour les duels.',
+      }
+    case 'plante':
+      return {
+        elementId,
+        title,
+        trigger: 'Passif actif sur le plateau.',
+        impact: 'Chaque Plante alliée adjacente donne +1 partout, jusqu’à +2.',
+        note: 'Regroupe tes Plante pour construire une zone forte.',
+      }
+    case 'combat':
+      return {
+        elementId,
+        title,
+        trigger: 'Passif pendant les duels.',
+        impact: 'Quand cette carte attaque, le côté utilisé gagne +1.',
+        note: 'Elle est meilleure quand tu l’utilises pour capturer.',
+      }
+    case 'insecte':
+      return {
+        elementId,
+        title,
+        trigger: 'Se déclenche à l’entrée sur le plateau.',
+        impact: 'Gagne +1 partout par Insecte allié déjà posé autour, jusqu’à +3.',
+        note: 'Pose les Insecte en chaîne pour monter les stats.',
+      }
+    case 'roche':
+      return {
+        elementId,
+        title,
+        trigger: 'Se déclenche à l’entrée une fois par joueur.',
+        impact: 'Donne 1 bouclier: une défaite en duel est annulée.',
+        note: 'La première capture subie peut être bloquée.',
+      }
+    case 'spectre':
+      return {
+        elementId,
+        title,
+        trigger: 'Passif actif tout le temps.',
+        impact: 'Ignore les malus et restrictions, puis gagne +1 partout.',
+        note: 'Spectre traverse Eau, Glace et les nerfs.',
+      }
+    case 'normal':
+      return {
+        elementId,
+        title,
+        trigger: 'Bonus actif en mode normal.',
+        impact: 'Les cartes Normal gagnent +1 sur chaque côté.',
+        note: 'En mode effets, Normal n’a pas de pouvoir spécial.',
+      }
+    default:
+      return {
+        elementId,
+        title,
+        trigger: 'Se déclenche selon le type de la carte.',
+        impact: 'Lis les cases lumineuses et les badges du plateau.',
+        note: 'L’effet exact dépend du type.',
+      }
+  }
+}
+
+function formatDuelSideText(side: MoveDuelEvent['attackerSide']): string {
+  switch (side) {
+    case 'up':
+      return '↑'
+    case 'right':
+      return '→'
+    case 'down':
+      return '↓'
+    case 'left':
+      return '←'
+  }
+}
+
+function formatDuelSideFullText(side: MoveDuelEvent['attackerSide']): string {
+  switch (side) {
+    case 'up':
+      return '↑ haut'
+    case 'right':
+      return '→ droite'
+    case 'down':
+      return '↓ bas'
+    case 'left':
+      return '← gauche'
+  }
+}
+
+function resolveDuelBadgePosition(event: MoveDuelEvent, boardSize: number): { left: string; top: string } {
+  const attackerRow = Math.floor(event.attackerCell / boardSize)
+  const attackerCol = event.attackerCell % boardSize
+  const defenderRow = Math.floor(event.defenderCell / boardSize)
+  const defenderCol = event.defenderCell % boardSize
+  const midpointCol = (attackerCol + defenderCol + 1) / 2
+  const midpointRow = (attackerRow + defenderRow + 1) / 2
+
+  return {
+    left: `${(midpointCol / boardSize) * 100}%`,
+    top: `${(midpointRow / boardSize) * 100}%`,
+  }
+}
+
+function getBoardCardName(board: Array<BoardSlot | null>, cell: number): string {
+  const slot = board[cell]
+  return slot ? getCard(slot.cardId).name : 'Carte'
+}
+
+function buildDuelScoreModel(event: MoveDuelEvent, board: Array<BoardSlot | null>) {
+  return {
+    attacker: {
+      actor: event.attacker,
+      name: getBoardCardName(board, event.attackerCell),
+      value: event.attackerValue,
+    },
+    defender: {
+      actor: event.defender,
+      name: getBoardCardName(board, event.defenderCell),
+      value: event.defenderValue,
+    },
+  }
+}
+
+function renderDuelScore(score: ReturnType<typeof buildDuelScoreModel>) {
+  return (
+    <>
+      <span className={`match-duel-score-name match-duel-score-name--${score.attacker.actor}`}>{score.attacker.name}</span>{' '}
+      <span className="match-duel-score-value">{score.attacker.value}</span>
+      <span className="match-duel-score-separator"> &gt; </span>
+      <span className={`match-duel-score-name match-duel-score-name--${score.defender.actor}`}>{score.defender.name}</span>{' '}
+      <span className="match-duel-score-value">{score.defender.value}</span>
+    </>
+  )
+}
+
+function buildDuelFreezeFrame(event: MoveDuelEvent, board: Array<BoardSlot | null>) {
+  const attackerName = getBoardCardName(board, event.attackerCell)
+  const defenderName = getBoardCardName(board, event.defenderCell)
+  return {
+    title: `${attackerName} attaque ${formatDuelSideFullText(event.attackerSide)}`,
+    score: buildDuelScoreModel(event, board),
+    result: `${defenderName} capturé`,
+  }
+}
+
+type DuelFreezeFrame = ReturnType<typeof buildDuelFreezeFrame>
+
+function getDuelFreezeFrameKey(event: MoveDuelEvent): string {
+  return [
+    event.attacker,
+    event.defender,
+    event.attackerCell,
+    event.defenderCell,
+    event.attackerSide,
+    event.defenderSide,
+    event.attackerValue,
+    event.defenderValue,
+    event.result,
+  ].join(':')
 }
 
 function isFrozenCellForActorError(message: string): boolean {
@@ -166,14 +437,14 @@ function validateTutorialPlayerMove(move: Move, step: TutorialPlayerStep): { val
   return { valid: true }
 }
 
-function getOutcomeLabel(winner: 'player' | 'cpu' | 'draw'): 'WIN' | 'LOSE' | 'DRAW' {
+function getOutcomeLabel(winner: 'player' | 'cpu' | 'draw'): 'VICTOIRE' | 'DÉFAITE' | 'ÉGALITÉ' {
   if (winner === 'player') {
-    return 'WIN'
+    return 'VICTOIRE'
   }
   if (winner === 'cpu') {
-    return 'LOSE'
+    return 'DÉFAITE'
   }
-  return 'DRAW'
+  return 'ÉGALITÉ'
 }
 
 function getDigitFromKeyboardCode(code: string): number | null {
@@ -270,7 +541,7 @@ export function MatchPage() {
   const { profile, currentMatch, startMatch, updateCurrentMatch, finalizeCurrentMatch } = useGame()
   const [selectedCard, setSelectedCard] = useState<CardId | null>(null)
   const [keyboardTargetCell, setKeyboardTargetCell] = useState<number | null>(null)
-  const [selectedClaimCardId, setSelectedClaimCardId] = useState<CardId | null>(null)
+  const [selectedClaimCardIds, setSelectedClaimCardIds] = useState<CardId[]>([])
   const [error, setError] = useState<string | null>(null)
   const [isFinishing, setIsFinishing] = useState(false)
   const [starterNeedleAngleDeg, setStarterNeedleAngleDeg] = useState(0)
@@ -288,13 +559,18 @@ export function MatchPage() {
   const [transientWaterPenaltyCells, setTransientWaterPenaltyCells] = useState<number[]>([])
   const [transientClashCells, setTransientClashCells] = useState<number[]>([])
   const [transientFlipEvents, setTransientFlipEvents] = useState<MoveFlipEvent[]>([])
+  const [transientDuelEvents, setTransientDuelEvents] = useState<MoveDuelEvent[]>([])
+  const [persistentDuelFreezeFrame, setPersistentDuelFreezeFrame] = useState<DuelFreezeFrame | null>(null)
+  const [dismissedDuelFreezeFrameKey, setDismissedDuelFreezeFrameKey] = useState<string | null>(null)
   const [transientFlipEventVersion, setTransientFlipEventVersion] = useState(0)
+  const [effectFeed, setEffectFeed] = useState<EffectFeedEntry[]>([])
   const [cpuThinkingCardIndex, setCpuThinkingCardIndex] = useState<number | null>(null)
   const [showVsOverlay, setShowVsOverlay] = useState(false)
   const [vsCells, setVsCells] = useState<number[]>([])
   const criticalVictorySoundPlayedMatchKeyRef = useRef<string | null>(null)
   const animationTimeoutIdsRef = useRef<number[]>([])
   const activeFlipEventVersionRef = useRef(0)
+  const activeDuelEventVersionRef = useRef(0)
 
   const state = currentMatch?.state ?? null
   const activeQueue = currentMatch?.queue ?? 'normal'
@@ -302,6 +578,10 @@ export function MatchPage() {
   const tutorialStep = tutorialSession && state ? tutorialSession.steps[state.turns] ?? null : null
   const tutorialExpectedPlayerStep = isTutorialPlayerStep(tutorialStep) ? tutorialStep : null
   const tutorialExpectedCpuStep = tutorialStep?.actor === 'cpu' ? tutorialStep : null
+  const claimSelectionCount = useMemo(
+    () => (currentMatch ? getPokedexClaimSelectionCount(profile, currentMatch.cpuDeck.length) : 1),
+    [currentMatch, profile],
+  )
   const tutorialAllowedCardIdSet = useMemo(
     () => new Set(tutorialExpectedPlayerStep?.objective?.allowedCardIds ?? []),
     [tutorialExpectedPlayerStep?.objective?.allowedCardIds],
@@ -357,6 +637,27 @@ export function MatchPage() {
     },
     [scheduleAnimationTimeout],
   )
+  const queueDuelEvents = useCallback(
+    (events: MoveDuelEvent[]) => {
+      activeDuelEventVersionRef.current += 1
+      const currentVersion = activeDuelEventVersionRef.current
+      if (events.length > 0) {
+        setDismissedDuelFreezeFrameKey(null)
+      }
+      setTransientDuelEvents(events)
+
+      if (events.length === 0) {
+        return
+      }
+
+      scheduleAnimationTimeout(() => {
+        if (activeDuelEventVersionRef.current === currentVersion) {
+          setTransientDuelEvents([])
+        }
+      }, DUEL_EVENT_VISIBILITY_MS)
+    },
+    [scheduleAnimationTimeout],
+  )
 
   const clearPowerTargetPrompt = useCallback(() => {
     setError((currentError) => (currentError === POWER_TARGET_PROMPT ? null : currentError))
@@ -373,6 +674,9 @@ export function MatchPage() {
     setTransientWaterPenaltyCells([])
     setTransientClashCells([])
     setTransientFlipEvents([])
+    setTransientDuelEvents([])
+    setPersistentDuelFreezeFrame(null)
+    setDismissedDuelFreezeFrameKey(null)
     setTransientFlipEventVersion(0)
     setShowVsOverlay(false)
     setVsCells([])
@@ -392,6 +696,48 @@ export function MatchPage() {
     previewBoard[powerTargeting.placementCell] = { owner: 'player', cardId: powerTargeting.cardId }
     return previewBoard
   }, [board, powerTargeting])
+  const liveDuelFreezeEvent = transientDuelEvents[0] ?? null
+  const liveDuelFreezeFrameKey = liveDuelFreezeEvent ? getDuelFreezeFrameKey(liveDuelFreezeEvent) : null
+  const liveDuelFreezeFrame = useMemo(
+    () => (liveDuelFreezeEvent ? buildDuelFreezeFrame(liveDuelFreezeEvent, boardForRender) : null),
+    [boardForRender, liveDuelFreezeEvent],
+  )
+  const isLiveDuelFreezeFrameDismissed =
+    liveDuelFreezeFrameKey !== null && liveDuelFreezeFrameKey === dismissedDuelFreezeFrameKey
+  const visibleDuelFreezeFrame = isLiveDuelFreezeFrameDismissed ? null : persistentDuelFreezeFrame ?? liveDuelFreezeFrame
+
+  useEffect(() => {
+    if (liveDuelFreezeFrame && !isLiveDuelFreezeFrameDismissed) {
+      setPersistentDuelFreezeFrame(liveDuelFreezeFrame)
+    }
+  }, [isLiveDuelFreezeFrameDismissed, liveDuelFreezeFrame])
+
+  useEffect(() => {
+    if (!visibleDuelFreezeFrame) {
+      return
+    }
+
+    const dismissDuelFreezeFrame = (event: Event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      event.stopImmediatePropagation()
+      if (liveDuelFreezeFrameKey) {
+        setDismissedDuelFreezeFrameKey(liveDuelFreezeFrameKey)
+      }
+      setPersistentDuelFreezeFrame(null)
+    }
+
+    window.addEventListener('keydown', dismissDuelFreezeFrame, true)
+    window.addEventListener('pointerdown', dismissDuelFreezeFrame, true)
+    window.addEventListener('mousedown', dismissDuelFreezeFrame, true)
+    window.addEventListener('touchstart', dismissDuelFreezeFrame, true)
+    return () => {
+      window.removeEventListener('keydown', dismissDuelFreezeFrame, true)
+      window.removeEventListener('pointerdown', dismissDuelFreezeFrame, true)
+      window.removeEventListener('mousedown', dismissDuelFreezeFrame, true)
+      window.removeEventListener('touchstart', dismissDuelFreezeFrame, true)
+    }
+  }, [liveDuelFreezeFrameKey, visibleDuelFreezeFrame])
 
   const legalPlayerMoves = useMemo(() => {
     if (!state) {
@@ -425,6 +771,16 @@ export function MatchPage() {
   }, [activeQueue, tutorialExpectedPlayerStep])
 
   const effectsView = useMemo(() => (state ? buildMatchEffectsViewModel(state) : undefined), [state])
+  const pushEffectFeedEntries = useCallback((previousState: MatchState | null, nextState: MatchState | null, move: Move) => {
+    if (!previousState || !nextState) {
+      return
+    }
+    const entries = deriveEffectFeedEntries(previousState, nextState, move)
+    if (entries.length === 0) {
+      return
+    }
+    setEffectFeed((current) => [...entries, ...current].slice(0, 3))
+  }, [])
   const resolveHandDisplayProps = useCallback(
     (actor: Actor, cardId: CardId) => {
       const displayStats = effectsView?.handDisplayStatsByActor[actor][cardId]
@@ -456,6 +812,28 @@ export function MatchPage() {
     },
     [effectsView],
   )
+  const renderHandEffectBadges = (actor: Actor, cardId: CardId, index: number) => {
+    const indicators = effectsView?.handIndicatorsByActor[actor][cardId] ?? []
+    if (indicators.length === 0) {
+      return null
+    }
+
+    return (
+      <span className="hand-effect-badges" data-testid={`hand-card-${actor}-${cardId}-${index}-effects`}>
+        {indicators.map((indicator) => (
+          <span
+            key={indicator.key}
+            className={`effect-chip effect-chip--${indicator.tone}`}
+            title={indicator.tooltip}
+            aria-label={indicator.tooltip}
+          >
+            <span aria-hidden="true">{indicator.icon}</span>
+            <span>{indicator.label}</span>
+          </span>
+        ))}
+      </span>
+    )
+  }
 
   const legalMovesForSelectedCard = useMemo(() => {
     if (!selectedCard) {
@@ -470,6 +848,38 @@ export function MatchPage() {
     [legalMovesForSelectedCard],
   )
   const powerTargetCellSet = useMemo(() => new Set(powerTargeting?.targetCells ?? []), [powerTargeting])
+  const combatCoachMessage = useMemo(
+    () =>
+      state
+        ? buildCombatCoachMessage({
+            state,
+            selectedCardId: selectedCard,
+            focusedCell: keyboardTargetCell,
+            legalMoves: legalPlayerMoves,
+            flipEvents: transientFlipEvents,
+            powerTargeting: powerTargeting
+              ? {
+                  elementId: powerTargeting.elementId,
+                  targetCells: powerTargeting.targetCells,
+                }
+              : null,
+          })
+        : null,
+    [keyboardTargetCell, legalPlayerMoves, powerTargeting, selectedCard, state, transientFlipEvents],
+  )
+  const combatEffectInfo = useMemo(() => {
+    if (!state?.elementState?.enabled) {
+      return null
+    }
+    if (powerTargeting) {
+      return getCombatEffectInfo(powerTargeting.elementId, true)
+    }
+    if (!selectedCard) {
+      return null
+    }
+
+    return getCombatEffectInfo(getCard(selectedCard).elementId, false)
+  }, [powerTargeting, selectedCard, state?.elementState?.enabled])
 
   useEffect(() => {
     return () => {
@@ -491,6 +901,7 @@ export function MatchPage() {
           goldAwarded: 0,
           bonusGoldFromDuplicate: 0,
           bonusGoldFromDifficulty: 0,
+          bonusGoldFromWinStreak: 0,
           bonusGoldFromComboBounty: 0,
           bonusGoldFromCleanVictory: 0,
           bonusGoldFromSecondarySynergy: 0,
@@ -498,6 +909,7 @@ export function MatchPage() {
           bonusGoldFromAutoDeck: 0,
           criticalVictory: false,
           droppedCardId: null,
+          droppedCardIds: [],
           duplicateConverted: false,
           newlyUnlockedAchievements: [],
         },
@@ -507,7 +919,12 @@ export function MatchPage() {
       }
     }
 
-    const claimedCpuCardId = result.winner === 'player' ? (selectedClaimCardId ?? undefined) : undefined
+    const claimedCpuCardIds =
+      (currentMatch.queue === 'normal' || currentMatch.queue === 'ranked') && result.winner === 'player'
+        ? selectedClaimCardIds.length > 0
+          ? selectedClaimCardIds
+          : undefined
+        : undefined
     const progression = applyMatchRewards(
       profile,
       result,
@@ -515,8 +932,8 @@ export function MatchPage() {
       currentMatch.seed + state.turns,
       currentMatch.opponent.level,
       currentMatch.rewardMultiplier,
-      claimedCpuCardId,
-      { disableCardCapture: currentMatch.queue === 'tower' },
+      claimedCpuCardIds,
+      { disableCardCapture: currentMatch.queue === 'tower' || currentMatch.queue === 'story' },
     )
     const rankedMode = currentMatch.queue === 'ranked' ? currentMatch.state.config.mode : null
     const rankedUpdate =
@@ -532,12 +949,18 @@ export function MatchPage() {
       rankedMode,
       rankedUpdate,
     }
-  }, [currentMatch, profile, selectedClaimCardId, state])
-  const selectedClaimCardFragmentCount = selectedClaimCardId ? (profile.cardFragmentsById[selectedClaimCardId] ?? 0) : 0
-  const selectedClaimCardFragmentCost = selectedClaimCardId ? getCardFragmentCost(selectedClaimCardId) : null
+  }, [currentMatch, profile, selectedClaimCardIds, state])
+  const selectedPrimaryClaimCardId = selectedClaimCardIds[0] ?? null
+  const selectedClaimCardFragmentCount = selectedPrimaryClaimCardId ? (profile.cardFragmentsById[selectedPrimaryClaimCardId] ?? 0) : 0
+  const selectedClaimCardFragmentCost = selectedPrimaryClaimCardId ? getCardFragmentCost(selectedPrimaryClaimCardId) : null
 
   const matchSeed = currentMatch?.seed ?? null
+  const matchFeedKey = currentMatch ? `${currentMatch.queue}:${currentMatch.seed}` : null
   const matchStatus = state?.status ?? null
+
+  useEffect(() => {
+    setEffectFeed([])
+  }, [matchFeedKey])
 
   useEffect(() => {
     if (!finishPreview || !currentMatch || state?.status !== 'finished') {
@@ -634,7 +1057,7 @@ export function MatchPage() {
 
   useEffect(() => {
     if (!currentMatch || state?.status !== 'finished') {
-      setSelectedClaimCardId(null)
+      setSelectedClaimCardIds([])
     }
   }, [currentMatch, state?.status])
 
@@ -690,6 +1113,8 @@ export function MatchPage() {
             setTransientGroundCells([])
           }, GROUND_DEBUFF_VISUAL_DELAY_MS)
         }
+        pushEffectFeedEntries(state, resolution.state, move)
+        queueDuelEvents(resolution.duelEvents)
         queueBoardFlipEvents(resolution.flipEvents)
         updateCurrentMatch(resolution.state)
       } catch (err) {
@@ -708,6 +1133,8 @@ export function MatchPage() {
     }
   }, [
     currentMatch,
+    pushEffectFeedEntries,
+    queueDuelEvents,
     queueBoardFlipEvents,
     scheduleAnimationTimeout,
     starterRevealComplete,
@@ -780,10 +1207,17 @@ export function MatchPage() {
         state.elementState.floodedCell === move.cell &&
         card.elementId !== 'spectre'
 
-      const commitResolvedState = (nextState: ReturnType<typeof applyMoveDetailed>['state'], flipEvents: MoveFlipEvent[] = []) => {
+      const commitResolvedState = (
+        nextState: ReturnType<typeof applyMoveDetailed>['state'],
+        flipEvents: MoveFlipEvent[] = [],
+        duelEvents: MoveDuelEvent[] = [],
+        resolvedMove: Move = move,
+      ) => {
         setSelectedCard(null)
         setKeyboardTargetCell(null)
         setError(null)
+        pushEffectFeedEntries(state, nextState, resolvedMove)
+        queueDuelEvents(duelEvents)
         queueBoardFlipEvents(flipEvents)
         updateCurrentMatch(nextState)
       }
@@ -800,6 +1234,7 @@ export function MatchPage() {
         setTransientClashCells([])
         setVsCells([])
         setShowVsOverlay(false)
+        setTransientDuelEvents([])
 
         scheduleAnimationTimeout(() => {
           setTransientWaterPenaltyCells([])
@@ -807,15 +1242,17 @@ export function MatchPage() {
             setTransientClashCells(resolution.combatCells)
             setVsCells(resolution.combatCells)
             setShowVsOverlay(true)
+            setTransientDuelEvents(resolution.duelEvents)
             scheduleAnimationTimeout(() => {
               setTransientClashCells([])
               setShowVsOverlay(false)
               setVsCells([])
+              setTransientDuelEvents([])
               commitResolvedState(resolution.state, resolution.flipEvents)
             }, WATER_CLASH_DELAY_MS)
             return
           }
-          commitResolvedState(resolution.state, resolution.flipEvents)
+          commitResolvedState(resolution.state, resolution.flipEvents, resolution.duelEvents)
         }, WATER_PENALTY_DELAY_MS)
         return
       }
@@ -827,9 +1264,9 @@ export function MatchPage() {
           setTransientGroundCells([])
         }, GROUND_DEBUFF_VISUAL_DELAY_MS)
       }
-      commitResolvedState(resolution.state, resolution.flipEvents)
+      commitResolvedState(resolution.state, resolution.flipEvents, resolution.duelEvents)
     },
-    [queueBoardFlipEvents, scheduleAnimationTimeout, state, updateCurrentMatch],
+    [pushEffectFeedEntries, queueBoardFlipEvents, queueDuelEvents, scheduleAnimationTimeout, state, updateCurrentMatch],
   )
 
   const handleCellClick = useCallback(
@@ -900,7 +1337,7 @@ export function MatchPage() {
       }
 
       if (!selectedCard) {
-        setError('Select a card first.')
+        setError('Sélectionne une carte d abord.')
         return
       }
 
@@ -1090,19 +1527,31 @@ export function MatchPage() {
   const previewPlacementCell = powerTargeting?.placementCell ?? null
   const targetableCells = powerTargeting?.targetKind === 'targetCardCell' ? powerTargeting.targetCells : []
   const vsBoardSize = getModeSpec(state.config.mode).boardSize
+  const duelActive = showVsOverlay || transientClashCells.length > 0 || transientDuelEvents.length > 0
+  const combatPhase = resolveCombatPhase({
+    status: state.status,
+    turn: state.turn,
+    powerTargeting: powerTargeting !== null,
+    duelActive,
+    resultActive: transientFlipEvents.length > 0,
+    starterRevealComplete,
+  })
+  const duelFreezeFrame = visibleDuelFreezeFrame
 
   const handleFinish = () => {
     const isTowerQueue = currentMatch.queue === 'tower'
     const isTutorialQueue = currentMatch.queue === 'tutorial'
+    const isStoryQueue = currentMatch.queue === 'story'
     const isPlayerVictory = finishPreview?.result.winner === 'player'
-    if (!isTowerQueue && !isTutorialQueue && isPlayerVictory && !selectedClaimCardId) {
-      setError('Choose one opponent card to claim before continuing.')
+    if (!isTowerQueue && !isTutorialQueue && !isStoryQueue && isPlayerVictory && selectedClaimCardIds.length < claimSelectionCount) {
+      setError(`Choisis ${claimSelectionCount} carte(s) adverse(s) à récupérer avant de continuer.`)
       return
     }
 
     setIsFinishing(true)
-    finalizeCurrentMatch(selectedClaimCardId ?? undefined)
-    navigate(isTutorialQueue ? '/rules' : '/results')
+    const storyReturnPath = currentMatch.story ? `/story/${currentMatch.story.mapId}` : '/story'
+    finalizeCurrentMatch(selectedClaimCardIds.length > 0 ? selectedClaimCardIds : undefined)
+    navigate(isTutorialQueue ? '/rules' : isStoryQueue ? storyReturnPath : '/results')
   }
 
   const handleRematch = () => {
@@ -1110,11 +1559,11 @@ export function MatchPage() {
       return
     }
     if (currentMatch.queue === 'tower') {
-      setError('Tower matches cannot be rematched. Continue the ascent from results.')
+      setError("Les matchs de Tour ne peuvent pas être relancés. Continue l'ascension depuis les résultats.")
       return
     }
     if (currentMatch.queue === 'tutorial') {
-      setError('Relance ce tutoriel depuis Rules.')
+      setError('Relance ce tutoriel depuis les Règles.')
       return
     }
 
@@ -1124,18 +1573,18 @@ export function MatchPage() {
     setIsFinishing(true)
 
     try {
-      finalizeCurrentMatch(selectedClaimCardId ?? undefined)
+      finalizeCurrentMatch(selectedClaimCardIds.length > 0 ? selectedClaimCardIds : undefined)
       const rematchOptions =
         currentMatch.queue === 'normal' ? { normalOpponentLevel: currentMatch.opponent.level } : undefined
       startMatch(currentMatch.queue, currentMatch.state.config.mode, rematchDeck, rematchRules, rematchOptions)
       setSelectedCard(null)
-      setSelectedClaimCardId(null)
+      setSelectedClaimCardIds([])
       setError(null)
       setPowerTargeting(null)
       clearAnimationTimeouts()
       resetTransientEffects()
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unable to start rematch.'
+      const message = err instanceof Error ? err.message : 'Impossible de lancer la revanche.'
       setError(message)
       navigate('/results')
     } finally {
@@ -1157,7 +1606,7 @@ export function MatchPage() {
             aria-hidden="true"
             data-testid="match-lane-art-cpu"
           />
-          <h2>CPU Hand ({state.rules.open ? 'Open' : 'Hidden'})</h2>
+          <h2>Main CPU ({state.rules.open ? 'visible' : 'cachée'})</h2>
           {effectsView ? <MatchLaneTypeStrip actor="cpu" slots={effectsView.laneTypeSlotsByActor.cpu} mode={effectsView.mode} /> : null}
           <p className="small match-opponent-badge match-opponent-badge--lane" data-testid="match-opponent-badge">
             CPU L{currentMatch.opponent.level} • Score {currentMatch.opponent.deckScore}
@@ -1171,16 +1620,21 @@ export function MatchPage() {
               const { statOverrides, statTrends } = resolveHandDisplayProps('cpu', cardId)
               const poisoned = isHandPoisoned('cpu', cardId)
               return (
-                <TriadCard
+                <div
+                  className={`match-hand-card-shell ${poisoned ? 'match-hand-card-shell--poisoned' : ''}`}
                   key={`${cardId}-${index}`}
-                  card={card}
-                  context="hand-cpu"
-                  owned={state.rules.open}
-                  selected={cpuThinkingCardIndex === index}
-                  statOverrides={statOverrides}
-                  statTrends={statTrends}
-                  className={poisoned ? 'is-hand-poisoned' : undefined}
-                />
+                >
+                  {renderHandEffectBadges('cpu', cardId, index)}
+                  <TriadCard
+                    card={card}
+                    context="hand-cpu"
+                    owned={state.rules.open}
+                    selected={cpuThinkingCardIndex === index}
+                    statOverrides={statOverrides}
+                    statTrends={statTrends}
+                    className={poisoned ? 'is-hand-poisoned' : undefined}
+                  />
+                </div>
               )
             })}
           </div>
@@ -1210,16 +1664,17 @@ export function MatchPage() {
                 PLAYER
               </span>
             </div>
+            <MatchPhaseBar phase={combatPhase} />
             {currentMatch.queue === 'tower' && currentMatch.tower ? (
               <>
                 <p className="small" data-testid="match-tower-floor">
-                  Tower Floor {currentMatch.tower.floor} · Checkpoint {currentMatch.tower.checkpointFloor}
+                  Tour étage {currentMatch.tower.floor} · Palier {currentMatch.tower.checkpointFloor}
                 </p>
                 <p className="small" data-testid="match-tower-boss">
-                  {currentMatch.tower.boss ? 'Boss Floor' : 'Normal Floor'}
+                  {currentMatch.tower.boss ? 'Étage boss' : 'Étage normal'}
                 </p>
                 <p className="small" data-testid="match-tower-relics">
-                  Relics {Object.values(currentMatch.tower.relics).reduce((sum, count) => sum + count, 0)}
+                  Reliques {Object.values(currentMatch.tower.relics).reduce((sum, count) => sum + count, 0)}
                 </p>
               </>
             ) : null}
@@ -1242,30 +1697,78 @@ export function MatchPage() {
                 </div>
               ) : null}
             </div>
-            {tutorialSession ? (
-              <div className="match-tutorial-focus" data-testid="match-tutorial-focus">
-                <p className="small" data-testid="match-tutorial-title">
-                  {tutorialSession.title}
+          </div>
+          {tutorialSession ? (
+            <aside
+              className="match-tutorial-focus match-tutorial-window"
+              role="dialog"
+              aria-modal="false"
+              aria-labelledby="match-tutorial-window-title"
+              aria-describedby="match-tutorial-window-hint match-tutorial-window-why"
+              data-testid="match-tutorial-window"
+            >
+              <p className="small" id="match-tutorial-window-title" data-testid="match-tutorial-title">
+                {tutorialSession.title}
+              </p>
+              <p className="small match-tutorial-focus__chapter" data-testid="match-tutorial-chapter">
+                {tutorialStep?.chapterLabel ?? tutorialSession.description}
+              </p>
+              <p className="small match-tutorial-focus__goal" data-testid="match-tutorial-goal">
+                But: controle plus de cartes que le CPU a la fin.
+              </p>
+              <p className="small" data-testid="match-tutorial-progress">
+                Etape {Math.min(state.turns + 1, tutorialSession.steps.length)}/{tutorialSession.steps.length}
+              </p>
+              <p className="small" id="match-tutorial-window-hint" data-testid="match-tutorial-hint">
+                {tutorialStep?.hint ?? 'Termine la partie pour valider le tutoriel.'}
+              </p>
+              <p className="small match-tutorial-focus__objective" data-testid="match-tutorial-objective">
+                {getTutorialObjectiveText(tutorialExpectedPlayerStep)}
+              </p>
+              <p className="small match-tutorial-focus__why" id="match-tutorial-window-why" data-testid="match-tutorial-why">
+                {tutorialStep?.why ?? tutorialStep?.hint ?? 'Termine la partie pour valider le tutoriel.'}
+              </p>
+            </aside>
+          ) : null}
+          <div className="match-board-console" data-testid="match-board-console">
+            {combatCoachMessage ? (
+              <aside
+                className="match-combat-coach match-action-console"
+                aria-label="Console d'action du combat"
+                aria-live="polite"
+                data-testid="match-combat-coach"
+              >
+                <p className="match-combat-coach__body" data-testid="match-combat-coach-body">
+                  <span>ACTION :</span>
+                  <span className="match-combat-coach__action-copy">{combatCoachMessage.body}</span>
                 </p>
-                <p className="small match-tutorial-focus__chapter" data-testid="match-tutorial-chapter">
-                  {tutorialStep?.chapterLabel ?? tutorialSession.description}
-                </p>
-                <p className="small match-tutorial-focus__goal" data-testid="match-tutorial-goal">
-                  But: controle plus de cartes que le CPU a la fin.
-                </p>
-                <p className="small" data-testid="match-tutorial-progress">
-                  Etape {Math.min(state.turns + 1, tutorialSession.steps.length)}/{tutorialSession.steps.length}
-                </p>
-                <p className="small" data-testid="match-tutorial-hint">
-                  {tutorialStep?.hint ?? 'Termine la partie pour valider le tutoriel.'}
-                </p>
-                <p className="small match-tutorial-focus__objective" data-testid="match-tutorial-objective">
-                  {getTutorialObjectiveText(tutorialExpectedPlayerStep)}
-                </p>
-                <p className="small match-tutorial-focus__why" data-testid="match-tutorial-why">
-                  {tutorialStep?.why ?? tutorialStep?.hint ?? 'Termine la partie pour valider le tutoriel.'}
-                </p>
-              </div>
+              </aside>
+            ) : null}
+            {combatEffectInfo ? (
+              <aside
+                className={`match-effect-info-card match-effect-info-card--${combatEffectInfo.elementId}`}
+                aria-label={`Information effet ${getElementLabel(combatEffectInfo.elementId)}`}
+                data-testid="match-effect-info-card"
+              >
+                <div className="match-effect-info-card__head">
+                  <span className="match-effect-info-card__label">Effet</span>
+                  <h3 data-testid="match-effect-info-title">{combatEffectInfo.title}</h3>
+                </div>
+                <div className="match-effect-info-card__grid">
+                  <p className="match-effect-info-card__line match-effect-info-card__line--impact" data-testid="match-effect-info-impact">
+                    <span>Impact</span>
+                    {combatEffectInfo.impact}
+                  </p>
+                  <p className="match-effect-info-card__line" data-testid="match-effect-info-trigger">
+                    <span>Déclenchement</span>
+                    {combatEffectInfo.trigger}
+                  </p>
+                  <p className="match-effect-info-card__line" data-testid="match-effect-info-note">
+                    <span>À retenir</span>
+                    {combatEffectInfo.note}
+                  </p>
+                </div>
+              </aside>
             ) : null}
           </div>
           <div className="match-board-viewport">
@@ -1289,54 +1792,79 @@ export function MatchPage() {
               transientFreezeBlockedCells={transientFreezeBlockedCells}
               transientWaterPenaltyCells={transientWaterPenaltyCells}
               transientClashCells={transientClashCells}
+              duelEvents={transientDuelEvents}
               flipEvents={transientFlipEvents}
               flipEventVersion={transientFlipEventVersion}
               targetableCells={targetableCells}
               previewPlacementCell={previewPlacementCell}
             />
-            {showVsOverlay ? (
+            {duelFreezeFrame ? (
+              <article
+                className="match-duel-freeze-frame"
+                role="status"
+                aria-live="polite"
+                data-testid="match-duel-freeze-frame"
+              >
+                <p className="match-duel-freeze-frame__eyebrow">Duel figé</p>
+                <h3 data-testid="match-duel-freeze-title">{duelFreezeFrame.title}</h3>
+                <p className="match-duel-freeze-frame__score" data-testid="match-duel-freeze-score">
+                  {renderDuelScore(duelFreezeFrame.score)}
+                </p>
+                <p className="match-duel-freeze-frame__result" data-testid="match-duel-freeze-result">
+                  {duelFreezeFrame.result}
+                </p>
+              </article>
+            ) : null}
+            {showVsOverlay || transientDuelEvents.length > 0 ? (
               <div className="match-vs-overlay" data-testid="match-vs-overlay">
-                {vsCells.map((cell, index) => {
-                  const row = Math.floor(cell / vsBoardSize)
-                  const col = cell % vsBoardSize
-                  return (
-                    <span
-                      key={`${cell}:${index}`}
-                      className="match-vs-badge"
-                      data-testid={`match-vs-badge-${index}`}
-                      style={{
-                        left: `${((col + 0.5) / vsBoardSize) * 100}%`,
-                        top: `${((row + 0.5) / vsBoardSize) * 100}%`,
-                      }}
-                    >
-                      VS
-                    </span>
-                  )
-                })}
+                {transientDuelEvents.length > 0
+                  ? transientDuelEvents.map((event, index) => {
+                      const position = resolveDuelBadgePosition(event, vsBoardSize)
+                      return (
+                        <span
+                          key={`${event.attackerCell}:${event.defenderCell}:${index}`}
+                          className="match-vs-badge match-duel-badge"
+                          data-testid={`match-duel-badge-${index}`}
+                          style={position}
+                        >
+                          <span className="match-duel-badge__score">
+                            {(() => {
+                              const score = buildDuelScoreModel(event, state.board)
+                              return renderDuelScore(score)
+                            })()}
+                          </span>
+                          <span className="match-duel-badge__sides" aria-hidden="true">
+                            {formatDuelSideText(event.attackerSide)} vs {formatDuelSideText(event.defenderSide)}
+                          </span>
+                        </span>
+                      )
+                    })
+                  : vsCells.map((cell, index) => {
+                      const row = Math.floor(cell / vsBoardSize)
+                      const col = cell % vsBoardSize
+                      return (
+                        <span
+                          key={`${cell}:${index}`}
+                          className="match-vs-badge"
+                          data-testid={`match-vs-badge-${index}`}
+                          style={{
+                            left: `${((col + 0.5) / vsBoardSize) * 100}%`,
+                            top: `${((row + 0.5) / vsBoardSize) * 100}%`,
+                          }}
+                        >
+                          VS
+                        </span>
+                      )
+                    })}
               </div>
             ) : null}
           </div>
           {powerTargeting ? (
-            <>
-              {powerTargeting.elementId === 'eau' ? (
-                <p className="match-flood-target-hint" data-testid="match-flood-target-hint">
-                  Choisissez la case a inonder.
-                </p>
-              ) : powerTargeting.elementId === 'feu' ? (
-                <p className="match-flood-target-hint" data-testid="match-fire-target-hint">
-                  Choisissez la carte ennemie a bruler.
-                </p>
-              ) : powerTargeting.elementId === 'glace' ? (
-                <p className="match-flood-target-hint" data-testid="match-freeze-target-hint">
-                  Choisissez la case a geler.
-                </p>
-              ) : (
-                <p className="match-flood-target-hint" data-testid="match-power-target-hint">
-                  Choisissez une cible.
-                </p>
-              )}
-            </>
+            <p className="match-flood-target-hint" data-testid={getPowerTargetHint(powerTargeting.elementId).testId}>
+              {getPowerTargetHint(powerTargeting.elementId).message}
+            </p>
           ) : null}
+          {effectsView && state.elementState?.enabled ? <MatchEffectsPanel effectsView={effectsView} effectFeed={effectFeed} /> : null}
           {isStarterRollActive && (
             <div
               className={`match-starter-overlay ${isStarterRollSpinning ? 'is-rolling' : 'is-reveal'}`}
@@ -1344,7 +1872,7 @@ export function MatchPage() {
               aria-live="polite"
               data-testid="match-starter-overlay"
             >
-              <p className="small match-starter-label">{isStarterRollSpinning ? 'First Turn Clock' : 'First Turn Selected'}</p>
+              <p className="small match-starter-label">{isStarterRollSpinning ? 'Tirage du premier tour' : 'Premier tour choisi'}</p>
               <div
                 className={`match-starter-clock ${isStarterRollSpinning ? 'is-rolling' : 'is-reveal'}`}
                 data-testid="match-starter-clock"
@@ -1356,7 +1884,7 @@ export function MatchPage() {
                   }`}
                   data-testid="match-starter-side-opponent"
                 >
-                  Opponent
+                  Adversaire
                 </p>
                 <p
                   className={`match-starter-side match-starter-side--right ${
@@ -1414,19 +1942,24 @@ export function MatchPage() {
                 tutorialExpectedPlayerStep?.objective?.allowedCardIds &&
                 !tutorialAllowedCardIdSet.has(cardId)
               return (
-                <TriadCard
-                  card={card}
-                  context="hand-player"
+                <div
+                  className={`match-hand-card-shell ${poisoned ? 'match-hand-card-shell--poisoned' : ''}`}
                   key={`${cardId}-${index}`}
-                  selected={selectedCard === cardId}
-                  statOverrides={statOverrides}
-                  statTrends={statTrends}
-                  className={poisoned ? 'is-hand-poisoned' : undefined}
-                  interactive
-                  onClick={() => setSelectedCard(cardId)}
-                  disabled={!starterRevealComplete || state.turn !== 'player' || state.status === 'finished' || cardBlockedByTutorialObjective}
-                  testId={testId}
-                />
+                >
+                  {renderHandEffectBadges('player', cardId, index)}
+                  <TriadCard
+                    card={card}
+                    context="hand-player"
+                    selected={selectedCard === cardId}
+                    statOverrides={statOverrides}
+                    statTrends={statTrends}
+                    className={poisoned ? 'is-hand-poisoned' : undefined}
+                    interactive
+                    onClick={() => setSelectedCard(cardId)}
+                    disabled={!starterRevealComplete || state.turn !== 'player' || state.status === 'finished' || cardBlockedByTutorialObjective}
+                    testId={testId}
+                  />
+                </div>
               )
             })}
           </div>
@@ -1452,7 +1985,7 @@ export function MatchPage() {
           >
             <header className="finish-score-header finish-score-header--modal">
               <div className="finish-score finish-score--player">
-                <span className="finish-score__label">YOU</span>
+                <span className="finish-score__label">TOI</span>
                 <strong className="finish-score__value" data-testid="match-finish-player-score">
                   {finishPreview.result.playerCount}
                 </strong>
@@ -1471,20 +2004,22 @@ export function MatchPage() {
                 {getOutcomeLabel(finishPreview.result.winner)}
               </h2>
             </header>
-            {finishPreview.rewards.criticalVictory ? <p className="small">Critical Victory</p> : null}
+            {finishPreview.rewards.criticalVictory ? <p className="small">Victoire critique</p> : null}
             <p className="small">
-              Queue:{' '}
+              File:{' '}
               {finishPreview.queue === 'ranked'
-                ? 'Ranked'
+                ? 'Classé'
                 : finishPreview.queue === 'tower'
-                  ? 'Tower'
+                  ? 'Tour'
                   : finishPreview.queue === 'tutorial'
-                    ? 'Tutorial'
-                    : 'Normal'}
+                    ? 'Tutoriel'
+                    : finishPreview.queue === 'story'
+                      ? 'Histoire'
+                      : 'Normal'}
             </p>
 
             <div className="stat-row">
-              <span>Gold Earned</span>
+              <span>Or gagné</span>
               <strong>
                 +{finishPreview.rewards.goldAwarded}
                 {formatGoldBonusDetails(finishPreview.rewards)}
@@ -1492,17 +2027,20 @@ export function MatchPage() {
             </div>
 
             <div className="stat-row">
-              <span>Opponent</span>
+              <span>Adversaire</span>
               <strong>
                 CPU L{finishPreview.opponent.level} ({finishPreview.opponent.aiProfile})
               </strong>
             </div>
 
-            {finishPreview.result.winner === 'player' && currentMatch.queue !== 'tower' && currentMatch.queue !== 'tutorial' ? (
+            {finishPreview.result.winner === 'player' &&
+            currentMatch.queue !== 'tower' &&
+            currentMatch.queue !== 'tutorial' &&
+            currentMatch.queue !== 'story' ? (
               <div className="result-block">
-                <h2>Card Fragment</h2>
-                <p className="small">Choose 1 opponent card to recover 1 fragment (not a full card)</p>
-                <div className="setup-selected-cards match-claim-grid" aria-label="Claim card selection">
+                <h2>Fragment de carte</h2>
+                <p className="small">Choisis {claimSelectionCount} carte(s) adverse(s) pour récupérer {claimSelectionCount} fragment(s)</p>
+                <div className="setup-selected-cards match-claim-grid" aria-label="Sélection de fragment">
                   {currentMatch.cpuDeck.map((cardId) => {
                     const card = getCard(cardId)
                     return (
@@ -1511,12 +2049,20 @@ export function MatchPage() {
                         card={card}
                         context="setup"
                         className="setup-preview-card match-claim-card"
-                        selected={selectedClaimCardId === cardId}
+                        selected={selectedClaimCardIds.includes(cardId)}
                         showNew={!profile.ownedCardIds.includes(cardId)}
                         newBadgeVariant="claim"
                         interactive
                         onClick={() => {
-                          setSelectedClaimCardId(cardId)
+                          setSelectedClaimCardIds((current) => {
+                            if (current.includes(cardId)) {
+                              return current.filter((entry) => entry !== cardId)
+                            }
+                            if (current.length >= claimSelectionCount) {
+                              return current
+                            }
+                            return [...current, cardId]
+                          })
                           setError(null)
                         }}
                         testId={`match-claim-card-${cardId}`}
@@ -1525,15 +2071,25 @@ export function MatchPage() {
                   })}
                 </div>
                 <p data-testid="match-fragment-selection-status">
-                  {selectedClaimCardId
-                    ? `Selected: ${selectedClaimCardId.toUpperCase()} - Current fragments: ${selectedClaimCardFragmentCount}/${selectedClaimCardFragmentCost}`
-                    : 'Select one card to continue. Reward: 1 fragment (not a full card).'}
+                  {selectedClaimCardIds.length === 0
+                    ? `Sélectionne ${claimSelectionCount} carte(s) pour continuer. Récompense: ${claimSelectionCount} fragment(s), pas des cartes complètes.`
+                    : selectedClaimCardIds.length === 1
+                      ? `Sélection: ${selectedPrimaryClaimCardId?.toUpperCase()} - Fragments actuels: ${selectedClaimCardFragmentCount}/${selectedClaimCardFragmentCost}`
+                      : `Sélection (${selectedClaimCardIds.length}/${claimSelectionCount}): ${selectedClaimCardIds
+                          .map((cardId) => cardId.toUpperCase())
+                          .join(', ')}`}
                 </p>
               </div>
             ) : (
               <div className="result-block">
-                <h2>Card Fragment</h2>
-                <p>{currentMatch.queue === 'tower' ? 'Tower mode does not grant card fragments.' : 'No fragment gained this match.'}</p>
+                <h2>Fragment de carte</h2>
+                <p>
+                  {currentMatch.queue === 'tower'
+                    ? 'Le mode Tour ne donne pas de fragments de carte.'
+                    : currentMatch.queue === 'story'
+                      ? "Le mode Histoire marque le dresseur battu et donne de l'or, sans fragment."
+                      : 'Aucun fragment gagné sur ce match.'}
+                </p>
               </div>
             )}
 
@@ -1542,14 +2098,14 @@ export function MatchPage() {
             ) : null}
 
             <div className="actions">
-              {currentMatch.queue !== 'tower' && currentMatch.queue !== 'tutorial' ? (
+              {currentMatch.queue !== 'tower' && currentMatch.queue !== 'tutorial' && currentMatch.queue !== 'story' ? (
                 <button
                   type="button"
                   className="button"
                   onClick={handleRematch}
                   data-testid="restart-match-button"
                 >
-                  Rematch
+                  Revanche
                 </button>
               ) : null}
               <button
@@ -1560,17 +2116,20 @@ export function MatchPage() {
                 disabled={
                   currentMatch.queue !== 'tower' &&
                   currentMatch.queue !== 'tutorial' &&
+                  currentMatch.queue !== 'story' &&
                   finishPreview.result.winner === 'player' &&
-                  !selectedClaimCardId
+                  selectedClaimCardIds.length < claimSelectionCount
                 }
               >
                 {currentMatch.queue === 'tower'
                   ? finishPreview.result.winner === 'player'
-                    ? 'Continue Ascension'
-                    : 'End Run'
+                    ? "Continuer l'ascension"
+                    : 'Terminer le run'
                   : currentMatch.queue === 'tutorial'
-                    ? 'Retourner a Rules'
-                    : 'Continue'}
+                    ? 'Retourner aux Règles'
+                    : currentMatch.queue === 'story'
+                      ? "Retourner à l'histoire"
+                      : 'Continuer'}
               </button>
             </div>
           </div>

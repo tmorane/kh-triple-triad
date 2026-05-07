@@ -1,5 +1,5 @@
 import type { DragEvent, FormEvent } from 'react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { canAccessAdminImages, isAdminAuthBypassedInClient } from '../../app/admin/adminClientAccess'
 import {
   deleteAdminPublicImage,
@@ -122,8 +122,39 @@ export function AdminImagesPage() {
   const renameInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
   const renameInFlightRef = useRef<Record<string, boolean>>({})
 
+  const resolveAccessToken = useCallback(async (): Promise<{ accessToken: string | null; errorMessage: string | null }> => {
+    if (isLocalAuthBypass) {
+      return { accessToken: null, errorMessage: null }
+    }
+
+    if (!hasSession) {
+      return { accessToken: null, errorMessage: "Connecte-toi d'abord." }
+    }
+
+    const client = getSupabaseClient()
+    if (!client) {
+      return { accessToken: null, errorMessage: "Connecte-toi d'abord." }
+    }
+
+    const { data, error: sessionError } = await client.auth.getSession()
+    if (sessionError || !data.session?.access_token) {
+      return { accessToken: null, errorMessage: "Connecte-toi d'abord." }
+    }
+
+    return { accessToken: data.session.access_token, errorMessage: null }
+  }, [hasSession, isLocalAuthBypass])
+
   useEffect(() => {
     let mounted = true
+
+    if (isLocalAuthBypass) {
+      setHasSession(true)
+      setIsAuthorized(true)
+      setIsLoadingAccess(false)
+      return () => {
+        mounted = false
+      }
+    }
 
     const applySession = (email: string | null | undefined) => {
       if (!mounted) {
@@ -165,7 +196,11 @@ export function AdminImagesPage() {
     }
 
     let cancelled = false
-    void fetchAdminPublicGallery().then((images) => {
+    void resolveAccessToken().then(async ({ accessToken, errorMessage }) => {
+      if (errorMessage) {
+        return
+      }
+      const images = await fetchAdminPublicGallery(accessToken)
       if (!cancelled) {
         setGallery(images)
       }
@@ -174,7 +209,7 @@ export function AdminImagesPage() {
     return () => {
       cancelled = true
     }
-  }, [canAccessPage])
+  }, [canAccessPage, resolveAccessToken])
 
   const canSubmit = useMemo(() => {
     return (isLocalAuthBypass || hasSession) && isAuthorized && !isSubmitting && prompt.trim().length > 0
@@ -251,28 +286,6 @@ export function AdminImagesPage() {
     }
   }, [galleryGroups, selectedGalleryDirectory])
 
-  const resolveAccessToken = async (): Promise<{ accessToken: string | null; errorMessage: string | null }> => {
-    if (isLocalAuthBypass) {
-      return { accessToken: null, errorMessage: null }
-    }
-
-    if (!hasSession) {
-      return { accessToken: null, errorMessage: "Connecte-toi d'abord." }
-    }
-
-    const client = getSupabaseClient()
-    if (!client) {
-      return { accessToken: null, errorMessage: "Connecte-toi d'abord." }
-    }
-
-    const { data, error: sessionError } = await client.auth.getSession()
-    if (sessionError || !data.session?.access_token) {
-      return { accessToken: null, errorMessage: "Connecte-toi d'abord." }
-    }
-
-    return { accessToken: data.session.access_token, errorMessage: null }
-  }
-
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setError(null)
@@ -346,7 +359,7 @@ export function AdminImagesPage() {
       const successPayload = payload as AdminImageGenerateResponse
       setResult(successPayload)
       setInfo(`${successPayload.images.length} image(s) générée(s).`)
-      setGallery(await fetchAdminPublicGallery())
+      setGallery(await fetchAdminPublicGallery(accessToken))
     } catch {
       setError('Échec génération, réessaie.')
     } finally {
@@ -415,7 +428,7 @@ export function AdminImagesPage() {
     }
 
     setInfo(`Image transférée vers ${targetDirectory}.`)
-    setGallery(await fetchAdminPublicGallery())
+    setGallery(await fetchAdminPublicGallery(accessToken))
   }
 
   const handleDeletePublicImage = async (filename: string) => {
@@ -464,7 +477,7 @@ export function AdminImagesPage() {
       }
     })
     setInfo('Image supprimée.')
-    setGallery(await fetchAdminPublicGallery())
+    setGallery(await fetchAdminPublicGallery(accessToken))
   }
 
   const handleGalleryCardDragStart = (event: DragEvent<HTMLElement>, filename: string) => {
@@ -545,7 +558,7 @@ export function AdminImagesPage() {
 
     setInfo(`Image transférée vers ${targetDirectory}.`)
     setSelectedGalleryDirectory(targetDirectory)
-    setGallery(await fetchAdminPublicGallery())
+    setGallery(await fetchAdminPublicGallery(accessToken))
   }
 
   const startRenamingGalleryImage = (sourceFilename: string) => {
@@ -580,6 +593,7 @@ export function AdminImagesPage() {
     }
 
     renameInFlightRef.current[sourceFilename] = true
+    let galleryAccessToken: string | null = null
     let renameResult:
       | {
           status: number
@@ -593,6 +607,7 @@ export function AdminImagesPage() {
         setError(errorMessage)
         return
       }
+      galleryAccessToken = accessToken
 
       setSavingRenameFilename(sourceFilename)
       renameResult = await renameAdminPublicImage({ sourceFilename, targetName }, accessToken)
@@ -632,7 +647,7 @@ export function AdminImagesPage() {
     setRenameDraft('')
     delete renameInputRefs.current[sourceFilename]
     setInfo('Image renommée.')
-    setGallery(await fetchAdminPublicGallery())
+    setGallery(await fetchAdminPublicGallery(galleryAccessToken))
   }
 
   const handleGalleryTabDrop = async (event: DragEvent<HTMLElement>, directory: string) => {
@@ -652,8 +667,8 @@ export function AdminImagesPage() {
   return (
     <section className="panel admin-images-panel" data-testid="admin-images-page">
       <div className="admin-images-head">
-        <h1>Admin Images</h1>
-        <p className="small">Generate artwork with AI SDK + Imagen.</p>
+        <h1>Images admin</h1>
+        <p className="small">Génère des visuels avec AI SDK + Imagen.</p>
       </div>
 
       {isLoadingAccess ? <p className="small">Vérification des droits admin...</p> : null}

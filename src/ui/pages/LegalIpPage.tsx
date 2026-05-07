@@ -32,11 +32,14 @@ export function LegalIpPage() {
       </article>
 
       <div className="actions">
-        <Link className="button button-primary" to="/">
-          Home
+        <Link className="button button-primary" to="/home">
+          Accueil
         </Link>
         <Link className="button" to="/setup">
-          Go to Match Setup
+          Préparer un match
+        </Link>
+        <Link className="button" to="/privacy">
+          Politique de Confidentialite
         </Link>
       </div>
     </section>

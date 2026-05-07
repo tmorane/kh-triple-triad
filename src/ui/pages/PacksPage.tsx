@@ -36,7 +36,14 @@ const packVisuals: Record<ShopPackId, PackVisual> = {
 }
 
 function formatPackLabel(packId: ShopPackId): string {
-  return `${packId.charAt(0).toUpperCase()}${packId.slice(1)} Pack`
+  const labels: Record<ShopPackId, string> = {
+    common: 'Pack commun',
+    uncommon: 'Pack peu commun',
+    rare: 'Pack rare',
+    epic: 'Pack épique',
+    legendary: 'Pack légendaire',
+  }
+  return labels[packId]
 }
 
 function sanitizeOpenQuantity(value: number): number {
@@ -172,7 +179,7 @@ export function PacksPage() {
       setOpenResult(result)
       setError(null)
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unable to open this pack.'
+      const message = err instanceof Error ? err.message : 'Impossible d ouvrir ce pack.'
       setError(message)
     }
   }
@@ -189,7 +196,7 @@ export function PacksPage() {
     <section className="panel packs-panel">
       <div className="packs-headline">
         <h1>Packs</h1>
-        <p className="small">Click a pack image to open it.</p>
+        <p className="small">Clique une image de pack pour l'ouvrir.</p>
       </div>
 
       <div className="packs-grid">
@@ -207,12 +214,12 @@ export function PacksPage() {
                 disabled={count <= 0}
                 onClick={() => handleOpenPack(packId, selectedOpenQuantity)}
                 data-testid={`open-pack-${packId}`}
-                aria-label={count > 0 ? `Open ${formatPackLabel(packId)} x${selectedOpenQuantity}` : `${formatPackLabel(packId)} unavailable`}
+                aria-label={count > 0 ? `Ouvrir ${formatPackLabel(packId)} x${selectedOpenQuantity}` : `${formatPackLabel(packId)} indisponible`}
               >
                 <img
                   className="packs-entry-art"
                   src={packVisual.artSrc}
-                  alt={`${formatPackLabel(packId)} artwork`}
+                  alt={`Illustration ${formatPackLabel(packId)}`}
                   loading="lazy"
                   decoding="async"
                 />
@@ -221,7 +228,7 @@ export function PacksPage() {
                 x{count}
               </p>
               <div className="packs-entry-quantity" data-testid={`packs-open-quantity-${packId}`}>
-                <span className="packs-entry-quantity__label">Qty</span>
+                <span className="packs-entry-quantity__label">Qté</span>
                 <div className="packs-entry-quantity__controls">
                   <button
                     type="button"
@@ -233,7 +240,7 @@ export function PacksPage() {
                       }))
                     }
                     disabled={selectedOpenQuantity <= 1}
-                    aria-label={`Decrease ${formatPackLabel(packId)} open quantity`}
+                    aria-label={`Réduire la quantité à ouvrir ${formatPackLabel(packId)}`}
                     data-testid={`packs-open-quantity-decrement-${packId}`}
                   >
                     -
@@ -251,7 +258,7 @@ export function PacksPage() {
                       }))
                     }
                     disabled={selectedOpenQuantity >= maxOpenQuantity}
-                    aria-label={`Increase ${formatPackLabel(packId)} open quantity`}
+                    aria-label={`Augmenter la quantité à ouvrir ${formatPackLabel(packId)}`}
                     data-testid={`packs-open-quantity-increment-${packId}`}
                   >
                     +
@@ -265,7 +272,7 @@ export function PacksPage() {
                 onClick={() => handleOpenPack(packId, selectedOpenQuantity)}
                 data-testid={`open-pack-quantity-${packId}`}
               >
-                Open x{selectedOpenQuantity}
+                Ouvrir x{selectedOpenQuantity}
               </button>
             </article>
           )
@@ -286,9 +293,9 @@ export function PacksPage() {
               <div className="packs-reveal-headline">
                 <img className="packs-reveal-art" src={revealVisual?.artSrc} alt="" aria-hidden="true" />
                 <div>
-                  <h2 id="packs-reveal-title">{formatPackLabel(openResult.packId)} Opened</h2>
+                  <h2 id="packs-reveal-title">{formatPackLabel(openResult.packId)} ouvert</h2>
                   <p className="small">
-                    Opened x{getOpenedPackCount(openResult)} | Remaining: x{openResult.remainingPackCount}
+                    Ouverts x{getOpenedPackCount(openResult)} | Restants: x{openResult.remainingPackCount}
                   </p>
                 </div>
               </div>
@@ -300,7 +307,7 @@ export function PacksPage() {
                     onClick={handleOpenAnotherPack}
                     data-testid="packs-reveal-open-another"
                   >
-                    Open x{Math.min(getOpenedPackCount(openResult), openResult.remainingPackCount)} again
+                    Rouvrir x{Math.min(getOpenedPackCount(openResult), openResult.remainingPackCount)}
                   </button>
                 ) : null}
                 <button
@@ -309,7 +316,7 @@ export function PacksPage() {
                   onClick={() => setOpenResult(null)}
                   data-testid="packs-reveal-close"
                 >
-                  Close
+                  Fermer
                 </button>
               </div>
             </div>
@@ -357,13 +364,13 @@ export function PacksPage() {
 
       <div className="actions">
         <Link className="button button-primary" to="/shop">
-          Shop
+          Boutique
         </Link>
         <Link className="button" to="/pokedex">
           Pokédex
         </Link>
-        <Link className="button" to="/">
-          Home
+        <Link className="button" to="/home">
+          Accueil
         </Link>
       </div>
     </section>

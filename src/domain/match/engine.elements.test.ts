@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { __setCardPoolOverrideForTests } from '../cards/cardPool'
 import { selectCpuMove } from './ai'
-import { applyMove, applyMoveDetailed, createMatch, resolveDisplaySides } from './engine'
+import { applyMove, applyMoveDetailed, createMatch, listLegalMoves, resolveDisplaySides } from './engine'
 import type { MatchConfig, Move } from '../types'
 
 beforeAll(() => {
@@ -562,6 +562,36 @@ describe('match engine element powers', () => {
     const afterCpuSecondTurn = applyMove(afterPlayerFirstTurn, { actor: 'cpu', cardId: 'c_fill_2', cell: 4 })
 
     expect(afterCpuSecondTurn.board[4]?.owner).toBe('cpu')
+  })
+
+  test('glace does not freeze the last empty cell when it would leave opponent with no legal move', () => {
+    const state = createMatch(
+      makeConfig({
+        startingTurn: 'cpu',
+        strictPowerTargeting: false,
+        playerDeck: ['p_ice', 'p_grass', 'p_fire', 'p_water', 'p_ghost'],
+        cpuDeck: ['c_guard', 'c_fill_1', 'c_fill_2', 'c_fill_3', 'c_fill_4'],
+      }),
+    )
+
+    const beforeIce = play(state, [
+      { actor: 'cpu', cardId: 'c_fill_1', cell: 0 },
+      { actor: 'player', cardId: 'p_grass', cell: 1 },
+      { actor: 'cpu', cardId: 'c_fill_2', cell: 2 },
+      { actor: 'player', cardId: 'p_fire', cell: 3 },
+      { actor: 'cpu', cardId: 'c_fill_3', cell: 4 },
+      { actor: 'player', cardId: 'p_water', cell: 5 },
+      { actor: 'cpu', cardId: 'c_fill_4', cell: 6 },
+    ])
+
+    const afterIce = applyMove(beforeIce, { actor: 'player', cardId: 'p_ice', cell: 7, powerTarget: { targetCell: 8 } })
+    const cpuMoves = listLegalMoves(afterIce).filter((move) => move.actor === 'cpu')
+
+    expect(afterIce.elementState?.frozenCellByActor.cpu).toBeUndefined()
+    expect(cpuMoves).toEqual([{ actor: 'cpu', cardId: 'c_guard', cell: 8 }])
+
+    const afterCpu = applyMove(afterIce, { actor: 'cpu', cardId: 'c_guard', cell: 8 })
+    expect(afterCpu.status).toBe('finished')
   })
 
   test('electrik shield prevents flips during next opponent turn', () => {

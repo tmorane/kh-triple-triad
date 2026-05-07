@@ -1,169 +1,144 @@
-# React + TypeScript + Vite
+# PokeTriad
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+PokeTriad est un jeu de cartes tactique en React + TypeScript inspiré de Triple Triad, avec progression, ranked, shop/packs, missions, succès, Pokédex, et comptes cloud (optionnels).
 
-Currently, two official plugins are available:
+## Quickstart
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+bun install
+cp .env.example .env
+bun run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+App locale: `http://localhost:5173`
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Scripts
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+bun run dev
+bun run lint
+bun run typecheck
+bun run test
+bun run build
+bun run preview
+bun run images:optimize:lossless
 ```
+
+## Quality Gates (CI parity)
+
+Avant PR/merge, exécute exactement:
+
+```bash
+bun run lint
+bun run typecheck
+bun run test
+bun run build
+```
+
+Le workflow GitHub CI (`.github/workflows/ci.yml`) exécute ces 4 checks avec Bun `1.3.9`.
+
+## Environment Variables
+
+Base:
+
+```bash
+VITE_SUPABASE_URL=https://YOUR-PROJECT.supabase.co
+VITE_SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
+VITE_ENABLE_MOCK_LADDER=false
+```
+
+Admin images:
+
+```bash
+AI_GATEWAY_API_KEY=your_ai_gateway_api_key
+ADMIN_ALLOWED_EMAILS=admin@example.com,another-admin@example.com
+VITE_ADMIN_ALLOWED_EMAILS=admin@example.com,another-admin@example.com
+ADMIN_BYPASS_LOCAL_AUTH=false
+VITE_ADMIN_BYPASS_LOCAL_AUTH=false
+```
+
+Notes:
+- `ADMIN_BYPASS_LOCAL_AUTH` et `VITE_ADMIN_BYPASS_LOCAL_AUTH` ne s’appliquent qu’en local/dev.
+- En production, le bypass admin est forcé à `false` même si les env sont à `true`.
+
+Object storage admin images (optionnel, recommandé prod):
+
+```bash
+ADMIN_IMAGES_STORAGE_BACKEND=s3
+ADMIN_IMAGES_PUBLIC_BASE_URL=https://cdn.example.com
+ADMIN_IMAGES_S3_BUCKET=your-bucket-name
+ADMIN_IMAGES_S3_REGION=eu-west-1
+ADMIN_IMAGES_S3_ACCESS_KEY_ID=your-access-key-id
+ADMIN_IMAGES_S3_SECRET_ACCESS_KEY=your-secret-access-key
+ADMIN_IMAGES_S3_PREFIX=admin-images
+ADMIN_IMAGES_S3_ENDPOINT=
+ADMIN_IMAGES_S3_FORCE_PATH_STYLE=false
+```
+
+## Cloud Profiles & Accounts
+
+Le mode cloud utilise Supabase auth + synchronisation de profil.
+
+1. Configure `VITE_SUPABASE_URL` et `VITE_SUPABASE_ANON_KEY`.
+2. Exécute `docs/supabase-player-profiles.sql` dans Supabase SQL editor.
+3. Ouvre `/account` pour te connecter et synchroniser.
+
+Optionnel: `VITE_ENABLE_MOCK_LADDER=true` pour injecter un ladder mock local.
+
+## Admin Image Generation
+
+Page admin: `/admin/images`
+
+- Génération d’images via AI Gateway.
+- Galerie limitée au namespace `admin-images` (filesystem local ou object storage S3-compatible).
+- Endpoints API protégés (`401` non auth, `403` non admin).
+- Endpoints:
+  - `GET /api/admin/images/gallery`
+  - `POST /api/admin/images/generate`
+  - `POST /api/admin/images/move`
+  - `POST /api/admin/images/rename`
+  - `POST /api/admin/images/delete`
+- Migration vers object storage documentée ici:
+  - `docs/solutions/developer-experience/admin-images-object-storage-migration.md`
+
+## Image Optimization (Lossless)
+
+Commande:
+
+```bash
+bun run images:optimize:lossless
+```
+
+Garanties du script:
+- PNG uniquement (pas de JPEG lossy).
+- Vérification pixel-par-pixel RGBA obligatoire.
+- Si dimensions/channels/pixels diffèrent, le fichier est rejeté et laissé intact.
+- Rapport généré dans `docs/reports/image-optimization-lossless.md` avec avant/après.
+
+## Legal & Privacy
+
+- Mentions IP: `/legal`
+- Politique de confidentialité: `/privacy`
 
 ## Deploy
 
-This app is a Vite SPA with `BrowserRouter`, so route fallbacks are required in production.
-
-### Option 1 (recommended): Vercel
+### Vercel (recommandé)
 
 ```bash
 bun run build
 bunx vercel --prod
 ```
 
-`vercel.json` is included to rewrite all routes to `index.html` (no 404 on refresh).
-
-### Option 2: Netlify
+### Netlify
 
 ```bash
 bun run build
 bunx netlify deploy --prod --dir dist
 ```
 
-`netlify.toml` is included with the same SPA redirect behavior.
+## Troubleshooting
 
-## Cloud Accounts + Shared Profiles
-
-This project supports Supabase auth, cloud profile sync (`/account`), and global ladders (`/ranks`).
-
-By default, cloud auth uses this project's built-in Supabase public config.
-
-If you want to point to another Supabase project, override with env values:
-
-1. Copy env values:
-
-```bash
-cp .env.example .env
-```
-
-2. Fill `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in `.env`.
-3. Run SQL script `docs/supabase-player-profiles.sql` in Supabase SQL editor (creates `player_profiles` + `player_ladder`).
-4. Start app (`bun run dev`) and open `/account`.
-5. Use `/ranks` to see:
-   - leaderboard by owned cards
-   - leaderboard by highest peak rank
-
-### Optional: Mock Global Ladders
-
-Set `VITE_ENABLE_MOCK_LADDER=true` (or `1`) in `.env` to inject 10 fixed mock users with varied progression.
-
-- Local tester profiles are included in ladders by default (not only cloud-synced users).
-- Works even if Supabase is not configured.
-- If Supabase is configured, real rows are merged with mock rows and sorted globally.
-- If cloud ladder fetch fails, the UI falls back to mock rows.
-
-## Admin Image Generation
-
-This project includes an admin page at `/admin/images` for AI image generation.
-Default model: `google/imagen-4.0-generate-001`.
-Generated images are written to `public/admin-images/`.
-The admin gallery now lists every image file found under `public/` via `GET /api/admin/images/gallery`.
-
-### Required environment variables
-
-```bash
-AI_GATEWAY_API_KEY=your_ai_gateway_api_key
-ADMIN_ALLOWED_EMAILS=admin@example.com,another-admin@example.com
-VITE_ADMIN_ALLOWED_EMAILS=admin@example.com,another-admin@example.com
-ADMIN_BYPASS_LOCAL_AUTH=true
-VITE_ADMIN_BYPASS_LOCAL_AUTH=true
-```
-
-- `AI_GATEWAY_API_KEY`: server-side key used by the AI SDK gateway provider.
-- `ADMIN_ALLOWED_EMAILS`: server-side CSV allowlist checked by `/api/admin/images/generate`.
-- `VITE_ADMIN_ALLOWED_EMAILS`: client-side CSV allowlist used only to show/hide the nav link.
-  - If omitted, signed-in users can still open the page; server-side allowlist remains authoritative.
-- `ADMIN_BYPASS_LOCAL_AUTH`: bypasses API auth in local/dev (default `true` outside production).
-- `VITE_ADMIN_BYPASS_LOCAL_AUTH`: bypasses client auth guard in local/dev.
-
-### Auth and access model
-
-- Frontend obtains the active Supabase session access token.
-- The API route validates that token with Supabase Auth.
-- The API route authorizes by checking token email against `ADMIN_ALLOWED_EMAILS`.
-- If unauthorized:
-  - `401`: not authenticated.
-  - `403`: authenticated but not in admin allowlist.
-- In local/dev, auth bypass can be enabled to skip these checks for faster iteration.
-
-### Local runtime note
-
-- `bun run dev` includes the local `/api/admin/images/generate` route via Vite middleware.
-- The local runtime also serves `GET /api/admin/images/gallery` by recursively scanning `public/`.
-- You can still run the Vercel runtime if needed:
-
-```bash
-bunx vercel dev
-```
+- Si l’API admin locale renvoie `404`: relance `bun run dev`.
+- Si `401` sur admin: vérifie session cloud + token Supabase.
+- Si `403` sur admin: vérifie `ADMIN_ALLOWED_EMAILS`.
+- Si build signale de gros chunks: vérifier le découpage routes lazy dans `src/App.tsx`.

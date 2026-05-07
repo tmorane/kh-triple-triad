@@ -1,20 +1,22 @@
 import { cardPool } from '../cards/cardPool'
 import { createSeededRng } from '../random/seededRng'
-import type { CardId, MissionId, MissionProgress, MissionReward, PlayerProfile } from '../types'
+import type { CardId, MatchQueue, MissionId, MissionReward, PlayerProfile } from '../types'
+import { cloneMissionProgressMap, createMissionProgress, missionDefinitions, missionIds } from './missionCatalog'
 import { evaluateAchievements } from './achievements'
 
+export { createInitialMissionsProgress } from './missionCatalog'
+
 export interface MatchMissionMetrics {
+  queue: MatchQueue
   winner: 'player' | 'cpu' | 'draw'
-  playerPrimarySynergyActive: boolean
-  playerSecondarySynergyActive: boolean
-  playerSamePlusTriggers: number
+  openRuleEnabled: boolean
   playerCornerPlays: number
 }
 
 export interface MatchMissionsResult {
   profile: PlayerProfile
   completedMissionIds: MissionId[]
-  claimedMissionIds: MissionId[]
+  readyToClaimMissionIds: MissionId[]
 }
 
 export interface ClaimCompletedMissionResult {
@@ -22,38 +24,9 @@ export interface ClaimCompletedMissionResult {
   claimed: boolean
 }
 
-interface MissionDefinition {
-  id: MissionId
-  target: number
-  reward: MissionReward
-}
-
-const missionDefinitions: Record<MissionId, MissionDefinition> = {
-  m1_type_specialist: {
-    id: 'm1_type_specialist',
-    target: 5,
-    reward: { kind: 'gold', amount: 120 },
-  },
-  m2_combo_practitioner: {
-    id: 'm2_combo_practitioner',
-    target: 6,
-    reward: { kind: 'pack', packId: 'rare', amount: 1 },
-  },
-  m3_corner_tactician: {
-    id: 'm3_corner_tactician',
-    target: 12,
-    reward: { kind: 'card', strategy: 'prefer_non_owned' },
-  },
-}
-
-const missionIds: MissionId[] = ['m1_type_specialist', 'm2_combo_practitioner', 'm3_corner_tactician']
-
-export function createInitialMissionsProgress(): Record<MissionId, MissionProgress> {
-  return {
-    m1_type_specialist: createMissionProgress('m1_type_specialist'),
-    m2_combo_practitioner: createMissionProgress('m2_combo_practitioner'),
-    m3_corner_tactician: createMissionProgress('m3_corner_tactician'),
-  }
+export interface CardsAcquiredMissionsResult {
+  profile: PlayerProfile
+  completedMissionIds: MissionId[]
 }
 
 export function applyMatchMissions(
@@ -64,28 +37,36 @@ export function applyMatchMissions(
   void seed
   const nextProfile = cloneProfile(profile)
   const completedMissionIds: MissionId[] = []
-  const claimedMissionIds: MissionId[] = []
+  const readyToClaimMissionIds: MissionId[] = []
+  const isEligibleQueue = metrics.queue === 'normal' || metrics.queue === 'ranked'
+
+  if (!isEligibleQueue) {
+    return {
+      profile: nextProfile,
+      completedMissionIds,
+      readyToClaimMissionIds,
+    }
+  }
 
   for (const missionId of missionIds) {
     const mission = nextProfile.missions[missionId]
-    const delta = computeMissionDelta(missionId, metrics)
-    if (delta <= 0) {
-      continue
-    }
-
     const previousProgress = mission.progress
-    const target = mission.target
-    mission.progress = Math.min(target, mission.progress + delta)
+    const previousCompleted = mission.completed
+    applyMissionDelta(missionId, mission, metrics)
 
+    const target = mission.target
     if (!mission.completed && mission.progress >= target) {
       mission.completed = true
+    }
+
+    if (!previousCompleted && mission.completed) {
       completedMissionIds.push(missionId)
       nextProfile.achievementProgress.missionsCompleted += 1
     }
 
-    const shouldMarkClaimable = mission.completed && !mission.claimed && mission.progress >= target && previousProgress < target
-    if (shouldMarkClaimable) {
-      mission.claimed = false
+    const becameClaimable = !previousCompleted && mission.completed && !mission.claimed && previousProgress < target
+    if (becameClaimable) {
+      readyToClaimMissionIds.push(missionId)
     }
   }
 
@@ -97,8 +78,38 @@ export function applyMatchMissions(
   return {
     profile: nextProfile,
     completedMissionIds,
-    claimedMissionIds,
+    readyToClaimMissionIds,
   }
+}
+
+export function applyCardsAcquiredMissions(
+  profile: PlayerProfile,
+  cardsAcquiredDelta: number,
+): CardsAcquiredMissionsResult {
+  if (!Number.isInteger(cardsAcquiredDelta) || cardsAcquiredDelta <= 0) {
+    return { profile, completedMissionIds: [] }
+  }
+
+  const nextProfile = cloneProfile(profile)
+  const mission = nextProfile.missions.b3_collection_hunter
+  const previousCompleted = mission.completed
+  mission.progress = Math.min(mission.target, mission.progress + cardsAcquiredDelta)
+
+  if (!mission.completed && mission.progress >= mission.target) {
+    mission.completed = true
+  }
+
+  const completedMissionIds = !previousCompleted && mission.completed ? (['b3_collection_hunter'] as MissionId[]) : []
+  if (completedMissionIds.length > 0) {
+    nextProfile.achievementProgress.missionsCompleted += 1
+  }
+
+  const unlocked = evaluateAchievements(nextProfile)
+  if (unlocked.length > 0) {
+    nextProfile.achievements.push(...unlocked)
+  }
+
+  return { profile: nextProfile, completedMissionIds }
 }
 
 export function claimCompletedMission(
@@ -137,38 +148,50 @@ export function claimCompletedMission(
   }
 }
 
-function createMissionProgress(missionId: MissionId): MissionProgress {
-  const definition = missionDefinitions[missionId]
-  return {
-    id: missionId,
-    progress: 0,
-    target: definition.target,
-    completed: false,
-    claimed: false,
-  }
-}
-
-function computeMissionDelta(missionId: MissionId, metrics: MatchMissionMetrics): number {
+function applyMissionDelta(missionId: MissionId, mission: PlayerProfile['missions'][MissionId], metrics: MatchMissionMetrics): void {
   const isPlayerVictory = metrics.winner === 'player'
 
   if (missionId === 'm1_type_specialist') {
     if (!isPlayerVictory) {
-      return 0
+      return
     }
-    return 1
+    mission.progress = Math.min(mission.target, mission.progress + 1)
+    return
   }
 
   if (missionId === 'm2_combo_practitioner') {
-    if (metrics.playerSamePlusTriggers <= 0) {
-      return 0
+    if (metrics.openRuleEnabled) {
+      return
     }
-    return metrics.playerSamePlusTriggers
+    mission.progress = Math.min(mission.target, mission.progress + 1)
+    return
   }
 
-  if (metrics.playerCornerPlays <= 0) {
-    return 0
+  if (missionId === 'm3_corner_tactician') {
+    if (metrics.playerCornerPlays <= 0) {
+      return
+    }
+    mission.progress = Math.min(mission.target, mission.progress + metrics.playerCornerPlays)
+    return
   }
-  return metrics.playerCornerPlays
+
+  if (missionId === 'b1_win_streak') {
+    if (mission.completed) {
+      return
+    }
+    if (isPlayerVictory) {
+      mission.progress = Math.min(mission.target, mission.progress + 1)
+      return
+    }
+    mission.progress = 0
+    mission.completed = false
+    mission.claimed = false
+    return
+  }
+
+  if (missionId === 'b2_match_grinder') {
+    mission.progress = Math.min(mission.target, mission.progress + 1)
+  }
 }
 
 function applyMissionReward(
@@ -219,20 +242,24 @@ function cloneProfile(profile: PlayerProfile): PlayerProfile {
     stats: { ...profile.stats },
     achievementProgress: { ...profile.achievementProgress },
     achievements: [...profile.achievements],
-    missions: {
-      m1_type_specialist: { ...profile.missions.m1_type_specialist },
-      m2_combo_practitioner: { ...profile.missions.m2_combo_practitioner },
-      m3_corner_tactician: { ...profile.missions.m3_corner_tactician },
-    },
+    missions: cloneMissionProgressMap(profile.missions),
     missionRewardsGrantedById: { ...profile.missionRewardsGrantedById },
     rankedByMode: {
       '3x3': {
         ...profile.rankedByMode['3x3'],
         resultStreak: { ...profile.rankedByMode['3x3'].resultStreak },
+        promotionSeries: profile.rankedByMode['3x3'].promotionSeries ? { ...profile.rankedByMode['3x3'].promotionSeries } : null,
+        seasonLeagueRewardsClaimed: profile.rankedByMode['3x3'].seasonLeagueRewardsClaimed
+          ? { ...profile.rankedByMode['3x3'].seasonLeagueRewardsClaimed }
+          : undefined,
       },
       '4x4': {
         ...profile.rankedByMode['4x4'],
         resultStreak: { ...profile.rankedByMode['4x4'].resultStreak },
+        promotionSeries: profile.rankedByMode['4x4'].promotionSeries ? { ...profile.rankedByMode['4x4'].promotionSeries } : null,
+        seasonLeagueRewardsClaimed: profile.rankedByMode['4x4'].seasonLeagueRewardsClaimed
+          ? { ...profile.rankedByMode['4x4'].seasonLeagueRewardsClaimed }
+          : undefined,
       },
     },
     settings: { ...profile.settings },

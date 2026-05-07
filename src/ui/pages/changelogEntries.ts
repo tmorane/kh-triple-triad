@@ -6,7 +6,7 @@ export interface ChangelogEntry {
   changements: string[]
 }
 
-// Add each new release at the top of this list before pushing a new version.
+// Ajoute chaque nouvelle version en haut de cette liste avant de publier.
 export const changelogEntries: ChangelogEntry[] = [
   {
     version: 'v0.5.1-dev',
@@ -34,20 +34,20 @@ export const changelogEntries: ChangelogEntry[] = [
     infos: [
       'Grosse mise a jour de contenu avec extension du roster, tutoriels jouables et progression enrichie.',
       'Le rendu des effets en match est plus lisible, avec des indicateurs plus clairs sur le plateau et dans le feed.',
-      'Navigation enrichie avec nouvelles pages utiles (Mentions IP, Changelogs, acces admin images selon droits).',
+      'Navigation enrichie avec nouvelles pages utiles (Mentions IP, notes de version, acces admin images selon droits).',
     ],
     nouveautes: [
       'Ajout de 100 cartes Johto (c152 a c251) avec splasharts et versions shiny associees.',
       'Ajout des tutoriels de match (intro + tutoriels elementaires) avec guidage strict en partie.',
       'Ajout du craft par fragments et du claim groupe des recompenses d achievements.',
-      'Ajout de la page Mentions IP (/legal) et extension du menu More.',
+      'Ajout de la page Mentions IP (/legal) et extension du menu Plus.',
       'Ajout des nouveaux emblemes de rang en PNG (iron a challenger).',
     ],
     changements: [
       'Balance patch nerfs/buffs (Combat, Roche, Vol, Insecte, Spectre) applique et details disponibles en v0.5.1-dev.',
       'Refonte du moteur d effets: stacks de debuffs Vol/Sol, gel avec duree, feed et indicateurs enrichis.',
       'Refonte du rendu PixiBoard: overlays Sol/Plante/Glace, indicateurs de terrain et ciblage clavier revu.',
-      'Mises a jour gameplay/UI sur Home, Match, Rules, Collection, Achievements, Missions, Packs, Ranks, Results, Setup et Decks.',
+      'Mises a jour gameplay/UI sur Accueil, Match, Règles, Collection, Succès, Missions, Packs, Rangs, Résultats, Setup et Decks.',
     ],
   },
   {
@@ -74,15 +74,15 @@ export const changelogEntries: ChangelogEntry[] = [
   {
     version: 'v0.3.0',
     date: '2026-03-01',
-    infos: ['Refonte de navigation avec menu More pour les pages secondaires.'],
-    nouveautes: ['Nouvelle page Changelogs accessible depuis le menu More.'],
+    infos: ['Refonte de navigation avec menu Plus pour les pages secondaires.'],
+    nouveautes: ['Nouvelle page Notes de version accessible depuis le menu Plus.'],
     changements: ['Structure des notes de version standardisee en Infos / Nouveautes / Changements.'],
   },
   {
     version: 'v0.2.0',
     date: '2026-02-25',
-    infos: ['Ajout des pages Ranks et Missions dans la navigation secondaire.'],
-    nouveautes: ['Tutoriel interactif des effets d elements dans la page Rules.'],
-    changements: ['Ajustements de progression et affichage du profil joueur sur Home.'],
+    infos: ['Ajout des pages Rangs et Missions dans la navigation secondaire.'],
+    nouveautes: ['Tutoriel interactif des effets d elements dans la page Règles.'],
+    changements: ['Ajustements de progression et affichage du profil joueur sur Accueil.'],
   },
 ]

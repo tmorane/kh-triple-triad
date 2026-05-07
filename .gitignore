@@ -28,3 +28,4 @@ dist-ssr
 # Local secrets and Python virtualenv
 .env
 .venv/
+.env*.local

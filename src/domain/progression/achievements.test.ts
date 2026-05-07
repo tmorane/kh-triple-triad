@@ -23,7 +23,7 @@ describe('achievement progression', () => {
       packsPurchased: 20,
       packsOpened: 20,
       specialPacksOpened: 10,
-      missionsCompleted: 3,
+      missionsCompleted: 50,
       baseTutorialsCompleted: 1,
       elementTutorialsCompleted: 15,
       rankedMatchesPlayed: 10,
@@ -63,7 +63,7 @@ describe('achievement progression', () => {
     const profile = createDefaultProfile()
     profile.achievementProgress.baseTutorialsCompleted = 1
     profile.achievementProgress.elementTutorialsCompleted = 5
-    profile.achievementProgress.missionsCompleted = 2
+    profile.achievementProgress.missionsCompleted = 20
 
     const unlocked = evaluateAchievements(profile)
 
@@ -79,5 +79,18 @@ describe('achievement progression', () => {
     expect(finalCollection?.condition).toBe('Acquérir 200 copies de cartes')
     expect(finalCollection?.check({ achievementProgress: { cardsAcquired: 199 } } as never)).toBe(false)
     expect(finalCollection?.check({ achievementProgress: { cardsAcquired: 200 } } as never)).toBe(true)
+  })
+
+  test('uses recalibrated mission thresholds (5/20/50)', () => {
+    const mission1 = achievementCatalog.find((achievement) => achievement.id === 'missions_1')
+    const mission2 = achievementCatalog.find((achievement) => achievement.id === 'missions_2')
+    const mission3 = achievementCatalog.find((achievement) => achievement.id === 'missions_3')
+
+    expect(mission1?.check({ achievementProgress: { missionsCompleted: 4 } } as never)).toBe(false)
+    expect(mission1?.check({ achievementProgress: { missionsCompleted: 5 } } as never)).toBe(true)
+    expect(mission2?.check({ achievementProgress: { missionsCompleted: 19 } } as never)).toBe(false)
+    expect(mission2?.check({ achievementProgress: { missionsCompleted: 20 } } as never)).toBe(true)
+    expect(mission3?.check({ achievementProgress: { missionsCompleted: 49 } } as never)).toBe(false)
+    expect(mission3?.check({ achievementProgress: { missionsCompleted: 50 } } as never)).toBe(true)
   })
 })

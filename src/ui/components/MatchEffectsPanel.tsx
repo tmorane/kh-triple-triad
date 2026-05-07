@@ -13,7 +13,7 @@ function renderIndicatorList(indicators: EffectIndicator[]) {
     >
       <span aria-hidden="true">{indicator.icon}</span>
       <span>{indicator.label}</span>
-      {indicator.valueText ? <strong>{indicator.valueText}</strong> : null}
+      {indicator.valueText && !indicator.label.includes(indicator.valueText) ? <strong>{indicator.valueText}</strong> : null}
     </span>
   ))
 }
@@ -76,6 +76,15 @@ export function MatchEffectsPanel({ effectsView, effectFeed }: { effectsView: Ma
   const hazards = flattenCellIndicators(effectsView.cellIndicators)
   const activeEffects = flattenBoardIndicators(effectsView.boardCardIndicators)
   const usedPowers = flattenUsedPowers(effectsView)
+  const visibleFeed = effectFeed.slice(0, 3)
+  const activeEffectsRow = (
+    <div className="match-effects-panel__row" data-testid="match-effects-panel-active">
+      <span className="match-effects-panel__label">Actifs</span>
+      <div className="match-effects-panel__chips">
+        {activeEffects.length > 0 ? renderIndicatorList(activeEffects) : <span className="small">Aucun</span>}
+      </div>
+    </div>
+  )
 
   return (
     <section className="match-effects-panel" aria-label="Résumé des effets actifs">
@@ -86,30 +95,25 @@ export function MatchEffectsPanel({ effectsView, effectFeed }: { effectsView: Ma
           }`}
           data-testid="match-effects-panel-mode"
         >
-          <span aria-hidden="true">{effectsView.mode === 'normal' ? '⛔' : '✨'}</span>
+          <span aria-hidden="true">{effectsView.mode === 'normal' ? '○' : '✨'}</span>
           <span>{modeIndicator}</span>
         </span>
         {renderIndicatorList(effectsView.globalIndicators)}
       </div>
       <p className="match-effects-panel__hint">
         {effectsView.mode === 'normal'
-          ? 'Mode normal: aucun pouvoir de type ne se declenche.'
-          : 'Mode effets: survole les types de chaque main pour voir les pouvoirs disponibles.'}
+          ? 'Mode normal: les cartes Normal affichent +1 partout.'
+          : 'Lis le plateau: vert = buff, rouge = nerf, T = durée.'}
       </p>
 
-      {effectsView.mode === 'normal' ? null : (
+      {effectsView.mode === 'normal' ? (activeEffects.length > 0 ? activeEffectsRow : null) : (
         <>
           <div className="match-effects-panel__row" data-testid="match-effects-panel-hazards">
             <span className="match-effects-panel__label">Cases</span>
             <div className="match-effects-panel__chips">{hazards.length > 0 ? renderIndicatorList(hazards) : <span className="small">Aucun</span>}</div>
           </div>
 
-          <div className="match-effects-panel__row" data-testid="match-effects-panel-active">
-            <span className="match-effects-panel__label">Actifs</span>
-            <div className="match-effects-panel__chips">
-              {activeEffects.length > 0 ? renderIndicatorList(activeEffects) : <span className="small">Aucun</span>}
-            </div>
-          </div>
+          {activeEffectsRow}
 
           <div className="match-effects-panel__row" data-testid="match-effects-panel-used">
             <span className="match-effects-panel__label">Pouvoirs utilisés</span>
@@ -126,9 +130,9 @@ export function MatchEffectsPanel({ effectsView, effectFeed }: { effectsView: Ma
             </div>
           </div>
 
-          {effectFeed.length > 0 ? (
-            <ol className="effect-feed" data-testid="match-effects-panel-feed">
-              {effectFeed.map((entry) => (
+          {visibleFeed.length > 0 ? (
+            <ol className="effect-feed" aria-label="Derniers effets" data-testid="match-effects-panel-feed">
+              {visibleFeed.map((entry) => (
                 <li key={entry.id} className={`effect-feed__item effect-feed__item--${entry.tone}`}>
                   {entry.text}
                 </li>

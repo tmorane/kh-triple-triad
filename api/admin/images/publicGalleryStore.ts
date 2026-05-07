@@ -1,6 +1,14 @@
 import { mkdir, readFile, readdir, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import type { AdminImageGenerateResponse } from '../../../src/app/admin/adminImageGeneration'
+import type { AdminImageGenerateResponse } from '../../../src/app/admin/adminImageGeneration.js'
+import {
+  deleteObjectStorageImage,
+  isObjectStorageEnabled,
+  listAllObjectStorageImages,
+  moveObjectStorageImageToDirectory,
+  persistGeneratedImagesToObjectStorage,
+  renameObjectStorageImage,
+} from './objectStorageGalleryStore.js'
 
 export interface AdminPublicGalleryImage {
   filename: string
@@ -13,9 +21,10 @@ interface GalleryManifest {
   images: AdminPublicGalleryImage[]
 }
 
-const PUBLIC_ADMIN_IMAGES_DIR = path.resolve(process.cwd(), 'public', 'admin-images')
-const PUBLIC_ADMIN_IMAGES_MANIFEST_PATH = path.join(PUBLIC_ADMIN_IMAGES_DIR, 'gallery.json')
+const ADMIN_IMAGES_ROOT_DIR = 'admin-images'
 const DEFAULT_PUBLIC_ROOT_DIR = path.resolve(process.cwd(), 'public')
+const PUBLIC_ADMIN_IMAGES_DIR = path.resolve(DEFAULT_PUBLIC_ROOT_DIR, ADMIN_IMAGES_ROOT_DIR)
+const PUBLIC_ADMIN_IMAGES_MANIFEST_PATH = path.join(PUBLIC_ADMIN_IMAGES_DIR, 'gallery.json')
 const IMAGE_MEDIA_TYPES: Record<string, string> = {
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
@@ -91,6 +100,32 @@ function normalizeTargetDirectory(input: string): string | null {
   return normalizeRelativePath(raw)
 }
 
+function isInAdminImagesScope(relativePath: string): boolean {
+  return relativePath === ADMIN_IMAGES_ROOT_DIR || relativePath.startsWith(`${ADMIN_IMAGES_ROOT_DIR}/`)
+}
+
+function normalizeAdminImageRelativePath(input: string): string | null {
+  const normalized = normalizeRelativePath(input)
+  if (!normalized || normalized === ADMIN_IMAGES_ROOT_DIR || !isInAdminImagesScope(normalized)) {
+    return null
+  }
+  return normalized
+}
+
+function normalizeAdminImageDirectory(input: string): string | null {
+  const normalized = normalizeTargetDirectory(input)
+  if (normalized === null) {
+    return null
+  }
+
+  const scoped = normalized.length === 0 ? ADMIN_IMAGES_ROOT_DIR : normalized
+  if (!isInAdminImagesScope(scoped)) {
+    return null
+  }
+
+  return scoped
+}
+
 function resolvePathWithinRoot(rootDir: string, relativePath: string): string | null {
   const resolved = path.resolve(rootDir, relativePath)
   if (resolved === rootDir || resolved.startsWith(`${rootDir}${path.sep}`)) {
@@ -115,14 +150,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
 
-async function collectPublicImageFiles(rootDir: string, currentDir: string): Promise<string[]> {
+async function collectPublicImageFiles(currentDir: string): Promise<string[]> {
   const entries = await readdir(currentDir, { withFileTypes: true })
   const files: string[] = []
 
   for (const entry of entries) {
     const absolutePath = path.join(currentDir, entry.name)
     if (entry.isDirectory()) {
-      files.push(...(await collectPublicImageFiles(rootDir, absolutePath)))
+      files.push(...(await collectPublicImageFiles(absolutePath)))
       continue
     }
 
@@ -139,8 +174,22 @@ async function collectPublicImageFiles(rootDir: string, currentDir: string): Pro
 }
 
 export async function listAllPublicImages(options: PublicDirectoryOptions = {}): Promise<AdminPublicGalleryImage[]> {
+  if (isObjectStorageEnabled()) {
+    return listAllObjectStorageImages()
+  }
+
   const publicRootDir = resolvePublicRootDir(options)
-  const filePaths = await collectPublicImageFiles(publicRootDir, publicRootDir)
+  const adminImagesRootDir = path.resolve(publicRootDir, ADMIN_IMAGES_ROOT_DIR)
+
+  let filePaths: string[]
+  try {
+    filePaths = await collectPublicImageFiles(adminImagesRootDir)
+  } catch (error) {
+    if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
+      return []
+    }
+    throw error
+  }
 
   const images = await Promise.all(
     filePaths.map(async (filePath) => {
@@ -174,13 +223,17 @@ export async function movePublicImageToDirectory(
   request: MoveImageInPublicRequest,
   options: PublicDirectoryOptions = {},
 ): Promise<AdminPublicGalleryImage> {
+  if (isObjectStorageEnabled()) {
+    return moveObjectStorageImageToDirectory(request)
+  }
+
   const publicRootDir = resolvePublicRootDir(options)
-  const sourceRelativePath = normalizeRelativePath(request.sourceFilename)
+  const sourceRelativePath = normalizeAdminImageRelativePath(request.sourceFilename)
   if (!sourceRelativePath) {
     throw new Error('Invalid source filename.')
   }
 
-  const targetDirectory = normalizeTargetDirectory(request.targetDirectory)
+  const targetDirectory = normalizeAdminImageDirectory(request.targetDirectory)
   if (targetDirectory === null) {
     throw new Error('Invalid target directory.')
   }
@@ -230,7 +283,7 @@ export async function movePublicImageToDirectory(
   const baseName = path.posix.basename(sourceRelativePath, extension)
   let suffix = 1
   let destinationFilename = path.posix.basename(sourceRelativePath)
-  let destinationRelativePath = targetDirectory ? `${targetDirectory}/${destinationFilename}` : destinationFilename
+  let destinationRelativePath = `${targetDirectory}/${destinationFilename}`
   let destinationAbsolutePath = resolvePathWithinRoot(publicRootDir, destinationRelativePath)
   if (!destinationAbsolutePath) {
     throw new Error('Invalid target directory.')
@@ -239,7 +292,7 @@ export async function movePublicImageToDirectory(
   while (await fileExists(destinationAbsolutePath)) {
     suffix += 1
     destinationFilename = `${baseName}-${suffix}${extension}`
-    destinationRelativePath = targetDirectory ? `${targetDirectory}/${destinationFilename}` : destinationFilename
+    destinationRelativePath = `${targetDirectory}/${destinationFilename}`
     destinationAbsolutePath = resolvePathWithinRoot(publicRootDir, destinationRelativePath)
     if (!destinationAbsolutePath) {
       throw new Error('Invalid target directory.')
@@ -268,8 +321,12 @@ export async function renamePublicImage(
   request: RenameImageInPublicRequest,
   options: PublicDirectoryOptions = {},
 ): Promise<AdminPublicGalleryImage> {
+  if (isObjectStorageEnabled()) {
+    return renameObjectStorageImage(request)
+  }
+
   const publicRootDir = resolvePublicRootDir(options)
-  const sourceRelativePath = normalizeRelativePath(request.sourceFilename)
+  const sourceRelativePath = normalizeAdminImageRelativePath(request.sourceFilename)
   if (!sourceRelativePath) {
     throw new Error('Invalid source filename.')
   }
@@ -375,18 +432,20 @@ function normalizeStoredImage(value: unknown): AdminPublicGalleryImage | null {
     return null
   }
 
-  if (
-    record.filename.trim().length === 0 ||
-    record.url.trim().length === 0 ||
-    !record.mediaType.startsWith('image/') ||
-    Number.isNaN(Date.parse(record.createdAt))
-  ) {
+  if (record.filename.trim().length === 0 || !record.mediaType.startsWith('image/') || Number.isNaN(Date.parse(record.createdAt))) {
+    return null
+  }
+
+  const rawFilename = record.filename.trim().replace(/\\/g, '/').replace(/^\/+/, '')
+  const sourceFilename = rawFilename.includes('/') ? rawFilename : `${ADMIN_IMAGES_ROOT_DIR}/${rawFilename}`
+  const normalizedFilename = normalizeAdminImageRelativePath(sourceFilename)
+  if (!normalizedFilename) {
     return null
   }
 
   return {
-    filename: record.filename,
-    url: record.url,
+    filename: normalizedFilename,
+    url: `/${normalizedFilename}`,
     mediaType: record.mediaType,
     createdAt: record.createdAt,
   }
@@ -451,6 +510,11 @@ function mergeGalleryImages(newImages: AdminPublicGalleryImage[], previousImages
 }
 
 export async function persistGeneratedImagesToPublic(response: AdminImageGenerateResponse): Promise<void> {
+  if (isObjectStorageEnabled()) {
+    await persistGeneratedImagesToObjectStorage(response)
+    return
+  }
+
   await mkdir(PUBLIC_ADMIN_IMAGES_DIR, { recursive: true })
 
   const newGalleryEntries: AdminPublicGalleryImage[] = []
@@ -461,9 +525,10 @@ export async function persistGeneratedImagesToPublic(response: AdminImageGenerat
     const imagePath = path.join(PUBLIC_ADMIN_IMAGES_DIR, filename)
 
     await writeFile(imagePath, Buffer.from(image.base64, 'base64'))
+    const scopedFilename = `${ADMIN_IMAGES_ROOT_DIR}/${filename}`
     newGalleryEntries.push({
-      filename,
-      url: `/admin-images/${filename}`,
+      filename: scopedFilename,
+      url: `/${scopedFilename}`,
       mediaType: image.mediaType,
       createdAt: response.createdAt,
     })
@@ -481,8 +546,12 @@ export async function deletePublicImage(
   request: DeleteImageInPublicRequest,
   options: PublicDirectoryOptions = {},
 ): Promise<{ deleted: true }> {
+  if (isObjectStorageEnabled()) {
+    return deleteObjectStorageImage(request)
+  }
+
   const publicRootDir = resolvePublicRootDir(options)
-  const relativePath = normalizeRelativePath(request.filename)
+  const relativePath = normalizeAdminImageRelativePath(request.filename)
   if (!relativePath) {
     throw new Error('Invalid filename.')
   }
@@ -514,7 +583,7 @@ export async function deletePublicImage(
 
   await unlink(absolutePath)
 
-  const manifestPath = resolvePathWithinRoot(publicRootDir, 'admin-images/gallery.json')
+  const manifestPath = resolvePathWithinRoot(publicRootDir, `${ADMIN_IMAGES_ROOT_DIR}/gallery.json`)
   if (manifestPath && path.resolve(manifestPath) === path.resolve(PUBLIC_ADMIN_IMAGES_MANIFEST_PATH)) {
     await updateManifestAfterDelete(relativePath)
   } else if (manifestPath) {

@@ -16,12 +16,32 @@ function readBooleanEnv(value: unknown): boolean | null {
 }
 
 export function isAdminAuthBypassedInClient(): boolean {
-  const explicit = readBooleanEnv(import.meta.env.VITE_ADMIN_BYPASS_LOCAL_AUTH)
+  return resolveAdminAuthBypassForClient({
+    rawBypassValue: import.meta.env.VITE_ADMIN_BYPASS_LOCAL_AUTH,
+    isProd: import.meta.env.PROD,
+    isDev: import.meta.env.DEV,
+    mode: import.meta.env.MODE,
+  })
+}
+
+interface ResolveAdminAuthBypassForClientOptions {
+  rawBypassValue: unknown
+  isProd: boolean
+  isDev: boolean
+  mode: string
+}
+
+export function resolveAdminAuthBypassForClient(options: ResolveAdminAuthBypassForClientOptions): boolean {
+  if (options.isProd) {
+    return false
+  }
+
+  const explicit = readBooleanEnv(options.rawBypassValue)
   if (explicit !== null) {
     return explicit
   }
 
-  return import.meta.env.DEV && import.meta.env.MODE !== 'test'
+  return false
 }
 
 function readAdminAllowlistFromEnv(): string | null {
@@ -49,7 +69,7 @@ export function canAccessAdminImages(email: string | null | undefined): boolean 
 
   const allowlist = parseAdminAllowedEmails(readAdminAllowlistFromEnv())
   if (allowlist.size === 0) {
-    return true
+    return false
   }
 
   return isAdminEmailAllowed(email, allowlist)

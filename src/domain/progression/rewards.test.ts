@@ -40,6 +40,23 @@ function makeCriticalWinResult4x4(): MatchResult {
 }
 
 describe('match rewards difficulty bonus', () => {
+  test('rewards long winning sessions with capped streak gold', () => {
+    let profile = createDefaultProfile()
+    profile.gold = 0
+    const streakBonuses: number[] = []
+    const goldAfterWins: number[] = []
+
+    for (let index = 0; index < 7; index += 1) {
+      const result = applyMatchRewards(profile, makeResult('player'), cpuDeck, 200 + index, 1)
+      streakBonuses.push(result.rewards.bonusGoldFromWinStreak)
+      goldAfterWins.push(result.profile.gold)
+      profile = result.profile
+    }
+
+    expect(streakBonuses).toEqual([0, 6, 12, 18, 24, 30, 30])
+    expect(goldAfterWins).toEqual([42, 90, 144, 204, 270, 342, 414])
+  })
+
   test('adds difficulty bonus only on victory', () => {
     const profile = createDefaultProfile()
 
@@ -47,12 +64,12 @@ describe('match rewards difficulty bonus', () => {
     const loss = applyMatchRewards(profile, makeResult('cpu'), cpuDeck, 19, 8)
     const draw = applyMatchRewards(profile, makeResult('draw'), cpuDeck, 19, 8)
 
-    expect(win.rewards.bonusGoldFromDifficulty).toBe(28)
+    expect(win.rewards.bonusGoldFromDifficulty).toBe(21)
     expect(loss.rewards.bonusGoldFromDifficulty).toBe(0)
     expect(draw.rewards.bonusGoldFromDifficulty).toBe(0)
   })
 
-  test('scales by +4 per level from L1 to L10', () => {
+  test('scales by +3 per level from L1 to L10', () => {
     const bonuses: number[] = []
 
     for (let level = 1 as OpponentLevel; level <= 10; level = (level + 1) as OpponentLevel) {
@@ -61,32 +78,33 @@ describe('match rewards difficulty bonus', () => {
       bonuses.push(rewards.bonusGoldFromDifficulty)
     }
 
-    expect(bonuses).toEqual([0, 4, 8, 12, 16, 20, 24, 28, 32, 36])
+    expect(bonuses).toEqual([0, 3, 6, 9, 12, 15, 18, 21, 24, 27])
   })
 
   test('applies base + duplicate + difficulty to profile gold total when winning', () => {
     const profile = createDefaultProfile()
     const result = applyMatchRewards(profile, makeResult('player'), cpuDeck, 21, 8)
 
-    expect(result.rewards.goldAwarded).toBe(60)
+    expect(result.rewards.goldAwarded).toBe(42)
     expect(result.rewards.bonusGoldFromDuplicate).toBe(0)
-    expect(result.rewards.bonusGoldFromDifficulty).toBe(28)
+    expect(result.rewards.bonusGoldFromDifficulty).toBe(21)
+    expect(result.rewards.bonusGoldFromWinStreak).toBe(0)
     expect(result.rewards.bonusGoldFromCriticalVictory).toBe(0)
     expect(result.rewards.criticalVictory).toBe(false)
     expect(result.rewards.bonusGoldFromAutoDeck).toBe(0)
-    expect(result.profile.gold).toBe(100 + 60 + 28)
+    expect(result.profile.gold).toBe(100 + 42 + 21)
     expect(result.profile.achievementProgress.matchesPlayed).toBe(1)
     expect(result.profile.achievementProgress.matchesWon).toBe(1)
     expect(result.profile.achievementProgress.currentStreak).toBe(1)
     expect(result.profile.achievementProgress.bestStreak).toBe(1)
-    expect(result.profile.achievementProgress.goldEarned).toBe(88)
+    expect(result.profile.achievementProgress.goldEarned).toBe(63)
   })
 
   test('applies +50% rewards multiplier and tracks extra auto-deck gold', () => {
     const profile = createDefaultProfile()
     const result = applyMatchRewards(profile, makeResult('player'), cpuDeck, 33, 8, 1.5)
 
-    const rawTotal = 60 + 28
+    const rawTotal = 42 + 21
     const expectedTotal = Math.floor(rawTotal * 1.5)
     expect(result.rewards.bonusGoldFromCriticalVictory).toBe(0)
     expect(result.rewards.criticalVictory).toBe(false)
@@ -120,7 +138,7 @@ describe('match rewards difficulty bonus', () => {
     const profile = createDefaultProfile()
     const critical = applyMatchRewards(profile, makeCriticalWinResult(), cpuDeck, 91, 8)
 
-    const baseSubtotal = 60 + 28
+    const baseSubtotal = 42 + 21
     const expectedCriticalBonus = Math.floor(baseSubtotal * 0.25)
     const expectedTotal = baseSubtotal + expectedCriticalBonus
 
@@ -133,7 +151,7 @@ describe('match rewards difficulty bonus', () => {
     const profile = createDefaultProfile()
     const critical = applyMatchRewards(profile, makeCriticalWinResult(), cpuDeck, 93, 8, 1.5)
 
-    const baseSubtotal = 60 + 28
+    const baseSubtotal = 42 + 21
     const criticalBonus = Math.floor(baseSubtotal * 0.25)
     const rawTotal = baseSubtotal + criticalBonus
     const multipliedTotal = Math.floor(rawTotal * 1.5)
@@ -173,6 +191,27 @@ describe('match rewards difficulty bonus', () => {
     expect(result.newlyOwnedCards).toEqual([])
     expect(result.profile.cardCopiesById[ownedCardId]).toBe(previousCopies)
     expect(result.profile.cardFragmentsById[ownedCardId]).toBe(previousFragments + 1)
+  })
+
+  test('victory can grant multiple selected cpu card fragments for pokedex milestones', () => {
+    const profile = createDefaultProfile()
+    const cpuDeckForClaim = ['c71', 'c72', 'c73', 'c74', 'c75']
+
+    const result = applyMatchRewards(
+      profile,
+      makeResult('player'),
+      cpuDeckForClaim,
+      104,
+      8,
+      1,
+      ['c71', 'c74', 'c75'] as unknown as string,
+    )
+
+    expect(result.rewards.droppedCardId).toBe('c71')
+    expect(result.rewards.droppedCardIds).toEqual(['c71', 'c74', 'c75'])
+    expect(result.profile.cardFragmentsById.c71).toBe(1)
+    expect(result.profile.cardFragmentsById.c74).toBe(1)
+    expect(result.profile.cardFragmentsById.c75).toBe(1)
   })
 
   test('captured cards grant fragments even when shiny copies exist', () => {
@@ -221,6 +260,26 @@ describe('match rewards difficulty bonus', () => {
     expect(result.profile.gold).toBeGreaterThan(profile.gold)
   })
 
+  test('can suppress formula gold for story-specific rewards while still recording the match', () => {
+    const profile = createDefaultProfile()
+    profile.gold = 0
+
+    const result = applyMatchRewards(profile, makeCriticalWinResult(), cpuDeck, 91, 8, 1.5, undefined, {
+      disableCardCapture: true,
+      fixedGoldAward: 0,
+    })
+
+    expect(result.rewards.goldAwarded).toBe(0)
+    expect(result.rewards.bonusGoldFromDifficulty).toBe(0)
+    expect(result.rewards.bonusGoldFromWinStreak).toBe(0)
+    expect(result.rewards.bonusGoldFromCriticalVictory).toBe(0)
+    expect(result.rewards.bonusGoldFromAutoDeck).toBe(0)
+    expect(result.rewards.criticalVictory).toBe(false)
+    expect(result.profile.gold).toBe(0)
+    expect(result.profile.achievementProgress.matchesPlayed).toBe(1)
+    expect(result.profile.achievementProgress.matchesWon).toBe(1)
+  })
+
   test('throws when selected claimed card is not part of cpu deck', () => {
     const profile = createDefaultProfile()
 
@@ -255,6 +314,6 @@ describe('match rewards difficulty bonus', () => {
     expect(result.rewards.bonusGoldFromComboBounty).toBe(0)
     expect(result.rewards.bonusGoldFromCleanVictory).toBe(0)
     expect(result.rewards.bonusGoldFromSecondarySynergy).toBe(0)
-    expect(result.profile.gold).toBe(100 + 60)
+    expect(result.profile.gold).toBe(100 + 42)
   })
 })

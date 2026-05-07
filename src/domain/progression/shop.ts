@@ -2,6 +2,7 @@ import { cardPool } from '../cards/cardPool'
 import type { CardCategoryId, CardId, PlayerProfile, Rarity } from '../types'
 import type { SeededRng } from '../random/seededRng'
 import { evaluateAchievements } from './achievements'
+import { cloneMissionProgressMap } from './missionCatalog'
 import { rollShinyVariant } from './shiny'
 
 export type ShopPackId = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary'
@@ -107,34 +108,34 @@ const GEN_2_MIN_POKEDEX_NUMBER = 152
 const GEN_2_MAX_POKEDEX_NUMBER = 251
 
 const PACK_PRICES: Record<ShopPackId, number> = {
-  common: 60,
-  uncommon: 120,
-  rare: 220,
-  epic: 300,
-  legendary: 360,
+  common: 140,
+  uncommon: 240,
+  rare: 420,
+  epic: 720,
+  legendary: 1200,
 }
 
 const SPECIAL_PACK_PRICES: Record<SpecialPackId, number> = {
-  sans_coeur_focus: 220,
-  simili_focus: 220,
-  legendary_focus: 900,
+  sans_coeur_focus: 180,
+  simili_focus: 180,
+  legendary_focus: 650,
 }
 
 type PackDropRates = Readonly<Record<Rarity, number>>
 
 const PACK_DROP_RATES: Readonly<Record<ShopPackId, PackDropRates>> = {
-  common: { common: 70, uncommon: 22, rare: 5, epic: 2, legendary: 1 },
-  uncommon: { common: 35, uncommon: 40, rare: 15, epic: 7, legendary: 3 },
-  rare: { common: 15, uncommon: 25, rare: 35, epic: 20, legendary: 5 },
-  epic: { common: 0, uncommon: 0, rare: 0, epic: 100, legendary: 0 },
-  legendary: { common: 11, uncommon: 22, rare: 44, epic: 20, legendary: 3 },
+  common: { common: 74, uncommon: 19, rare: 5, epic: 2, legendary: 0 },
+  uncommon: { common: 44, uncommon: 34, rare: 16, epic: 5, legendary: 1 },
+  rare: { common: 24, uncommon: 33, rare: 34, epic: 7, legendary: 2 },
+  epic: { common: 8, uncommon: 20, rare: 44, epic: 24, legendary: 4 },
+  legendary: { common: 12, uncommon: 35, rare: 50, epic: 1, legendary: 2 },
 }
 
 const SPECIAL_BASE_RATES: PackDropRates = {
-  common: 70,
-  uncommon: 22,
-  rare: 5,
-  epic: 2,
+  common: 60,
+  uncommon: 26,
+  rare: 10,
+  epic: 3,
   legendary: 1,
 }
 const LEGENDARY_FOCUS_BASE_DROP_CHANCE_PERCENT = 1
@@ -384,20 +385,24 @@ function cloneProfile(profile: PlayerProfile): PlayerProfile {
     stats: { ...profile.stats },
     achievementProgress: { ...profile.achievementProgress },
     achievements: [...profile.achievements],
-    missions: {
-      m1_type_specialist: { ...profile.missions.m1_type_specialist },
-      m2_combo_practitioner: { ...profile.missions.m2_combo_practitioner },
-      m3_corner_tactician: { ...profile.missions.m3_corner_tactician },
-    },
+    missions: cloneMissionProgressMap(profile.missions),
     missionRewardsGrantedById: { ...profile.missionRewardsGrantedById },
     rankedByMode: {
       '3x3': {
         ...profile.rankedByMode['3x3'],
         resultStreak: { ...profile.rankedByMode['3x3'].resultStreak },
+        promotionSeries: profile.rankedByMode['3x3'].promotionSeries ? { ...profile.rankedByMode['3x3'].promotionSeries } : null,
+        seasonLeagueRewardsClaimed: profile.rankedByMode['3x3'].seasonLeagueRewardsClaimed
+          ? { ...profile.rankedByMode['3x3'].seasonLeagueRewardsClaimed }
+          : undefined,
       },
       '4x4': {
         ...profile.rankedByMode['4x4'],
         resultStreak: { ...profile.rankedByMode['4x4'].resultStreak },
+        promotionSeries: profile.rankedByMode['4x4'].promotionSeries ? { ...profile.rankedByMode['4x4'].promotionSeries } : null,
+        seasonLeagueRewardsClaimed: profile.rankedByMode['4x4'].seasonLeagueRewardsClaimed
+          ? { ...profile.rankedByMode['4x4'].seasonLeagueRewardsClaimed }
+          : undefined,
       },
     },
     settings: { ...profile.settings },

@@ -17,9 +17,9 @@ type DecksSortMode = 'selected-first' | 'power-desc' | 'name-asc'
 const rarityFilterOrder: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary']
 
 const decksSortOptions: Array<{ value: DecksSortMode; label: string }> = [
-  { value: 'power-desc', label: 'Power (High to Low)' },
-  { value: 'selected-first', label: 'Selected First' },
-  { value: 'name-asc', label: 'Name (A-Z)' },
+  { value: 'power-desc', label: 'Puissance (fort à faible)' },
+  { value: 'selected-first', label: 'Sélectionnées d abord' },
+  { value: 'name-asc', label: 'Nom (A-Z)' },
 ]
 
 const DECKS_CARDS_PER_PAGE = 12
@@ -54,8 +54,8 @@ function buildElementInfoLabel(elementId: CardElementId, count: number): string 
 }
 
 const deckModeLabelByMode: Record<MatchMode, string> = {
-  '3x3': '3x3 (5 cards)',
-  '4x4': '4x4 (8 cards)',
+  '3x3': '3x3 (5 cartes)',
+  '4x4': '4x4 (8 cartes)',
 }
 
 export function DecksPage() {
@@ -210,7 +210,7 @@ export function DecksPage() {
   const handleCardToggle = (cardId: CardId) => {
     const isSelected = selectedCardSet.has(cardId)
     if (!isSelected && selectedDeck.length >= modeSpec.deckSize) {
-      setError(`Deck already has ${modeSpec.deckSize} cards. Remove one first.`)
+      setError(`Le deck contient déjà ${modeSpec.deckSize} cartes. Retires-en une d'abord.`)
       return
     }
 
@@ -260,7 +260,7 @@ export function DecksPage() {
   const handleDeckNameCommit = () => {
     const result = renameDeckSlot(selectedSlot.id, deckNameDraft)
     if (!result.valid) {
-      setDeckNameError(result.reason ?? 'Invalid deck name.')
+      setDeckNameError(result.reason ?? 'Nom de deck invalide.')
       return
     }
 
@@ -273,9 +273,9 @@ export function DecksPage() {
       <div className="setup-layout" data-testid="decks-layout">
         <aside className="setup-builder" data-testid="decks-column-builder">
           <h1>Decks</h1>
-          <p className="small">Build your decks here. Match options now live on Play.</p>
+          <p className="small">Construis tes decks ici. Les options de match sont maintenant dans Jouer.</p>
 
-          <div className="setup-slot-grid" aria-label="Deck slots">
+          <div className="setup-slot-grid" aria-label="Emplacements de deck">
             {profile.deckSlots.map((slot) => (
               <button
                 key={slot.id}
@@ -297,7 +297,7 @@ export function DecksPage() {
           </div>
 
           <div className="setup-deck-name-field">
-            <label htmlFor="deck-name-input">Deck Name</label>
+            <label htmlFor="deck-name-input">Nom du deck</label>
             <input
               id="deck-name-input"
               type="text"
@@ -319,7 +319,7 @@ export function DecksPage() {
           </div>
 
           <fieldset className="setup-rule-block">
-            <legend>Deck Format</legend>
+            <legend>Format du deck</legend>
             <div className="rule-toggle-group setup-deck-mode-group">
               {VISIBLE_MATCH_MODES.map((mode) => (
                 <label className="setup-rule-toggle setup-rule-toggle--deck-mode" key={mode}>
@@ -340,7 +340,7 @@ export function DecksPage() {
           </fieldset>
 
           <p className="small setup-deck-count">
-            Deck: {selectedDeck.length}/{modeSpec.deckSize} selected
+            Deck: {selectedDeck.length}/{modeSpec.deckSize} sélectionnées
           </p>
           <div className="decks-element-activity" data-testid="decks-element-activity" aria-label="Deck element activity">
             <div className="decks-element-activity-row decks-element-activity-row--active" data-testid="decks-element-activity-active">
@@ -433,7 +433,7 @@ export function DecksPage() {
           <div
             className="setup-selected-cards"
             data-testid="setup-selected-cards"
-            aria-label="Selected cards"
+            aria-label="Cartes sélectionnées"
             style={{ '--setup-selected-columns': `${selectedDeckPreviewColumns}` } as CSSProperties}
           >
             {Array.from({ length: modeSpec.deckSize }, (_, index) => {
@@ -441,7 +441,7 @@ export function DecksPage() {
               if (!cardId) {
                 return (
                   <div className="setup-selected-slot-empty" key={`empty-${index}`} data-testid={`setup-selected-slot-empty-${index}`}>
-                    <span>Empty</span>
+                    <span>Vide</span>
                   </div>
                 )
               }
@@ -467,24 +467,24 @@ export function DecksPage() {
         </aside>
 
         <section className="setup-collection" data-testid="decks-column-collection">
-          <div className="setup-filter-bar" aria-label="Setup filters">
+          <div className="setup-filter-bar" aria-label="Filtres de deck">
             <div className="setup-filter-row">
               <label className="setup-filter-label" htmlFor="setup-filter-search-input">
-                Search
+                Recherche
               </label>
               <input
                 id="setup-filter-search-input"
                 type="search"
                 value={searchTerm}
                 onChange={(event) => setSearchTerm(event.target.value)}
-                placeholder="Search by name or ID"
+                placeholder="Nom ou ID"
                 data-testid="setup-filter-search"
               />
             </div>
 
             <div className="setup-filter-row">
-              <span className="setup-filter-label">Rarity</span>
-              <div className="setup-rarity-filters" role="group" aria-label="Setup rarity filters">
+              <span className="setup-filter-label">Rareté</span>
+              <div className="setup-rarity-filters" role="group" aria-label="Filtres de rareté">
                 {availableRarities.map((rarity) => {
                   const isActive = selectedRaritySet.has(rarity)
                   return (
@@ -505,7 +505,7 @@ export function DecksPage() {
 
             <div className="setup-filter-row">
               <span className="setup-filter-label">Type</span>
-              <div className="setup-rarity-filters" role="group" aria-label="Setup type filters">
+              <div className="setup-rarity-filters" role="group" aria-label="Filtres de type">
                 {cardElementIds.map((elementId) => {
                   const isActive = selectedElementSet.has(elementId)
                   const logo = getElementLogoMeta(elementId)
@@ -540,7 +540,7 @@ export function DecksPage() {
 
             <div className="setup-filter-row setup-filter-row--sort">
               <label className="setup-filter-label" htmlFor="setup-sort-select-input">
-                Sort
+                Tri
               </label>
               <select
                 id="setup-sort-select-input"
@@ -561,12 +561,12 @@ export function DecksPage() {
                 disabled={isDefaultFilterState}
                 data-testid="setup-filter-reset"
               >
-                Reset
+                Réinitialiser
               </button>
             </div>
 
             <p className="small setup-result-count" data-testid="setup-result-count">
-              {visibleCards.length} cards shown / {ownedCards.length} owned
+              {visibleCards.length} cartes affichées / {ownedCards.length} possédées
             </p>
 
             <div className="setup-pagination" data-testid="setup-pagination">
@@ -577,7 +577,7 @@ export function DecksPage() {
                 disabled={currentPage === 1}
                 data-testid="setup-pagination-prev"
               >
-                Previous
+                Précédent
               </button>
               <p className="small setup-pagination-page" data-testid="setup-pagination-page">
                 Page {currentPage}/{totalPages}
@@ -589,12 +589,12 @@ export function DecksPage() {
                 disabled={currentPage === totalPages}
                 data-testid="setup-pagination-next"
               >
-                Next
+                Suivant
               </button>
             </div>
           </div>
 
-          <div className="setup-card-grid" aria-label="Deck selection">
+          <div className="setup-card-grid" aria-label="Sélection du deck">
             {paginatedCards.map((card) => {
               const selected = selectedCardSet.has(card.id)
               return (

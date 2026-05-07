@@ -41,6 +41,6 @@ export function getRankScore(tier: RankedTierId, division: RankedDivision | null
     throw new Error(`Unsupported rank division: ${division}`)
   }
 
-  const safeLp = Math.max(0, Math.min(99, Math.floor(lp)))
+  const safeLp = Math.max(0, Math.min(100, Math.floor(lp)))
   return tierIndex * 1000 + divisionIndex * 100 + safeLp
 }

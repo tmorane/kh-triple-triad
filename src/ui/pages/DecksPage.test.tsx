@@ -52,8 +52,8 @@ describe('DecksPage', () => {
     renderDecks()
 
     expect(screen.getByRole('heading', { name: 'Decks' })).toBeInTheDocument()
-    expect(screen.getByLabelText('Deck slots')).toBeInTheDocument()
-    expect(screen.getByLabelText('Deck selection')).toBeInTheDocument()
+    expect(screen.getByLabelText('Emplacements de deck')).toBeInTheDocument()
+    expect(screen.getByLabelText('Sélection du deck')).toBeInTheDocument()
     expect(screen.getByTestId('deck-name-input')).toBeInTheDocument()
     expect(screen.queryByTestId('start-match-button')).not.toBeInTheDocument()
     expect(screen.queryByTestId('setup-queue-tab-normal')).not.toBeInTheDocument()
@@ -64,7 +64,7 @@ describe('DecksPage', () => {
 
     expect(screen.getByTestId('setup-mode-3x3')).toBeChecked()
     expect(screen.queryByTestId('setup-mode-4x4')).not.toBeInTheDocument()
-    expect(screen.getByText('Deck: 5/5 selected')).toBeInTheDocument()
+    expect(screen.getByText('Deck: 5/5 sélectionnées')).toBeInTheDocument()
     expect(within(screen.getByTestId('setup-selected-cards')).getAllByTestId(/^setup-selected-card-/)).toHaveLength(5)
   })
 
@@ -124,7 +124,7 @@ describe('DecksPage', () => {
       (card) => profile.ownedCardIds.includes(card.id) && !selectedDeckSet.has(card.id) && card.elementId === firstType,
     ).length
     expect(screen.getByTestId('setup-result-count')).toHaveTextContent(
-      `${firstExpectedCount} cards shown / ${profile.ownedCardIds.length} owned`,
+      `${firstExpectedCount} cartes affichées / ${profile.ownedCardIds.length} possédées`,
     )
 
     await user.click(screen.getByTestId(`setup-filter-type-${secondType}`))
@@ -137,12 +137,12 @@ describe('DecksPage', () => {
     ).length
 
     expect(screen.getByTestId('setup-result-count')).toHaveTextContent(
-      `${expectedCount} cards shown / ${profile.ownedCardIds.length} owned`,
+      `${expectedCount} cartes affichées / ${profile.ownedCardIds.length} possédées`,
     )
 
     await user.click(screen.getByTestId(`setup-filter-type-${secondType}`))
     expect(screen.getByTestId('setup-result-count')).toHaveTextContent(
-      `${firstExpectedCount} cards shown / ${profile.ownedCardIds.length} owned`,
+      `${firstExpectedCount} cartes affichées / ${profile.ownedCardIds.length} possédées`,
     )
 
     await user.click(screen.getByTestId(`setup-filter-type-${firstType}`))
@@ -150,7 +150,7 @@ describe('DecksPage', () => {
       (card) => profile.ownedCardIds.includes(card.id) && !selectedDeckSet.has(card.id),
     ).length
     expect(screen.getByTestId('setup-result-count')).toHaveTextContent(
-      `${allTypesCount} cards shown / ${profile.ownedCardIds.length} owned`,
+      `${allTypesCount} cartes affichées / ${profile.ownedCardIds.length} possédées`,
     )
     expect(screen.getByTestId(`setup-filter-type-${firstType}`)).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByTestId(`setup-filter-type-${secondType}`)).toHaveAttribute('aria-pressed', 'true')
@@ -222,15 +222,15 @@ describe('DecksPage', () => {
     const firstPreviewCard = within(preview).getAllByTestId(/^setup-selected-card-/)[0]
     await user.click(firstPreviewCard)
 
-    expect(screen.getByText('Deck: 4/5 selected')).toBeInTheDocument()
+    expect(screen.getByText('Deck: 4/5 sélectionnées')).toBeInTheDocument()
 
     const firstAvailableCard = screen.getAllByTestId(/^setup-card-/)[0]
     await user.click(firstAvailableCard)
-    expect(screen.getByText('Deck: 5/5 selected')).toBeInTheDocument()
+    expect(screen.getByText('Deck: 5/5 sélectionnées')).toBeInTheDocument()
 
     const secondAvailableCard = screen.getAllByTestId(/^setup-card-/)[0]
     await user.click(secondAvailableCard)
-    expect(screen.getByText('Deck already has 5 cards. Remove one first.')).toBeInTheDocument()
+    expect(screen.getByText("Le deck contient déjà 5 cartes. Retires-en une d'abord.")).toBeInTheDocument()
   })
 
   test('paginates the card selector and allows page navigation', async () => {

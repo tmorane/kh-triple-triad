@@ -16,7 +16,7 @@ describe('ChangelogsPage', () => {
   test('renders changelog heading and release count', () => {
     renderChangelogsPage()
 
-    expect(screen.getByRole('heading', { name: 'Changelogs' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Notes de version' })).toBeInTheDocument()
     expect(screen.getByTestId('changelogs-release-count')).toHaveTextContent(`${changelogEntries.length} versions publiees`)
   })
 

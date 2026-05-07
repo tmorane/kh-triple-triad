@@ -5,7 +5,7 @@ export function ChangelogsPage() {
   return (
     <section className="panel changelogs-panel">
       <div className="changelogs-head">
-        <h1>Changelogs</h1>
+        <h1>Notes de version</h1>
         <p className="small" data-testid="changelogs-release-count">
           {changelogEntries.length} versions publiees
         </p>
@@ -54,11 +54,11 @@ export function ChangelogsPage() {
       </div>
 
       <div className="actions">
-        <Link className="button button-primary" to="/">
-          Home
+        <Link className="button button-primary" to="/home">
+          Accueil
         </Link>
         <Link className="button" to="/setup">
-          Go to Match Setup
+          Préparer un match
         </Link>
       </div>
     </section>

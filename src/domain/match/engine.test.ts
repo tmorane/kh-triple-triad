@@ -263,6 +263,19 @@ describe('match engine', () => {
     expect(horizontalResolution.flipEvents).toEqual([
       { cell: 0, kind: 'flipped', axis: 'horizontal', phase: 'primary' },
     ])
+    expect(horizontalResolution.duelEvents).toEqual([
+      {
+        attacker: 'player',
+        defender: 'cpu',
+        attackerCell: 1,
+        defenderCell: 0,
+        attackerSide: 'left',
+        defenderSide: 'right',
+        attackerValue: 5,
+        defenderValue: 3,
+        result: 'capture',
+      },
+    ])
 
     const verticalState = play(createMatch(makeConfig()), [
       { actor: 'player', cardId: 'c01', cell: 8 },
@@ -272,6 +285,19 @@ describe('match engine', () => {
 
     expect(verticalResolution.flipEvents).toEqual([
       { cell: 1, kind: 'flipped', axis: 'vertical', phase: 'primary' },
+    ])
+    expect(verticalResolution.duelEvents).toEqual([
+      {
+        attacker: 'player',
+        defender: 'cpu',
+        attackerCell: 4,
+        defenderCell: 1,
+        attackerSide: 'up',
+        defenderSide: 'down',
+        attackerValue: 7,
+        defenderValue: 5,
+        result: 'capture',
+      },
     ])
   })
 
